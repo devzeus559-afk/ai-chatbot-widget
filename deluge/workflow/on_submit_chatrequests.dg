@@ -1,0 +1,26 @@
+/**
+ * on_submit_chatrequests.dg
+ *
+ * Script del workflow "On Submit" del módulo ChatRequests.
+ * El registro ya existe cuando corre el workflow; `input` trae el registro.
+ *
+ * chat_invoke() ya marca Status = answered si todo sale bien; este script
+ * atrapa fallos para no dejar solicitudes colgadas en "pending".
+ */
+
+requestId = input.ID;
+
+try {
+    result = chat_invoke(requestId);
+    if (result.get("status") != "answered") {
+        zoho.creator.updateRecord(chat_config().get("appName"), "ChatRequests", requestId, {
+            "Status": "failed",
+            "Error": result.get("message")
+        });
+    }
+} catch (e) {
+    zoho.creator.updateRecord(chat_config().get("appName"), "ChatRequests", requestId, {
+        "Status": "failed",
+        "Error": e.message
+    });
+}

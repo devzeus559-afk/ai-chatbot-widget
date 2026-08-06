@@ -1,0 +1,55 @@
+/**
+ * tool_services.dg
+ *
+ * Lista servicios disponibles desde el módulo Service.
+ * Recibe (todos opcionales): {"serviceType", "origin", "destination"}
+ * Devuelve: {"ok": true, "data": [{name, type, price, currency, description, estimatedTime}]}
+ */
+
+Map tool_services(Map params)
+{
+    config = chat_config();
+    app = config.get("appName");
+    fields = config.get("serviceFields");
+
+    criteria = "";
+
+    serviceType = params.get("serviceType");
+    if (serviceType != null && serviceType != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + fields.get("type") + "\" == '" + serviceType + "'");
+    }
+
+    originField = fields.get("origin");
+    origin = params.get("origin");
+    if (origin != null && origin != "" && originField != null && originField != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + originField + "\" == '" + origin + "'");
+    }
+
+    destinationField = fields.get("destination");
+    destination = params.get("destination");
+    if (destination != null && destination != "" && destinationField != null && destinationField != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + destinationField + "\" == '" + destination + "'");
+    }
+
+    records = zoho.creator.getAllRecords(app, config.get("service"), criteria,
+                                         1, 200, fields.get("name"), 1);
+
+    resultList = List();
+    if (records == null) return {"ok": true, "data": resultList};
+
+    for each s in records {
+        item = Map();
+        item.put("name", s.get(fields.get("name")));
+        item.put("type", s.get(fields.get("type")));
+        item.put("price", s.get(fields.get("price")));
+        item.put("currency", s.get(fields.get("currency")));
+        item.put("description", s.get(fields.get("description")));
+        item.put("estimatedTime", s.get(fields.get("estimatedTime")));
+        resultList.add(item);
+    }
+
+    return {"ok": true, "data": resultList};
+}

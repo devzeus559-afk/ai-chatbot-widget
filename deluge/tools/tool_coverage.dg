@@ -1,0 +1,54 @@
+/**
+ * tool_coverage.dg
+ *
+ * Consulta la cobertura de países/proveedores desde el módulo Coverage_Location
+ * (zonas cubiertas por cada vendor para un tipo de servicio: remesas, recargas,
+ * paquetería).
+ *
+ * Recibe (todos opcionales): {"country", "vendor", "serviceType"}
+ * Devuelve: {"ok": true, "data": [{country, vendor, serviceType, details}]}
+ */
+
+Map tool_coverage(Map params)
+{
+    config = chat_config();
+    app = config.get("appName");
+    fields = config.get("coverageFields");
+
+    criteria = "";
+
+    country = params.get("country");
+    if (country != null && country != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + fields.get("country") + "\" == '" + country + "'");
+    }
+
+    vendor = params.get("vendor");
+    if (vendor != null && vendor != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + fields.get("vendor") + "\" == '" + vendor + "'");
+    }
+
+    serviceType = params.get("serviceType");
+    if (serviceType != null && serviceType != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + fields.get("serviceType") + "\" == '" + serviceType + "'");
+    }
+
+    records = zoho.creator.getAllRecords(app, config.get("coverageLocation"), criteria,
+                                         1, 200, fields.get("country"), 1);
+
+    resultList = List();
+    if (records == null) return {"ok": true, "data": resultList};
+
+    for each c in records {
+        item = Map();
+        item.put("country", c.get(fields.get("country")));
+        item.put("vendor", c.get(fields.get("vendor")));
+        item.put("serviceType", c.get(fields.get("serviceType")));
+        item.put("details", c.get(fields.get("details")));
+        resultList.add(item);
+    }
+
+    return {"ok": true, "data": resultList};
+}

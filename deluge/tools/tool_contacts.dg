@@ -1,0 +1,56 @@
+/**
+ * tool_contacts.dg
+ *
+ * Busca contactos (remitente o receptor) en el módulo Contacts.
+ * Recibe (todos opcionales): {"name", "phone", "document"}
+ * Devuelve: {"ok": true, "data": [{fullName, phone, email, document, role}]}
+ *
+ * NOTA DE PRIVACIDAD: los resultados pueden contener PII. Si el LLM configurado
+ * en Zia es externo (OpenAI/Gemini/Anthropic), la data sale de la organización;
+ * considera limitar esta tool a agentes internos o usar Zoho GenAI.
+ */
+
+Map tool_contacts(Map params)
+{
+    config = chat_config();
+    app = config.get("appName");
+    fields = config.get("contactFields");
+
+    criteria = "";
+
+    name = params.get("name");
+    if (name != null && name != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + fields.get("fullName") + "\" == '" + name + "'");
+    }
+
+    phone = params.get("phone");
+    if (phone != null && phone != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + fields.get("phone") + "\" == '" + phone + "'");
+    }
+
+    document = params.get("document");
+    if (document != null && document != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + fields.get("document") + "\" == '" + document + "'");
+    }
+
+    records = zoho.creator.getAllRecords(app, config.get("contacts"), criteria,
+                                         1, 50, fields.get("fullName"), 1);
+
+    resultList = List();
+    if (records == null) return {"ok": true, "data": resultList};
+
+    for each c in records {
+        item = Map();
+        item.put("fullName", c.get(fields.get("fullName")));
+        item.put("phone", c.get(fields.get("phone")));
+        item.put("email", c.get(fields.get("email")));
+        item.put("document", c.get(fields.get("document")));
+        item.put("role", c.get(fields.get("role")));
+        resultList.add(item);
+    }
+
+    return {"ok": true, "data": resultList};
+}

@@ -1,0 +1,47 @@
+/**
+ * tool_offices.dg
+ *
+ * Busca oficinas comerciales en el módulo Commercial_Office.
+ * Recibe (todos opcionales): {"city", "country"}
+ * Devuelve: {"ok": true, "data": [{name, address, city, country, phone, hours}]}
+ */
+
+Map tool_offices(Map params)
+{
+    config = chat_config();
+    app = config.get("appName");
+    fields = config.get("officeFields");
+
+    criteria = "";
+
+    city = params.get("city");
+    if (city != null && city != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + fields.get("city") + "\" == '" + city + "'");
+    }
+
+    country = params.get("country");
+    if (country != null && country != "") {
+        criteria = appendCriteria(criteria,
+            "\"" + fields.get("country") + "\" == '" + country + "'");
+    }
+
+    records = zoho.creator.getAllRecords(app, config.get("commercialOffice"), criteria,
+                                         1, 200, fields.get("name"), 1);
+
+    resultList = List();
+    if (records == null) return {"ok": true, "data": resultList};
+
+    for each o in records {
+        item = Map();
+        item.put("name", o.get(fields.get("name")));
+        item.put("address", o.get(fields.get("address")));
+        item.put("city", o.get(fields.get("city")));
+        item.put("country", o.get(fields.get("country")));
+        item.put("phone", o.get(fields.get("phone")));
+        item.put("hours", o.get(fields.get("hours")));
+        resultList.add(item);
+    }
+
+    return {"ok": true, "data": resultList};
+}
