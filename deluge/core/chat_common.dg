@@ -1,0 +1,150 @@
+/**
+ * chat_common.dg
+ *
+ * Helpers compartidos por el backend del chatbot.
+ * Funciones: appendCriteria, parse_json_strict, compose_reply,
+ *            format_tracking, format_services, format_offices,
+ *            format_coverage, format_contacts
+ */
+
+// --------------------------------------------------------------------------
+// Construcción de criterios de búsqueda (evita errores de sintaxis)
+// --------------------------------------------------------------------------
+String appendCriteria(String base, String clause)
+{
+    if (clause == null || clause == "") return base;
+    if (base == null || base == "") return clause;
+    return base + " and " + clause;
+}
+
+// --------------------------------------------------------------------------
+// Parseo robusto de JSON devuelto por Zia
+// --------------------------------------------------------------------------
+// Zia devuelve TEXTO. Si json.parse falla (markdown fences, ruido), se intenta
+// extraer el bloque entre el primer "{" y el último "}".
+Map parse_json_strict(String text)
+{
+    try {
+        parsed = json.parse(text);
+        return parsed;
+    } catch (e) {
+        startIndex = text.index_of("{");
+        endIndex = text.last_index_of("}");
+        if (startIndex >= 0 && endIndex > startIndex) {
+            candidate = text.sub_string(startIndex, endIndex + 1);
+            try {
+                return json.parse(candidate);
+            } catch (e2) {
+                return {"parse_error": text};
+            }
+        }
+        return {"parse_error": text};
+    }
+}
+
+// --------------------------------------------------------------------------
+// Composición de respuestas por plantilla (default, sin segunda llamada Zia)
+// --------------------------------------------------------------------------
+String compose_reply(Map toolResult, Map intent)
+{
+    if (!toolResult.get("ok")) {
+        return "No pude completar la búsqueda. " + toolResult.get("message");
+    }
+    toolName = intent.get("tool");
+    data = toolResult.get("data");
+
+    if (toolName == "track_package") return format_tracking(data);
+    if (toolName == "search_services") return format_services(data);
+    if (toolName == "find_offices") return format_offices(data);
+    if (toolName == "check_coverage") return format_coverage(data);
+    if (toolName == "find_contacts") return format_contacts(data);
+
+    return json.toJson(data);
+}
+
+String format_tracking(Map pkg)
+{
+    if (pkg == null) return "No encontré el paquete.";
+    text = "Paquete " + pkg.get("trackingNumber") + "\n";
+    text = text + "Estado: " + pkg.get("status") + "\n";
+    if (pkg.get("currentLocation") != null && pkg.get("currentLocation") != "") {
+        text = text + "Ubicación actual: " + pkg.get("currentLocation") + "\n";
+    }
+    text = text + "Origen: " + pkg.get("origin") + "\n";
+    text = text + "Destino: " + pkg.get("destination") + "\n";
+    if (pkg.get("estimatedDelivery") != null && pkg.get("estimatedDelivery") != "") {
+        text = text + "Entrega estimada: " + pkg.get("estimatedDelivery");
+    }
+    return text;
+}
+
+String format_services(List services)
+{
+    if (services == null || services.size() == 0) {
+        return "No encontré servicios que coincidan con la búsqueda.";
+    }
+    text = "Servicios disponibles:\n";
+    index = 1;
+    for each s in services {
+        line = index + ". " + s.get("name") + " (" + s.get("type") + ")";
+        if (s.get("price") != null && s.get("currency") != null) {
+            line = line + " - " + s.get("price") + " " + s.get("currency");
+        }
+        if (s.get("estimatedTime") != null && s.get("estimatedTime") != "") {
+            line = line + " - " + s.get("estimatedTime");
+        }
+        text = text + line + "\n";
+        index = index + 1;
+    }
+    return text;
+}
+
+String format_offices(List offices)
+{
+    if (offices == null || offices.size() == 0) {
+        return "No encontré oficinas que coincidan con la búsqueda.";
+    }
+    text = "Oficinas:\n";
+    for each o in offices {
+        line = "- " + o.get("name");
+        if (o.get("address") != null) line = line + ", " + o.get("address");
+        if (o.get("city") != null) line = line + ", " + o.get("city");
+        if (o.get("country") != null) line = line + ", " + o.get("country");
+        if (o.get("phone") != null) line = line + ". Tel: " + o.get("phone");
+        if (o.get("hours") != null) line = line + ". Horario: " + o.get("hours");
+        text = text + line + "\n";
+    }
+    return text;
+}
+
+String format_coverage(List coverage)
+{
+    if (coverage == null || coverage.size() == 0) {
+        return "No encontré cobertura para esa búsqueda.";
+    }
+    text = "Cobertura disponible:\n";
+    for each c in coverage {
+        line = "- " + c.get("country");
+        if (c.get("serviceType") != null) line = line + " (" + c.get("serviceType") + ")";
+        if (c.get("vendor") != null) line = line + " - proveedor: " + c.get("vendor");
+        if (c.get("details") != null) line = line + " - " + c.get("details");
+        text = text + line + "\n";
+    }
+    return text;
+}
+
+String format_contacts(List contacts)
+{
+    if (contacts == null || contacts.size() == 0) {
+        return "No encontré contactos con esos datos.";
+    }
+    text = "Contactos encontrados:\n";
+    for each c in contacts {
+        line = "- " + c.get("fullName");
+        if (c.get("role") != null) line = line + " (" + c.get("role") + ")";
+        if (c.get("phone") != null) line = line + ". Tel: " + c.get("phone");
+        if (c.get("email") != null) line = line + ". Email: " + c.get("email");
+        text = text + line + "\n";
+    }
+    return text;
+}

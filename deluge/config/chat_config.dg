@@ -1,0 +1,147 @@
+/**
+ * chat_config()
+ *
+ * Configuración central del backend del chatbot (paquetería internacional,
+ * remesas y recargas telefónicas).
+ *
+ * IMPORTANTE:
+ * 1. Reemplaza los link names por los reales de tu app de Creator.
+ * 2. Deluge no comparte estado global entre funciones: cada función DEBE
+ *    empezar con:   config = chat_config();
+ * 3. Los link names se obtienen de la URL de cada módulo dentro de Creator.
+ */
+
+Map chat_config()
+{
+    config = Map();
+
+    // --- App ---
+    config.put("appName", "REPLACE_WITH_APP_LINK_NAME");
+
+    // --- Módulos de persistencia del chat ---
+    config.put("chatSessions", "ChatSessions");
+    config.put("chatMessages", "ChatMessages");
+    config.put("chatRequests", "ChatRequests");
+
+    // --- Módulos de negocio ---
+    config.put("contacts", "Contacts");
+    config.put("commercialOffice", "Commercial_Office");
+    config.put("service", "Service");
+    config.put("package", "Package");
+    config.put("coverageLocation", "Coverage_Location");
+
+    // --- Campos de negocio por módulo (link names) ---
+    // AJUSTAR al esquema real de la app. Campos vacíos = se omiten en la consulta.
+
+    packageFields = Map();
+    packageFields.put("trackingNumber", "Tracking_Number");
+    packageFields.put("status", "Status");
+    packageFields.put("origin", "Origin");
+    packageFields.put("destination", "Destination");
+    packageFields.put("currentLocation", "Current_Location");
+    packageFields.put("estimatedDelivery", "Estimated_Delivery");
+    config.put("packageFields", packageFields);
+
+    serviceFields = Map();
+    serviceFields.put("name", "Service_Name");
+    serviceFields.put("type", "Service_Type");   // Paquetería | Remesa | Recarga
+    serviceFields.put("price", "Price");
+    serviceFields.put("currency", "Currency");
+    serviceFields.put("description", "Description");
+    serviceFields.put("estimatedTime", "Estimated_Time");
+    serviceFields.put("origin", "Origin");          // opcional
+    serviceFields.put("destination", "Destination"); // opcional
+    config.put("serviceFields", serviceFields);
+
+    officeFields = Map();
+    officeFields.put("name", "Office_Name");
+    officeFields.put("address", "Address");
+    officeFields.put("city", "City");
+    officeFields.put("country", "Country");
+    officeFields.put("phone", "Phone");
+    officeFields.put("hours", "Business_Hours");
+    config.put("officeFields", officeFields);
+
+    coverageFields = Map();
+    coverageFields.put("country", "Country");
+    coverageFields.put("vendor", "Vendor");
+    coverageFields.put("serviceType", "Service_Type");
+    coverageFields.put("details", "Details");
+    config.put("coverageFields", coverageFields);
+
+    contactFields = Map();
+    contactFields.put("fullName", "Full_Name");
+    contactFields.put("phone", "Phone");
+    contactFields.put("email", "Email");
+    contactFields.put("document", "Document_Number");
+    contactFields.put("role", "Role");   // Sender | Receiver
+    config.put("contactFields", contactFields);
+
+    // --- Scoping por usuario ---
+    // Si un módulo es privado por usuario, pon aquí el link name del campo
+    // lookup a Users (p. ej. "Owner"). Vacío = sin filtro por usuario.
+    ownerFields = Map();
+    ownerFields.put("package", "");
+    ownerFields.put("service", "");
+    ownerFields.put("commercialOffice", "");
+    ownerFields.put("coverageLocation", "");
+    ownerFields.put("contacts", "");
+    config.put("ownerFields", ownerFields);
+
+    // --- Composición de respuestas ---
+    // false = plantillas deterministas (barato, rápido, recomendado).
+    // true  = segunda llamada Zia para redactar respuestas naturales (más costo/latencia).
+    config.put("composeWithAI", false);
+
+    // --- Catálogo de herramientas para Zia ---
+    tools = List();
+
+    tool = Map();
+    tool.put("name", "track_package");
+    tool.put("description", "Busca el estado de un paquete por su número de seguimiento.");
+    tool.put("params", {"trackingNumber": "string: número de seguimiento del paquete"});
+    tools.add(tool);
+
+    tool = Map();
+    tool.put("name", "search_services");
+    tool.put("description", "Lista los servicios disponibles. Filtros opcionales: tipo de servicio (Paquetería, Remesa, Recarga), origen, destino.");
+    tool.put("params", {
+        "serviceType": "string opcional",
+        "origin": "string opcional",
+        "destination": "string opcional"
+    });
+    tools.add(tool);
+
+    tool = Map();
+    tool.put("name", "find_offices");
+    tool.put("description", "Busca oficinas comerciales. Filtros opcionales: ciudad, país.");
+    tool.put("params", {
+        "city": "string opcional",
+        "country": "string opcional"
+    });
+    tools.add(tool);
+
+    tool = Map();
+    tool.put("name", "check_coverage");
+    tool.put("description", "Consulta los países/zonas cubiertos por un proveedor para un tipo de servicio (remesas, recargas, paquetería).");
+    tool.put("params", {
+        "country": "string opcional",
+        "vendor": "string opcional",
+        "serviceType": "string opcional"
+    });
+    tools.add(tool);
+
+    tool = Map();
+    tool.put("name", "find_contacts");
+    tool.put("description", "Busca contactos (remitente o receptor) por nombre, teléfono o documento.");
+    tool.put("params", {
+        "name": "string opcional",
+        "phone": "string opcional",
+        "document": "string opcional"
+    });
+    tools.add(tool);
+
+    config.put("tools", tools);
+
+    return config;
+}
