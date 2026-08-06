@@ -55,7 +55,7 @@ deluge/
 | Archivo | Funciones |
 |---|---|
 | `chat_config.dg` | `chat_config` |
-| `chat_common.dg` | `appendCriteria`, `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts` |
+| `chat_common.dg` | `append_criteria`, `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts` |
 | `chat_intent.dg` | `chat_intent`, `build_intent_prompt` |
 | `chat_invoke.dg` | `chat_invoke`, `resolve_reply`, `dispatch_tool`, `compose_with_ai`, `get_or_create_session`, `create_message`, `get_recent_history`, `update_session` |
 | `chat_list.dg` | `chat_list` |

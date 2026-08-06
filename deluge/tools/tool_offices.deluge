@@ -16,13 +16,13 @@ Map tool_offices(Map params)
 
     city = params.get("city");
     if (city != null && city != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + fields.get("city") + "\" == '" + city + "'");
     }
 
     country = params.get("country");
     if (country != null && country != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + fields.get("country") + "\" == '" + country + "'");
     }
 
@@ -30,7 +30,9 @@ Map tool_offices(Map params)
                                          1, 200, fields.get("name"), 1);
 
     resultList = List();
-    if (records == null) return {"ok": true, "data": resultList};
+    if (records == null) {
+        return {"ok": true, "data": resultList};
+    }
 
     for each o in records {
         item = Map();

@@ -19,19 +19,19 @@ Map tool_coverage(Map params)
 
     country = params.get("country");
     if (country != null && country != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + fields.get("country") + "\" == '" + country + "'");
     }
 
     vendor = params.get("vendor");
     if (vendor != null && vendor != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + fields.get("vendor") + "\" == '" + vendor + "'");
     }
 
     serviceType = params.get("serviceType");
     if (serviceType != null && serviceType != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + fields.get("serviceType") + "\" == '" + serviceType + "'");
     }
 
@@ -39,7 +39,9 @@ Map tool_coverage(Map params)
                                          1, 200, fields.get("country"), 1);
 
     resultList = List();
-    if (records == null) return {"ok": true, "data": resultList};
+    if (records == null) {
+        return {"ok": true, "data": resultList};
+    }
 
     for each c in records {
         item = Map();

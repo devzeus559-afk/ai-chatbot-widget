@@ -80,11 +80,21 @@ String resolve_reply(Map intent)
 
 Map dispatch_tool(String toolName, Map params)
 {
-    if (toolName == "track_package") return tool_track_package(params);
-    if (toolName == "search_services") return tool_services(params);
-    if (toolName == "find_offices") return tool_offices(params);
-    if (toolName == "check_coverage") return tool_coverage(params);
-    if (toolName == "find_contacts") return tool_contacts(params);
+    if (toolName == "track_package") {
+        return tool_track_package(params);
+    }
+    if (toolName == "search_services") {
+        return tool_services(params);
+    }
+    if (toolName == "find_offices") {
+        return tool_offices(params);
+    }
+    if (toolName == "check_coverage") {
+        return tool_coverage(params);
+    }
+    if (toolName == "find_contacts") {
+        return tool_contacts(params);
+    }
     return {"ok": false, "message": "Herramienta desconocida: " + toolName};
 }
 
@@ -144,10 +154,14 @@ List get_recent_history(String sessionRecordId, Integer limit)
                                          "\"Session\" == '" + sessionRecordId + "'",
                                          1, 200, "Created_Time", 1);
     history = List();
-    if (records == null || records.size() == 0) return history;
+    if (records == null || records.size() == 0) {
+        return history;
+    }
 
     startIndex = records.size() - limit;
-    if (startIndex < 0) startIndex = 0;
+    if (startIndex < 0) {
+        startIndex = 0;
+    }
 
     for (i = startIndex; i < records.size(); i = i + 1) {
         m = records.get(i);
@@ -168,7 +182,7 @@ void update_session(Map session, String firstPrompt)
     if (title == null || title == "" || title == "Nueva conversación") {
         newTitle = firstPrompt;
         if (newTitle.length() > 50) {
-            newTitle = newTitle.sub_string(0, 50);
+            newTitle = newTitle.substring(0, 50);
         }
         zoho.creator.updateRecord(app, config.get("chatSessions"), session.get("ID"), {
             "Title": newTitle,

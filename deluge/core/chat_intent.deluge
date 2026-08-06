@@ -43,7 +43,9 @@ Map chat_intent(String userPrompt, List history)
         }
         if (parsed.containsKey("tool")) {
             params = parsed.get("params");
-            if (params == null) params = Map();
+            if (params == null) {
+                params = Map();
+            }
             return {"status": "ok", "kind": "tool",
                     "tool": parsed.get("tool"), "params": params};
         }

@@ -20,7 +20,9 @@ Map chat_list()
                                          1, 50, "Last_Activity", -1);
 
     sessions = List();
-    if (records == null) return {"ok": true, "data": sessions};
+    if (records == null) {
+        return {"ok": true, "data": sessions};
+    }
 
     for each s in records {
         item = Map();

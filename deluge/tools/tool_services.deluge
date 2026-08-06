@@ -16,21 +16,21 @@ Map tool_services(Map params)
 
     serviceType = params.get("serviceType");
     if (serviceType != null && serviceType != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + fields.get("type") + "\" == '" + serviceType + "'");
     }
 
     originField = fields.get("origin");
     origin = params.get("origin");
     if (origin != null && origin != "" && originField != null && originField != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + originField + "\" == '" + origin + "'");
     }
 
     destinationField = fields.get("destination");
     destination = params.get("destination");
     if (destination != null && destination != "" && destinationField != null && destinationField != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + destinationField + "\" == '" + destination + "'");
     }
 
@@ -38,7 +38,9 @@ Map tool_services(Map params)
                                          1, 200, fields.get("name"), 1);
 
     resultList = List();
-    if (records == null) return {"ok": true, "data": resultList};
+    if (records == null) {
+        return {"ok": true, "data": resultList};
+    }
 
     for each s in records {
         item = Map();

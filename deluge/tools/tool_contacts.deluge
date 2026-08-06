@@ -20,19 +20,19 @@ Map tool_contacts(Map params)
 
     name = params.get("name");
     if (name != null && name != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + fields.get("fullName") + "\" == '" + name + "'");
     }
 
     phone = params.get("phone");
     if (phone != null && phone != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + fields.get("phone") + "\" == '" + phone + "'");
     }
 
     document = params.get("document");
     if (document != null && document != "") {
-        criteria = appendCriteria(criteria,
+        criteria = append_criteria(criteria,
             "\"" + fields.get("document") + "\" == '" + document + "'");
     }
 
@@ -40,7 +40,9 @@ Map tool_contacts(Map params)
                                          1, 50, fields.get("fullName"), 1);
 
     resultList = List();
-    if (records == null) return {"ok": true, "data": resultList};
+    if (records == null) {
+        return {"ok": true, "data": resultList};
+    }
 
     for each c in records {
         item = Map();
