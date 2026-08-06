@@ -412,6 +412,7 @@
         font-size: 14px;
         line-height: 1.5;
         word-wrap: break-word;
+        white-space: pre-wrap; /* conserva los saltos de línea de las respuestas Deluge */
       }
 
       .message.user {
@@ -795,11 +796,17 @@
     <div class="toast" id="toast"></div>
 
     <script>
-      // Configuración (estos valores deben ser proporcionados por el entorno de ejecución)
+      // Configuración del backend (Zoho Creator / Client API)
+      // IMPORTANTE: reemplazar appName por el link name real de la app y
+      // mantener los nombres de módulo en sincronía con deluge/config/chat_config.dg
       const CONFIG = {
-        agentEndpoint: "https://agents.zoho.com/api/v1/agents/{agentId}/invoke",
-        agentId: "", // Completar con el ID real
-        authToken: "", // Completar con el token real
+        appName: "REPLACE_WITH_APP_LINK_NAME",
+        chatSessions: "ChatSessions",
+        chatMessages: "ChatMessages",
+        chatRequests: "ChatRequests",
+        pollIntervalMs: 1500, // cadencia del polling de ChatRequests
+        pollTimeoutMs: 45000, // timeout total de espera de respuesta
+        forceLocal: false, // true = usar localStorage aunque haya Client API (pruebas)
       };
 
       const MAX_CONVERSATIONS = 50;
@@ -830,55 +837,308 @@
       const toast = document.getElementById("toast");
 
       // ------------------------------------------------------------------
-      // historyStore — adaptador de persistencia (Capa 0: localStorage)
-      // Seam: para conectar al backend de Creator vía Client API, implementar
-      // los mismos 5 métodos (list/get/create/update/remove) y cambiar solo
-      // la referencia aquí. La UI no cambia.
+      // historyStore — adaptador de persistencia
+      // Capa server (Client API de Zoho Creator): ChatSessions/ChatMessages
+      //   para el historial y ChatRequests (job asíncrono + polling) para las
+      //   respuestas. La UI consume la misma interfaz: list/get/create/update/remove.
+      // Capa local (localStorage): sin backend — vista previa / modo local.
       // ------------------------------------------------------------------
-      const historyStore = {
-        list() {
-          try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            const arr = raw ? JSON.parse(raw) : [];
-            if (!Array.isArray(arr)) return [];
-            return arr
-              .filter((c) => c && c.id && Array.isArray(c.messages))
-              .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-          } catch (err) {
-            console.error("historyStore.list", err);
-            return [];
+      const hasClientAPI = !!(window.ZOHO && ZOHO.CREATOR && ZOHO.CREATOR.API);
+      const BACKEND_MODE = !CONFIG.forceLocal && hasClientAPI ? "server" : "local";
+
+      // --- Cliente mínimo sobre ZOHO.CREATOR.API (callback + promesa) ---
+      function clientApi(method, config) {
+        return new Promise((resolve) => {
+          const fn = ZOHO.CREATOR.API[method];
+          if (!fn) {
+            resolve({ code: 0, message: "Client API method not found: " + method });
+            return;
           }
+          fn(config, (res) => resolve(res || {}));
+        });
+      }
+
+      async function apiGetAll(form, opts) {
+        const params = { appName: CONFIG.appName, reportName: form, page: 1, limit: 200 };
+        if (opts) {
+          if (opts.page) params.page = opts.page;
+          if (opts.limit) params.limit = opts.limit;
+          if (opts.criteria) params.criteria = opts.criteria;
+        }
+        const res = await clientApi("getAllRecords", params);
+        const data = res && (res.data || res.records);
+        if (Array.isArray(data)) return data;
+        throw new Error("getAllRecords(" + form + ") failed: " + (res && res.message));
+      }
+
+      function toTimestamp(v) {
+        if (!v) return 0;
+        if (typeof v === "number") return v;
+        const s = String(v).trim();
+        if (!s) return 0;
+        // "2026-08-05 10:00:00" → ISO UTC (Creator devuelve UTC)
+        const iso = s.includes("T") ? s : s.replace(" ", "T") + "Z";
+        const t = Date.parse(iso);
+        return isNaN(t) ? 0 : t;
+      }
+
+      function sleep(ms) {
+        return new Promise((r) => setTimeout(r, ms));
+      }
+
+      // --- Capa servidor: lectura/escritura sobre los módulos de Creator ---
+      async function fetchSessions() {
+        const recs = await apiGetAll(CONFIG.chatSessions, { limit: MAX_CONVERSATIONS });
+        return recs
+          .filter((r) => r.Session_ID)
+          .map((r) => ({
+            id: r.Session_ID,
+            title: r.Title || "",
+            createdAt: toTimestamp(r.Created_Time),
+            updatedAt: toTimestamp(r.Last_Activity) || toTimestamp(r.Modified_Time),
+            messages: [], // se cargan bajo demanda al abrir la conversación
+          }))
+          .sort((a, b) => b.updatedAt - a.updatedAt);
+      }
+
+      async function loadThread(convId) {
+        const sessions = await apiGetAll(CONFIG.chatSessions, {
+          criteria: "Session_ID == '" + convId + "'",
+          limit: 1,
+        });
+        const session = sessions[0];
+        if (!session) return null;
+        const msgs = await apiGetAll(CONFIG.chatMessages, {
+          criteria: "Session == '" + session.ID + "'",
+          limit: 200,
+        });
+        msgs.sort((a, b) => toTimestamp(a.Created_Time) - toTimestamp(b.Created_Time));
+        return {
+          title: session.Title || "",
+          messages: msgs.map((m) => ({
+            role: String(m.Role || "ai").toLowerCase(),
+            content: m.Content || "",
+          })),
+        };
+      }
+
+      // Envía un prompt al backend: crea ChatRequests (workflow On Submit →
+      // chat_invoke) y hace polling del Status hasta answered/failed.
+      async function sendToServer(convId, prompt) {
+        const res = await clientApi("addRecord", {
+          appName: CONFIG.appName,
+          formName: CONFIG.chatRequests,
+          data: { Session_ID: convId, Prompt: prompt },
+        });
+        if (!res || Number(res.code) !== 3000) {
+          throw new Error("addRecord(ChatRequests) failed: " + (res && res.message));
+        }
+
+        const deadline = Date.now() + CONFIG.pollTimeoutMs;
+        let lastError = null;
+        while (Date.now() < deadline) {
+          await sleep(CONFIG.pollIntervalMs);
+          let recs;
+          try {
+            recs = await apiGetAll(CONFIG.chatRequests, {
+              criteria: "Session_ID == '" + convId + "'",
+              limit: 10,
+            });
+          } catch (err) {
+            lastError = err;
+            continue;
+          }
+          recs.sort((a, b) => toTimestamp(b.Created_Time) - toTimestamp(a.Created_Time));
+          const latest = recs[0];
+          if (!latest) continue;
+          const status = String(latest.Status || "");
+          if (status === "answered") return { ok: true, reply: latest.Reply || "" };
+          if (status === "failed") {
+            return { ok: false, error: latest.Error || "Error en el servidor." };
+          }
+        }
+        return {
+          ok: false,
+          error: lastError
+            ? "No se pudo contactar el servidor. Revisa la conexión e intenta de nuevo."
+            : "La solicitud tardó demasiado (" +
+              Math.round(CONFIG.pollTimeoutMs / 1000) +
+              " s). Por favor intenta de nuevo.",
+        };
+      }
+
+      async function deleteSessionOnServer(convId) {
+        const sessions = await apiGetAll(CONFIG.chatSessions, {
+          criteria: "Session_ID == '" + convId + "'",
+          limit: 1,
+        });
+        const session = sessions[0];
+        if (!session) return;
+        async function deleteAll(form, recs) {
+          for (const rec of recs) {
+            await clientApi("deleteRecord", {
+              appName: CONFIG.appName,
+              formName: form,
+              id: rec.ID,
+            });
+          }
+        }
+        const msgs = await apiGetAll(CONFIG.chatMessages, {
+          criteria: "Session == '" + session.ID + "'",
+          limit: 200,
+        });
+        await deleteAll(CONFIG.chatMessages, msgs);
+        const reqs = await apiGetAll(CONFIG.chatRequests, {
+          criteria: "Session_ID == '" + convId + "'",
+          limit: 200,
+        });
+        await deleteAll(CONFIG.chatRequests, reqs);
+        await clientApi("deleteRecord", {
+          appName: CONFIG.appName,
+          formName: CONFIG.chatSessions,
+          id: session.ID,
+        });
+      }
+
+      // --- Capa local (localStorage) ---
+      function localList() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          const arr = raw ? JSON.parse(raw) : [];
+          if (!Array.isArray(arr)) return [];
+          return arr
+            .filter((c) => c && c.id && Array.isArray(c.messages))
+            .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        } catch (err) {
+          console.error("historyStore.list", err);
+          return [];
+        }
+      }
+
+      function localSaveAll(all) {
+        const trimmed = all.slice(0, MAX_CONVERSATIONS);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+        } catch (err) {
+          console.error("localSaveAll", err);
+        }
+      }
+
+      // --- Store: misma interfaz para ambas capas ---
+      const historyStore = {
+        mode: BACKEND_MODE,
+        _cache: [], // servidor: sesiones cargadas (con mensajes si se abrieron)
+
+        async init() {
+          if (this.mode !== "server") return;
+          try {
+            this._cache = await fetchSessions();
+          } catch (err) {
+            console.error("historyStore.init", err);
+          }
+        },
+
+        // Recarga metadatos de sesiones conservando los mensajes ya cargados
+        async refreshSessions() {
+          if (this.mode !== "server") return;
+          try {
+            const sessions = await fetchSessions();
+            const byId = new Map(this._cache.map((c) => [c.id, c]));
+            this._cache = sessions.map((s) => {
+              const existing = byId.get(s.id);
+              return existing && existing.messages.length
+                ? Object.assign({}, existing, { title: s.title, updatedAt: s.updatedAt })
+                : s;
+            });
+          } catch (err) {
+            console.error("historyStore.refreshSessions", err);
+          }
+        },
+
+        list() {
+          if (this.mode === "server") {
+            return this._cache.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+          }
+          return localList();
         },
 
         get(id) {
-          return this.list().find((c) => c.id === id) || null;
+          if (this.mode !== "server") {
+            return this.list().find((c) => c.id === id) || null;
+          }
+          return this._cache.find((c) => c.id === id) || null;
+        },
+
+        // Carga un hilo completo (mensajes) — en servidor hace fetch bajo demanda
+        async load(id) {
+          if (this.mode !== "server") return this.get(id);
+          const cached = this.get(id);
+          if (cached && cached.messages.length) return cached;
+          const thread = await loadThread(id);
+          if (!thread) return null;
+          const conv = {
+            id: id,
+            title: thread.title || (cached && cached.title) || "",
+            createdAt: cached ? cached.createdAt : 0,
+            updatedAt: cached ? cached.updatedAt : 0,
+            messages: thread.messages,
+          };
+          this._upsert(conv);
+          return conv;
         },
 
         create(conv) {
-          const all = this.list();
+          if (this.mode === "server") {
+            this._upsert(conv); // la sesión se crea en servidor con el primer envío
+            return;
+          }
+          const all = localList();
           all.unshift(conv);
-          this.saveAll(all);
+          localSaveAll(all);
         },
 
         update(conv) {
-          const all = this.list();
+          if (this.mode === "server") {
+            this._upsert(conv); // servidor mantiene title/Last_Activity (refreshSessions)
+            return;
+          }
+          const all = localList();
           const i = all.findIndex((c) => c.id === conv.id);
           if (i !== -1) all[i] = conv;
           else all.unshift(conv);
-          this.saveAll(all);
+          localSaveAll(all);
         },
 
-        remove(id) {
-          this.saveAll(this.list().filter((c) => c.id !== id));
-        },
-
-        saveAll(all) {
-          const trimmed = all.slice(0, MAX_CONVERSATIONS);
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
-          } catch (err) {
-            console.error("historyStore.saveAll", err);
+        async remove(id) {
+          if (this.mode === "server") {
+            try {
+              await deleteSessionOnServer(id);
+            } catch (err) {
+              console.error("historyStore.remove", err);
+            }
+            this._cache = this._cache.filter((c) => c.id !== id);
+            return;
           }
+          localSaveAll(localList().filter((c) => c.id !== id));
+        },
+
+        // Envía un mensaje y devuelve la respuesta del agente
+        async send(convId, prompt) {
+          if (this.mode !== "server") {
+            await sleep(600);
+            return {
+              ok: true,
+              reply:
+                "This is a simulated response. Run the widget inside Zoho Creator to use the real backend (Client API).",
+            };
+          }
+          return sendToServer(convId, prompt);
+        },
+
+        _upsert(conv) {
+          const i = this._cache.findIndex((c) => c.id === conv.id);
+          if (i !== -1) this._cache[i] = conv;
+          else this._cache.unshift(conv);
         },
       };
 
@@ -937,7 +1197,8 @@
         const last = conv.messages[conv.messages.length - 1];
         const preview = document.createElement("div");
         preview.className = "conversation-preview";
-        preview.textContent = last ? truncate(last.content, 60) : "";
+        if (last) preview.textContent = truncate(last.content, 60);
+        preview.style.display = last ? "" : "none"; // server: sin mensajes aún
 
         const time = document.createElement("div");
         time.className = "conversation-time";
@@ -984,9 +1245,16 @@
         chatInput.focus();
       }
 
-      function selectConversation(id) {
+      async function selectConversation(id) {
         if (state.isLoading) return;
-        const conv = historyStore.get(id);
+        let conv;
+        try {
+          conv = await historyStore.load(id);
+        } catch (err) {
+          console.error("selectConversation", err);
+          showToast("Failed to load conversation");
+          return;
+        }
         if (!conv) return;
         state.currentConv = conv;
         state.messages = conv.messages;
@@ -1003,9 +1271,9 @@
         renderSidebar();
       }
 
-      function deleteConversation(id) {
+      async function deleteConversation(id) {
         if (state.currentConv?.id === id && state.isLoading) return;
-        historyStore.remove(id);
+        await historyStore.remove(id);
         if (state.currentConv?.id === id) {
           try {
             localStorage.removeItem(LAST_CONV_KEY);
@@ -1149,10 +1417,21 @@
         showThinking();
 
         try {
-          // Simulación o llamada real
-          const response = await invokeAgent(content);
+          const result = await historyStore.send(state.currentConv.id, content);
           removeThinking();
-          addMessage(response, "ai");
+          if (result.ok) {
+            addMessage(result.reply, "ai");
+          } else {
+            addMessage(
+              result.error || "Lo siento, hubo un error al procesar tu solicitud.",
+              "ai",
+            );
+          }
+          if (BACKEND_MODE === "server") {
+            // Sincronizar metadatos (título/actividad) con el servidor
+            await historyStore.refreshSessions();
+            renderSidebar();
+          }
         } catch (err) {
           removeThinking();
           addMessage(
@@ -1164,44 +1443,6 @@
           state.isLoading = false;
           sendBtn.disabled = chatInput.value.trim() === "";
         }
-      }
-
-      async function invokeAgent(prompt) {
-        // Historial para contexto
-        const chatHistory = state.messages.slice(0, -1).map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
-
-        // Nota: Aquí se asume que existe un backend o endpoint configurado.
-        // Si el widget corre dentro de Zoho Creator, se usaría ZOHO.CREATOR.API o similar.
-
-        if (!CONFIG.agentId || !CONFIG.authToken) {
-          // Respuesta de ejemplo si no hay config
-          return "This is a simulated response. To connect with a real AI agent, please configure the Agent ID and Auth Token in the source code.";
-        }
-
-        const endpoint = CONFIG.agentEndpoint.replace(
-          "{agentId}",
-          CONFIG.agentId,
-        );
-
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${CONFIG.authToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            prompt: prompt,
-            chat_history: chatHistory,
-          }),
-        });
-
-        if (!response.ok) throw new Error("Network response was not ok");
-
-        const data = await response.json();
-        return data.response || data.message || "I've processed your request.";
       }
 
       // ------------------------------------------------------------------
@@ -1290,6 +1531,11 @@
       importInput.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        if (BACKEND_MODE === "server") {
+          showToast("Import is only available in local mode");
+          e.target.value = "";
+          return;
+        }
         const reader = new FileReader();
         reader.onload = () => {
           try {
@@ -1298,7 +1544,7 @@
             const valid = arr
               .filter((c) => c && c.id && Array.isArray(c.messages))
               .slice(0, MAX_CONVERSATIONS);
-            historyStore.saveAll(valid);
+            localSaveAll(valid);
             renderSidebar();
             if (!state.currentConv || !valid.some((c) => c.id === state.currentConv.id)) {
               newChat();
@@ -1316,13 +1562,14 @@
       // ------------------------------------------------------------------
       // Init
       // ------------------------------------------------------------------
-      function init() {
+      async function init() {
+        await historyStore.init();
         renderSidebar();
         applyViewportMode();
         // Restaurar la última conversación activa si existe
         try {
           const lastId = localStorage.getItem(LAST_CONV_KEY);
-          if (lastId && historyStore.get(lastId)) selectConversation(lastId);
+          if (lastId) await selectConversation(lastId);
         } catch (err) {
           console.error(err);
         }

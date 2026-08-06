@@ -136,12 +136,34 @@ cambia los valores en `chat_config()` (sección `*Fields`) — el código no cam
 - **Límite de registros**: `getRecords` devuelve máximo 200; `getAllRecords` pagina
   automáticamente (máx 200 por página).
 
-## Conexión con el widget (pendiente, Opción B parte 2)
+## Conexión con el widget (implementada)
 
-El widget (`LM2Chatbot/app/widget.html`) ya tiene el adapter `historyStore` con el seam
-para conectarse. Falta implementar el adapter contra la Client API:
+El widget (`LM2Chatbot/app/widget.html`) tiene el adapter `historyStore` con dos capas:
 
-1. `createRecord("ChatRequests", {Session_ID, Prompt})` al enviar mensaje.
-2. Polling de `getRecord` sobre `Status` hasta `answered` (timeout ~45 s).
-3. `chat_list()` (este backend) para poblar la sidebar desde servidor.
-4. `getAllRecords("ChatMessages", criteria Session)` para cargar un hilo al abrirlo.
+- **server** (default cuando corre dentro de Creator): usa la **Client API** (`ZOHO.CREATOR.API`)
+  para leer `ChatSessions`/`ChatMessages` y crear `ChatRequests` con polling de `Status`
+  (job asíncrono → workflow On Submit → `chat_invoke`).
+- **local** (vista previa / fuera de Creator): fallback a `localStorage` con respuesta simulada.
+
+**Desviación de diseño**: el widget NO usa `chat_list()` — la Client API no puede invocar
+funciones custom; lee `ChatSessions` directamente (el scoping por usuario lo aplican los
+permisos de Creator, no una consulta). `chat_list()` queda como helper server-side para
+otros consumidores (páginas de Creator, integraciones).
+
+**Configuración en el widget**: en `LM2Chatbot/app/widget.html` → `CONFIG`:
+`appName` (REPLACE_WITH_APP_LINK_NAME — mismo link name que en `chat_config.dg`) y los
+nombres de módulo `ChatSessions`/`ChatMessages`/`ChatRequests`.
+
+**Flujo de envío**: `sendMessage()` → `addRecord(ChatRequests, {Session_ID, Prompt})` →
+polling cada 1.5 s (timeout 45 s) sobre el `ChatRequests` más reciente de la sesión
+(ordenado por `Created_Time` desc) hasta `Status == answered|failed` → la respuesta es
+`Reply` (o `Error`).
+
+**Notas**:
+- El borrado de una conversación borra `ChatSessions` + `ChatMessages` + `ChatRequests`
+  del servidor (varias llamadas `deleteRecord`).
+- `ChatRequests` acumula un registro por mensaje; se pueden depurar periodicamente.
+- El título de la sesión (primer prompt) lo fija el servidor; el widget lo refresca
+  con `refreshSessions()` tras cada intercambio.
+- Los mensajes multilínea del backend se renderizan gracias a `white-space: pre-wrap`
+  en `.message`.
