@@ -1,0 +1,182 @@
+/**
+ * chat_invoke.dg
+ *
+ * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
+ * por el widget o en pruebas) y ejecuta el ciclo completo:
+ *
+ *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+ *
+ * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
+ *            get_or_create_session, create_message, get_recent_history,
+ *            update_session
+ */
+
+Map chat_invoke(String requestId)
+{
+    config = chat_config();
+    app = config.get("appName");
+
+    request = zoho.creator.getRecordById(app, config.get("chatRequests"), requestId);
+    if (request == null) {
+        return {"status": "failed", "message": "Solicitud no encontrada"};
+    }
+
+    sessionId = request.get("Session_ID");
+    prompt = request.get("Prompt");
+
+    // 1. Sesión (crear si no existe)
+    session = get_or_create_session(sessionId);
+
+    // 2. Persistir mensaje del usuario
+    create_message(session.get("ID"), "user", prompt);
+
+    // 3. Historial para contexto (últimos 10 mensajes)
+    history = get_recent_history(session.get("ID"), 10);
+
+    // 4. Intención vía Zia
+    intent = chat_intent(prompt, history);
+
+    // 5. Dispatch + respuesta
+    reply = resolve_reply(intent);
+
+    // 6. Persistir respuesta AI
+    create_message(session.get("ID"), "ai", reply);
+
+    // 7. Actualizar sesión (título + actividad)
+    update_session(session, prompt);
+
+    // 8. Marcar la solicitud como respondida
+    zoho.creator.updateRecord(app, config.get("chatRequests"), requestId, {
+        "Status": "answered",
+        "Reply": reply
+    });
+
+    return {"status": "answered", "reply": reply, "sessionId": sessionId};
+}
+
+String resolve_reply(Map intent)
+{
+    if (intent.get("status") != "ok") {
+        return "Lo siento, no pude procesar tu solicitud. Por favor intenta de nuevo.";
+    }
+
+    kind = intent.get("kind");
+
+    if (kind == "answer" || kind == "clarify") {
+        return intent.get("text");
+    }
+
+    if (kind == "tool") {
+        toolResult = dispatch_tool(intent.get("tool"), intent.get("params"));
+        config = chat_config();
+        if (config.get("composeWithAI")) {
+            return compose_with_ai(intent.get("tool"), toolResult, intent);
+        }
+        return compose_reply(toolResult, intent);
+    }
+
+    return "Lo siento, no pude procesar tu solicitud. Por favor intenta de nuevo.";
+}
+
+Map dispatch_tool(String toolName, Map params)
+{
+    if (toolName == "track_package") return tool_track_package(params);
+    if (toolName == "search_services") return tool_services(params);
+    if (toolName == "find_offices") return tool_offices(params);
+    if (toolName == "check_coverage") return tool_coverage(params);
+    if (toolName == "find_contacts") return tool_contacts(params);
+    return {"ok": false, "message": "Herramienta desconocida: " + toolName};
+}
+
+// Composición con segunda llamada Zia (opcional, activada con composeWithAI)
+String compose_with_ai(String toolName, Map toolResult, Map intent)
+{
+    if (!toolResult.get("ok")) {
+        return "No pude completar la búsqueda. " + toolResult.get("message");
+    }
+    dataJson = json.toJson(toolResult.get("data"));
+    response = Zia[message: "Responde al usuario de forma natural y breve usando estos datos: " + dataJson,
+                   context: "Eres un asistente de atención al cliente de una agencia de paquetería, remesas y recargas telefónicas.",
+                   parameters: {"temperature": 0.3}];
+    if (response.get("status")) {
+        return response.get("data");
+    }
+    return compose_reply(toolResult, intent);
+}
+
+// --------------------------------------------------------------------------
+// Persistencia de sesión y mensajes
+// --------------------------------------------------------------------------
+Map get_or_create_session(String sessionId)
+{
+    config = chat_config();
+    app = config.get("appName");
+
+    records = zoho.creator.getRecords(app, config.get("chatSessions"),
+                                      "\"Session_ID\" == '" + sessionId + "'",
+                                      1, "Created_Time", -1);
+    if (records != null && records.size() > 0) {
+        return records.get(0);
+    }
+
+    return zoho.creator.createRecord(app, config.get("chatSessions"), {
+        "Session_ID": sessionId,
+        "Title": "Nueva conversación",
+        "User": zoho.loginuser.get("Id"),
+        "Last_Activity": zoho.currentdatetime
+    });
+}
+
+void create_message(String sessionRecordId, String role, String content)
+{
+    config = chat_config();
+    zoho.creator.createRecord(config.get("appName"), config.get("chatMessages"), {
+        "Session": sessionRecordId,
+        "Role": role,
+        "Content": content
+    });
+}
+
+List get_recent_history(String sessionRecordId, Integer limit)
+{
+    config = chat_config();
+    records = zoho.creator.getAllRecords(config.get("appName"), config.get("chatMessages"),
+                                         "\"Session\" == '" + sessionRecordId + "'",
+                                         1, 200, "Created_Time", 1);
+    history = List();
+    if (records == null || records.size() == 0) return history;
+
+    startIndex = records.size() - limit;
+    if (startIndex < 0) startIndex = 0;
+
+    for (i = startIndex; i < records.size(); i = i + 1) {
+        m = records.get(i);
+        item = Map();
+        item.put("role", m.get("Role"));
+        item.put("content", m.get("Content"));
+        history.add(item);
+    }
+    return history;
+}
+
+void update_session(Map session, String firstPrompt)
+{
+    config = chat_config();
+    app = config.get("appName");
+    title = session.get("Title");
+
+    if (title == null || title == "" || title == "Nueva conversación") {
+        newTitle = firstPrompt;
+        if (newTitle.length() > 50) {
+            newTitle = newTitle.sub_string(0, 50);
+        }
+        zoho.creator.updateRecord(app, config.get("chatSessions"), session.get("ID"), {
+            "Title": newTitle,
+            "Last_Activity": zoho.currentdatetime
+        });
+    } else {
+        zoho.creator.updateRecord(app, config.get("chatSessions"), session.get("ID"), {
+            "Last_Activity": zoho.currentdatetime
+        });
+    }
+}

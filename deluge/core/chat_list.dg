@@ -1,0 +1,34 @@
+/**
+ * chat_list.dg
+ *
+ * Índice de conversaciones del usuario actual, para poblar la sidebar del
+ * widget desde servidor (sustituye a la Capa 0 localStorage cuando el adapter
+ * del widget apunte a la Client API).
+ *
+ * Devuelve:
+ *   {"ok": true, "data": [{"id", "title", "lastActivity"}, ...]}
+ */
+
+Map chat_list()
+{
+    config = chat_config();
+    app = config.get("appName");
+    userId = zoho.loginuser.get("Id");
+
+    records = zoho.creator.getAllRecords(app, config.get("chatSessions"),
+                                         "\"User\" == '" + userId + "'",
+                                         1, 50, "Last_Activity", -1);
+
+    sessions = List();
+    if (records == null) return {"ok": true, "data": sessions};
+
+    for each s in records {
+        item = Map();
+        item.put("id", s.get("Session_ID"));
+        item.put("title", s.get("Title"));
+        item.put("lastActivity", s.get("Last_Activity"));
+        sessions.add(item);
+    }
+
+    return {"ok": true, "data": sessions};
+}
