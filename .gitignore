@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Zoho extension private keys (regenerate, never commit)
+*.pem
+
+# Zoho extension tool logs
+ZET-debug.log
+
+# Local AI tooling state (not project code)
+.atl/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
