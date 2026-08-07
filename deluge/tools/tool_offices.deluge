@@ -1,15 +1,17 @@
 /**
- * tool_offices.dg
+ * tool_offices.deluge
  *
  * Busca oficinas comerciales en el módulo Commercial_Office.
  * Recibe (todos opcionales): {"city", "country"}
  * Devuelve: {"ok": true, "data": [{name, address, city, country, phone, hours}]}
+ *
+ * Acceso nativo vía data_access.fetch_offices (0 llamadas de API de Creator).
+ * Límite 200 (range 0-199), orden Office_Name asc; criterio vacío -> [ID != 0].
  */
 
 Map tool_offices(Map params)
 {
     config = chat_config();
-    app = config.get("appName");
     fields = config.get("officeFields");
 
     criteria = "";
@@ -17,17 +19,16 @@ Map tool_offices(Map params)
     city = params.get("city");
     if (city != null && city != "") {
         criteria = append_criteria(criteria,
-            "\"" + fields.get("city") + "\" == '" + city + "'");
+            fields.get("city") + " == '" + city + "'");
     }
 
     country = params.get("country");
     if (country != null && country != "") {
         criteria = append_criteria(criteria,
-            "\"" + fields.get("country") + "\" == '" + country + "'");
+            fields.get("country") + " == '" + country + "'");
     }
 
-    records = zoho.creator.getAllRecords(app, config.get("commercialOffice"), criteria,
-                                         1, 200, fields.get("name"), 1);
+    records = fetch_offices(criteria);
 
     resultList = List();
     if (records == null) {

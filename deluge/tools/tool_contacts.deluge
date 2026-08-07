@@ -1,9 +1,12 @@
 /**
- * tool_contacts.dg
+ * tool_contacts.deluge
  *
  * Busca contactos (remitente o receptor) en el módulo Contacts.
  * Recibe (todos opcionales): {"name", "phone", "document"}
  * Devuelve: {"ok": true, "data": [{fullName, phone, email, document, role}]}
+ *
+ * Acceso nativo vía data_access.fetch_contacts (0 llamadas de API de Creator).
+ * Límite 50 (range 0-49), orden Full_Name asc; criterio vacío -> [ID != 0].
  *
  * NOTA DE PRIVACIDAD: los resultados pueden contener PII. Si el LLM configurado
  * en Zia es externo (OpenAI/Gemini/Anthropic), la data sale de la organización;
@@ -13,7 +16,6 @@
 Map tool_contacts(Map params)
 {
     config = chat_config();
-    app = config.get("appName");
     fields = config.get("contactFields");
 
     criteria = "";
@@ -21,23 +23,22 @@ Map tool_contacts(Map params)
     name = params.get("name");
     if (name != null && name != "") {
         criteria = append_criteria(criteria,
-            "\"" + fields.get("fullName") + "\" == '" + name + "'");
+            fields.get("fullName") + " == '" + name + "'");
     }
 
     phone = params.get("phone");
     if (phone != null && phone != "") {
         criteria = append_criteria(criteria,
-            "\"" + fields.get("phone") + "\" == '" + phone + "'");
+            fields.get("phone") + " == '" + phone + "'");
     }
 
     document = params.get("document");
     if (document != null && document != "") {
         criteria = append_criteria(criteria,
-            "\"" + fields.get("document") + "\" == '" + document + "'");
+            fields.get("document") + " == '" + document + "'");
     }
 
-    records = zoho.creator.getAllRecords(app, config.get("contacts"), criteria,
-                                         1, 50, fields.get("fullName"), 1);
+    records = fetch_contacts(criteria);
 
     resultList = List();
     if (records == null) {

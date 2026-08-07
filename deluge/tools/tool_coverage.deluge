@@ -1,5 +1,5 @@
 /**
- * tool_coverage.dg
+ * tool_coverage.deluge
  *
  * Consulta la cobertura de países/proveedores desde el módulo Coverage_Location
  * (zonas cubiertas por cada vendor para un tipo de servicio: remesas, recargas,
@@ -7,12 +7,15 @@
  *
  * Recibe (todos opcionales): {"country", "vendor", "serviceType"}
  * Devuelve: {"ok": true, "data": [{country, vendor, serviceType, details}]}
+ *
+ * Acceso nativo vía data_access.fetch_coverage (0 llamadas de API de Creator).
+ * Límite 200 (range 0-199), orden Country asc; cláusulas unidas con
+ * append_criteria (sintaxis nativa, sin comillas dobles en los campos).
  */
 
 Map tool_coverage(Map params)
 {
     config = chat_config();
-    app = config.get("appName");
     fields = config.get("coverageFields");
 
     criteria = "";
@@ -20,23 +23,22 @@ Map tool_coverage(Map params)
     country = params.get("country");
     if (country != null && country != "") {
         criteria = append_criteria(criteria,
-            "\"" + fields.get("country") + "\" == '" + country + "'");
+            fields.get("country") + " == '" + country + "'");
     }
 
     vendor = params.get("vendor");
     if (vendor != null && vendor != "") {
         criteria = append_criteria(criteria,
-            "\"" + fields.get("vendor") + "\" == '" + vendor + "'");
+            fields.get("vendor") + " == '" + vendor + "'");
     }
 
     serviceType = params.get("serviceType");
     if (serviceType != null && serviceType != "") {
         criteria = append_criteria(criteria,
-            "\"" + fields.get("serviceType") + "\" == '" + serviceType + "'");
+            fields.get("serviceType") + " == '" + serviceType + "'");
     }
 
-    records = zoho.creator.getAllRecords(app, config.get("coverageLocation"), criteria,
-                                         1, 200, fields.get("country"), 1);
+    records = fetch_coverage(criteria);
 
     resultList = List();
     if (records == null) {

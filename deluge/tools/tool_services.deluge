@@ -1,15 +1,17 @@
 /**
- * tool_services.dg
+ * tool_services.deluge
  *
  * Lista servicios disponibles desde el módulo Service.
  * Recibe (todos opcionales): {"serviceType", "origin", "destination"}
  * Devuelve: {"ok": true, "data": [{name, type, price, currency, description, estimatedTime}]}
+ *
+ * Acceso nativo vía data_access.fetch_services (0 llamadas de API de Creator).
+ * Límite 200 (range 0-199), orden Service_Name asc; criterio vacío -> [ID != 0].
  */
 
 Map tool_services(Map params)
 {
     config = chat_config();
-    app = config.get("appName");
     fields = config.get("serviceFields");
 
     criteria = "";
@@ -17,25 +19,24 @@ Map tool_services(Map params)
     serviceType = params.get("serviceType");
     if (serviceType != null && serviceType != "") {
         criteria = append_criteria(criteria,
-            "\"" + fields.get("type") + "\" == '" + serviceType + "'");
+            fields.get("type") + " == '" + serviceType + "'");
     }
 
     originField = fields.get("origin");
     origin = params.get("origin");
     if (origin != null && origin != "" && originField != null && originField != "") {
         criteria = append_criteria(criteria,
-            "\"" + originField + "\" == '" + origin + "'");
+            originField + " == '" + origin + "'");
     }
 
     destinationField = fields.get("destination");
     destination = params.get("destination");
     if (destination != null && destination != "" && destinationField != null && destinationField != "") {
         criteria = append_criteria(criteria,
-            "\"" + destinationField + "\" == '" + destination + "'");
+            destinationField + " == '" + destination + "'");
     }
 
-    records = zoho.creator.getAllRecords(app, config.get("service"), criteria,
-                                         1, 200, fields.get("name"), 1);
+    records = fetch_services(criteria);
 
     resultList = List();
     if (records == null) {

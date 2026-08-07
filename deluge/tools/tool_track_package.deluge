@@ -1,15 +1,16 @@
 /**
- * tool_track_package.dg
+ * tool_track_package.deluge
  *
  * Busca el estado de un paquete por número de seguimiento en el módulo Package.
  * Recibe: {"trackingNumber": "..."}
  * Devuelve: {"ok": true, "data": {...}} | {"ok": false, "message": "..."}
+ *
+ * Acceso nativo vía data_access.fetch_packages (0 llamadas de API de Creator).
  */
 
 Map tool_track_package(Map params)
 {
     config = chat_config();
-    app = config.get("appName");
     fields = config.get("packageFields");
 
     trackingNumber = params.get("trackingNumber");
@@ -17,13 +18,13 @@ Map tool_track_package(Map params)
         return {"ok": false, "message": "Falta el número de seguimiento."};
     }
 
-    criteria = "\"" + fields.get("trackingNumber") + "\" == '" + trackingNumber + "'";
-    records = zoho.creator.getRecords(app, config.get("package"), criteria,
-                                      1, "Created_Time", -1);
+    criteria = fields.get("trackingNumber") + " == '" + trackingNumber + "'";
+    records = fetch_packages(criteria);
     if (records == null || records.size() == 0) {
         return {"ok": false, "message": "No se encontró un paquete con ese número de seguimiento."};
     }
 
+    // .get(0) = más reciente (fetch_packages ordena por Created_Time desc)
     pkg = records.get(0);
     data = Map();
     data.put("trackingNumber", pkg.get(fields.get("trackingNumber")));
