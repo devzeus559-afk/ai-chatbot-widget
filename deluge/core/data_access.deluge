@@ -1,0 +1,141 @@
+/**
+ * data_access.deluge
+ *
+ * Capa única de acceso nativo a datos de Zoho Creator (fetch / insert / mutate).
+ * Sustituye las llamadas de API de Creator por la sintaxis nativa:
+ *
+ *   <var> = <Form>[<criteria>] sort by <Field> [desc] range from <a> to <b>;
+ *   <id>  = insert into <Form> [ <Field> = <value> ];
+ *
+ * Convenciones:
+ * - Form link name, sort y rango son LITERALES (Creator no acepta variables
+ *   en esas posiciones); solo el criterio (y el rango en fetch_chat_sessions)
+ *   se parametriza.
+ * - Criterios nativos: campo SIN comillas dobles, valor texto entre comillas
+ *   simples (`Field == 'value'`); normalize_criteria("") -> "ID != 0".
+ * - Los registros obtenidos están ENLAZADOS: mutarlos (rec.Campo = valor)
+ *   persiste el cambio sin ninguna llamada de API.
+ * - `insert into` NO ejecuta los scripts On Validate / On Success del módulo:
+ *   verificar en la UI de Creator antes de publicar.
+ *
+ * Funciones: normalize_criteria, fetch_chat_requests, fetch_chat_sessions,
+ *            fetch_chat_messages, insert_chat_session, insert_chat_message,
+ *            fetch_packages, fetch_services, fetch_offices, fetch_coverage,
+ *            fetch_contacts
+ */
+
+// --------------------------------------------------------------------------
+// Normalización de criterios: "" -> "ID != 0" (trae todos los registros)
+// --------------------------------------------------------------------------
+String normalize_criteria(String c)
+{
+    config = chat_config();
+    if (c == null || c == "") {
+        return "ID != 0";
+    }
+    return c;
+}
+
+// --------------------------------------------------------------------------
+// ChatRequests — búsqueda por criterio (sin sort/range)
+// --------------------------------------------------------------------------
+List fetch_chat_requests(String c)
+{
+    config = chat_config();
+    criteria = normalize_criteria(c);
+    records = ChatRequests[criteria];
+    return records;
+}
+
+// --------------------------------------------------------------------------
+// ChatSessions — ordenadas por Last_Activity desc, con rango parametrizado
+// --------------------------------------------------------------------------
+List fetch_chat_sessions(String c, Number startIndex, Number endIndex)
+{
+    config = chat_config();
+    criteria = normalize_criteria(c);
+    records = ChatSessions[criteria] sort by Last_Activity desc range from startIndex to endIndex;
+    return records;
+}
+
+// --------------------------------------------------------------------------
+// ChatMessages — últimos 10 (más recientes primero, sin reverse)
+// --------------------------------------------------------------------------
+List fetch_chat_messages(String c)
+{
+    config = chat_config();
+    criteria = normalize_criteria(c);
+    records = ChatMessages[criteria] sort by Created_Time desc range from 0 to 9;
+    return records;
+}
+
+// --------------------------------------------------------------------------
+// Insert helpers — devuelven el ID numérico del registro creado
+// --------------------------------------------------------------------------
+Number insert_chat_session(Map data)
+{
+    config = chat_config();
+    newId = insert into ChatSessions
+    [
+        Session_ID = data.get("Session_ID")
+        Title = data.get("Title")
+        User = data.get("User")
+        Last_Activity = data.get("Last_Activity")
+    ];
+    return newId;
+}
+
+Number insert_chat_message(Map data)
+{
+    config = chat_config();
+    newId = insert into ChatMessages
+    [
+        Session = data.get("Session")
+        Role = data.get("Role")
+        Content = data.get("Content")
+    ];
+    return newId;
+}
+
+// --------------------------------------------------------------------------
+// Módulos de negocio — límites y órdenes preservados (ver spec lookup-tools)
+// --------------------------------------------------------------------------
+List fetch_packages(String c)
+{
+    config = chat_config();
+    criteria = normalize_criteria(c);
+    records = Package[criteria] sort by Created_Time desc;
+    return records;
+}
+
+List fetch_services(String c)
+{
+    config = chat_config();
+    criteria = normalize_criteria(c);
+    records = Service[criteria] sort by Service_Name range from 0 to 199;
+    return records;
+}
+
+List fetch_offices(String c)
+{
+    config = chat_config();
+    criteria = normalize_criteria(c);
+    records = Commercial_Office[criteria] sort by Office_Name range from 0 to 199;
+    return records;
+}
+
+List fetch_coverage(String c)
+{
+    config = chat_config();
+    criteria = normalize_criteria(c);
+    records = Coverage_Location[criteria] sort by Country range from 0 to 199;
+    return records;
+}
+
+List fetch_contacts(String c)
+{
+    config = chat_config();
+    criteria = normalize_criteria(c);
+    records = Contacts[criteria] sort by Full_Name range from 0 to 49;
+    return records;
+}
