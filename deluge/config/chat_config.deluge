@@ -143,5 +143,18 @@ Map chat_config()
 
     config.put("tools", tools);
 
+    // --- Catálogo de herramientas en texto legible (para el prompt de Zia) ---
+    // Texto plano en vez de json.toJson (no reconocido por el editor de Creator).
+    toolsText = "";
+    for each t in tools {
+        toolsText = toolsText + "- " + t.get("name") + ": " + t.get("description");
+        p = t.get("params");
+        if (p != null && p.size() > 0) {
+            toolsText = toolsText + " Params: " + p.toString();
+        }
+        toolsText = toolsText + "\n";
+    }
+    config.put("toolsText", toolsText);
+
     return config;
 }

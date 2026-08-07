@@ -73,7 +73,7 @@ String compose_reply(Map toolResult, Map intent)
         return format_contacts(data);
     }
 
-    return json.toJson(data);
+    return "Datos obtenidos: " + data.toString();
 }
 
 String format_tracking(Map pkg)

@@ -15,7 +15,7 @@
 Map chat_intent(String userPrompt, List history)
 {
     config = chat_config();
-    catalogText = json.toJson(config.get("tools"));
+    catalogText = config.get("toolsText");
 
     context = "Eres un asistente virtual de una agencia internacional de paquetería, "
             + "remesas y recargas telefónicas. Ayudas a clientes y agentes a consultar "

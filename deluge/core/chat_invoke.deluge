@@ -104,8 +104,8 @@ String compose_with_ai(String toolName, Map toolResult, Map intent)
     if (!toolResult.get("ok")) {
         return "No pude completar la búsqueda. " + toolResult.get("message");
     }
-    dataJson = json.toJson(toolResult.get("data"));
-    response = Zia[message: "Responde al usuario de forma natural y breve usando estos datos: " + dataJson,
+    dataText = compose_reply(toolResult, intent);
+    response = Zia[message: "Responde al usuario de forma natural y breve usando estos datos: " + dataText,
                    context: "Eres un asistente de atención al cliente de una agencia de paquetería, remesas y recargas telefónicas.",
                    parameters: {"temperature": 0.3}];
     if (response.get("status")) {
