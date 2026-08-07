@@ -1,9 +1,12 @@
 /**
- * chat_list.dg
+ * chat_list.deluge
  *
  * Índice de conversaciones del usuario actual, para poblar la sidebar del
  * widget desde servidor (sustituye a la Capa 0 localStorage cuando el adapter
  * del widget apunte a la Client API).
+ *
+ * Acceso nativo vía data_access.fetch_chat_sessions (0 llamadas de API de Creator):
+ * solo las sesiones del usuario logueado, ordenadas por Last_Activity desc.
  *
  * Devuelve:
  *   {"ok": true, "data": [{"id", "title", "lastActivity"}, ...]}
@@ -12,12 +15,9 @@
 Map chat_list()
 {
     config = chat_config();
-    app = config.get("appName");
     userId = zoho.loginuser.get("Id");
 
-    records = zoho.creator.getAllRecords(app, config.get("chatSessions"),
-                                         "\"User\" == '" + userId + "'",
-                                         1, 50, "Last_Activity", -1);
+    records = fetch_chat_sessions("User == " + userId, 0, 49);
 
     sessions = List();
     if (records == null) {

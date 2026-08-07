@@ -1,10 +1,13 @@
 /**
- * chat_invoke.dg
+ * chat_invoke.deluge
  *
  * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
  * por el widget o en pruebas) y ejecuta el ciclo completo:
  *
  *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+ *
+ * Todo el acceso a datos es NATIVO (data_access.deluge): 0 llamadas de API de
+ * Creator y 0 llamadas externas por turno.
  *
  * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
  *            get_or_create_session, create_message, get_recent_history,
@@ -14,12 +17,12 @@
 Map chat_invoke(String requestId)
 {
     config = chat_config();
-    app = config.get("appName");
 
-    request = zoho.creator.getRecordById(app, config.get("chatRequests"), requestId);
-    if (request == null) {
+    requestRecords = fetch_chat_requests("ID == " + requestId);
+    if (requestRecords == null || requestRecords.size() == 0) {
         return {"status": "failed", "message": "Solicitud no encontrada"};
     }
+    request = requestRecords.get(0);
 
     sessionId = request.get("Session_ID");
     prompt = request.get("Prompt");
@@ -30,8 +33,8 @@ Map chat_invoke(String requestId)
     // 2. Persistir mensaje del usuario
     create_message(session.get("ID"), "user", prompt);
 
-    // 3. Historial para contexto (últimos 10 mensajes)
-    history = get_recent_history(session.get("ID"), 10);
+    // 3. Historial para contexto (últimos 10 mensajes, más reciente primero)
+    history = get_recent_history(session.get("ID"));
 
     // 4. Intención vía Zia
     intent = chat_intent(prompt, history);
@@ -42,14 +45,12 @@ Map chat_invoke(String requestId)
     // 6. Persistir respuesta AI
     create_message(session.get("ID"), "ai", reply);
 
-    // 7. Actualizar sesión (título + actividad)
+    // 7. Actualizar sesión (título + actividad) mutando el registro enlazado
     update_session(session, prompt);
 
-    // 8. Marcar la solicitud como respondida
-    zoho.creator.updateRecord(app, config.get("chatRequests"), requestId, {
-        "Status": "answered",
-        "Reply": reply
-    });
+    // 8. Marcar la solicitud como respondida (mutación del registro enlazado)
+    request.Status = "answered";
+    request.Reply = reply;
 
     return {"status": "answered", "reply": reply, "sessionId": sessionId};
 }
@@ -115,56 +116,55 @@ String compose_with_ai(String toolName, Map toolResult, Map intent)
 }
 
 // --------------------------------------------------------------------------
-// Persistencia de sesión y mensajes
+// Persistencia de sesión y mensajes (acceso nativo)
 // --------------------------------------------------------------------------
 Map get_or_create_session(String sessionId)
 {
     config = chat_config();
-    app = config.get("appName");
 
-    records = zoho.creator.getRecords(app, config.get("chatSessions"),
-                                      "\"Session_ID\" == '" + sessionId + "'",
-                                      1, "Created_Time", -1);
+    // Sesión existente: registro ENLAZADO (mutable) vía fetch nativo
+    records = fetch_chat_sessions("Session_ID == '" + sessionId + "'", 0, 0);
     if (records != null && records.size() > 0) {
         return records.get(0);
     }
 
-    return zoho.creator.createRecord(app, config.get("chatSessions"), {
-        "Session_ID": sessionId,
-        "Title": "Nueva conversación",
-        "User": zoho.loginuser.get("Id"),
-        "Last_Activity": zoho.currentdatetime
-    });
+    // Sesión nueva: insert -> devuelve solo el ID numérico -> refetch para
+    // obtener un registro ENLAZADO que update_session pueda mutar.
+    data = Map();
+    data.put("Session_ID", sessionId);
+    data.put("Title", "Nueva conversación");
+    data.put("User", zoho.loginuser.get("Id"));
+    data.put("Last_Activity", zoho.currentdatetime);
+    newId = insert_chat_session(data);
+
+    newRecords = fetch_chat_sessions("ID == " + newId, 0, 0);
+    if (newRecords != null && newRecords.size() > 0) {
+        return newRecords.get(0);
+    }
+    return null;
 }
 
 void create_message(String sessionRecordId, String role, String content)
 {
     config = chat_config();
-    zoho.creator.createRecord(config.get("appName"), config.get("chatMessages"), {
-        "Session": sessionRecordId,
-        "Role": role,
-        "Content": content
-    });
+    data = Map();
+    data.put("Session", sessionRecordId);
+    data.put("Role", role);
+    data.put("Content", content);
+    insert_chat_message(data);
 }
 
-List get_recent_history(String sessionRecordId, Integer limit)
+List get_recent_history(String sessionRecordId)
 {
     config = chat_config();
-    records = zoho.creator.getAllRecords(config.get("appName"), config.get("chatMessages"),
-                                         "\"Session\" == '" + sessionRecordId + "'",
-                                         1, 200, "Created_Time", 1);
+    // Últimos 10, más reciente primero (desc, range 0-9, SIN reverse)
+    records = fetch_chat_messages("Session == " + sessionRecordId);
     history = List();
     if (records == null || records.size() == 0) {
         return history;
     }
 
-    startIndex = records.size() - limit;
-    if (startIndex < 0) {
-        startIndex = 0;
-    }
-
-    for (i = startIndex; i < records.size(); i = i + 1) {
-        m = records.get(i);
+    for each m in records {
         item = Map();
         item.put("role", m.get("Role"));
         item.put("content", m.get("Content"));
@@ -176,21 +176,17 @@ List get_recent_history(String sessionRecordId, Integer limit)
 void update_session(Map session, String firstPrompt)
 {
     config = chat_config();
-    app = config.get("appName");
     title = session.get("Title");
 
+    // Mutación directa del registro ENLAZADO: persiste sin llamada de API
     if (title == null || title == "" || title == "Nueva conversación") {
         newTitle = firstPrompt;
         if (newTitle.length() > 50) {
             newTitle = newTitle.substring(0, 50);
         }
-        zoho.creator.updateRecord(app, config.get("chatSessions"), session.get("ID"), {
-            "Title": newTitle,
-            "Last_Activity": zoho.currentdatetime
-        });
+        session.Title = newTitle;
+        session.Last_Activity = zoho.currentdatetime;
     } else {
-        zoho.creator.updateRecord(app, config.get("chatSessions"), session.get("ID"), {
-            "Last_Activity": zoho.currentdatetime
-        });
+        session.Last_Activity = zoho.currentdatetime;
     }
 }
