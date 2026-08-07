@@ -1,0 +1,54 @@
+# SDD configuration for ai-chatbot-widget
+schema: spec-driven
+
+context: |
+  Stack: Deluge backend (Zoho Creator, server-side, Zia task) + vanilla JS
+  single-file widget (LM2Chatbot/app/widget.html) + Node/Express Zoho extension
+  dev server (LM2Chatbot/server/index.js, boilerplate only).
+  Architecture: Client API + async job pattern. Widget creates ChatRequests via
+  addRecord; On Submit workflow runs chat_invoke -> chat_intent (Zia router,
+  strict JSON {tool,params}|{answer}|{clarify}) -> dispatch_tool -> compose_reply;
+  widget polls Status (45s timeout). No Creator API calls from the widget.
+  Testing: NO test runner. Deluge cannot run locally (Zoho Creator only);
+  widget is browser-side Zoho Client API; server is stock Zoho boilerplate.
+  Strict TDD disabled.
+  Style: Deluge snake_case functions, .deluge extension, Spanish-neutral
+  comments, English UI strings, Spanish docs (README), conventional commits
+  (feat|fix|refactor|docs + scope e.g. (deluge), (widget)). Git branch: develop.
+
+testing:
+  strict_tdd: false
+  test_command: ""
+  note: >-
+    No automated test runner exists. Deluge executes only inside Zoho Creator
+    (cannot run locally); the widget depends on the Creator Client API at
+    runtime; the Node server is unmodified Zoho boilerplate with no business
+    logic. Verification relies on manual/managed checks in Zoho Creator plus
+    static review. Do not force RED-GREEN-REFACTOR.
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Keep scope aligned with the 5 business tools (track_package, services, offices, coverage, contacts)
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Scenarios must be verifiable statically or in Zoho Creator; no local runner
+  design:
+    - Document Zoho Creator constraints (Zia 40s timeout, polling 45s, getRecords 200 max, no global Deluge state)
+    - Every Deluge function must start with config = chat_config();
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - Separate Deluge, widget, and server changes; note manual test steps for Creator
+  apply:
+    - Follow existing code patterns (snake_case Deluge, English UI strings, Spanish-neutral comments)
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+    note: "Verification is static/manual (Deluge has no local runner); list manual Zoho Creator checks per task"
+  archive:
+    - Warn before merging destructive deltas
