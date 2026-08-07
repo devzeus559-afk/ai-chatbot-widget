@@ -15,9 +15,6 @@ Map chat_config()
 {
     config = Map();
 
-    // --- App ---
-    config.put("appName", "REPLACE_WITH_APP_LINK_NAME");
-
     // --- Módulos de persistencia del chat ---
     config.put("chatSessions", "ChatSessions");
     config.put("chatMessages", "ChatMessages");

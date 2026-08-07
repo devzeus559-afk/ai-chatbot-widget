@@ -8,8 +8,9 @@ con la tarea `Zia`, y el widget se comunica por la Client API con un patrón de 
 
 ## Quick path
 
-1. Reemplazar los link names reales: `appName` en `LM2Chatbot/app/widget.html` (`CONFIG`)
-   y en `deluge/config/chat_config.dg`.
+1. Reemplazar los link names reales: `appName` en `LM2Chatbot/app/widget.html` (`CONFIG`,
+   solo para la Client API del widget). El backend Deluge usa **acceso nativo a datos**
+   (`Form[criterio]`, `insert into`) y ya NO necesita `appName` ni `zoho.creator.*`.
 2. En la consola de Creator: habilitar la tarea Zia de Deluge (Zoho GenAI recomendado).
 3. Crear los 3 módulos de persistencia (`ChatSessions`, `ChatMessages`, `ChatRequests`)
    según el esquema del README del backend.
@@ -29,9 +30,9 @@ addRecord(ChatRequests)  ───────────▶  On Submit workflo
    │                                    │     ├─ create_message(user)
    │                                    │     ├─ chat_intent()          ← tarea Zia (sin API Creator)
    │                                    │     │     └─ {tool,params} | {answer} | {clarify}
-   │                                    │     ├─ dispatch_tool()        ← switch a tool_*
-   │                                    │     │     └─ zoho.creator.getRecords (server-side)
-   │                                    │     ├─ compose_reply()        ← plantilla o Zia
+    │                                    │     ├─ dispatch_tool()        ← switch a tool_*
+    │                                    │     │     └─ data_access (fetch/insert nativo server-side)
+    │                                    │     ├─ compose_reply()        ← plantilla o Zia
    │                                    │     └─ create_message(ai) + update_session()
    │                                    │
 poll(Status: pending→answered|failed) ◀─┘     Respuesta en ChatRequests.Reply
@@ -54,10 +55,10 @@ Principios de diseño:
 | `LM2Chatbot/app/widget.html` | Widget completo (UI + sidebar de historial + adapter Client API) |
 | `LM2Chatbot/` | Paquete de la extensión Zoho (app, server, manifest) — sin scripts Deluge |
 | `deluge/README.md` | Setup del backend: esquema de módulos, funciones, mapeo de campos |
-| `deluge/config/chat_config.dg` | Configuración central: link names, campos, catálogo de 5 tools |
-| `deluge/core/` | `chat_common` (helpers), `chat_intent` (router Zia), `chat_invoke` (orquestador), `chat_list` (índice server-side) |
+| `deluge/config/chat_config.deluge` | Configuración central: link names, campos, catálogo de 5 tools |
+| `deluge/core/` | `data_access` (acceso nativo a datos), `chat_common` (helpers), `chat_intent` (router Zia), `chat_invoke` (orquestador), `chat_list` (índice server-side) |
 | `deluge/tools/` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts` |
-| `deluge/workflow/` | `on_submit_chatrequests.dg` (script del workflow) |
+| `deluge/workflow/` | `on_submit_chatrequests.deluge` (script del workflow) |
 
 ## Flujo del widget (historyStore)
 
@@ -73,7 +74,7 @@ queda como helper server-side para otros consumidores.
 
 ## Configuración (checklist)
 
-- [ ] `CONFIG.appName` en `widget.html` y `appName` en `chat_config.dg` con el link name real
+- [ ] `CONFIG.appName` en `widget.html` con el link name real (solo Client API del widget; el backend es acceso nativo, sin `appName`)
 - [ ] Módulos de negocio: validar que los `*Fields` de `chat_config()` coinciden con el esquema real
 - [ ] Módulos de chat creados según el esquema del `deluge/README.md`
 - [ ] Funciones Deluge creadas con el MISMO nombre que en los archivos
@@ -88,7 +89,8 @@ queda como helper server-side para otros consumidores.
 - **Timeout**: Zia devuelve en máx 40 s; el widget espera 45 s por polling.
 - **Throttling**: Zoho GenAI permite 7 requests simultáneas por usuario y 10 por org;
   el widget bloquea envíos mientras hay una respuesta en vuelo.
-- **Límites de lectura**: `getRecords` máx 200; `getAllRecords` pagina (máx 200/página).
+- **Límites de lectura**: acceso nativo con `range` — 200 registros en listados de negocio,
+  50 en contactos, 10 (más recientes) en historial.
 - **`ChatRequests` acumula** un registro por mensaje; depurar periódicamente.
 
 ## Estado

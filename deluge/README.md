@@ -3,8 +3,9 @@
 Backend del widget de chat para agencia internacional de **paquetería, remesas y recargas telefónicas**.
 
 Se define en Deluge y se pega en la app de **Zoho Creator**. No consume llamadas a API de Creator:
-usa la tarea `Zia` de Deluge (solo disponible en Creator) y acceso a datos **server-side** vía
-`zoho.creator.*`, que NO es una llamada de API desde el widget.
+usa la tarea `Zia` de Deluge (solo disponible en Creator) y **acceso nativo a datos server-side**
+(sintaxis `Form[criterio]`, `insert into` y mutación en memoria vía `deluge/core/data_access.deluge`),
+sin ninguna llamada `zoho.creator.*` — 0 llamadas externas y 0 Developer API por turno de chat.
 
 ---
 
@@ -21,7 +22,7 @@ createRecord(ChatRequests)  ───▶   On Submit workflow
                                      │     ├─ chat_intent()          ← Zia task (sin API Creator)
                                      │     │     └─ {tool,params} | {answer} | {clarify}
                                      │     ├─ dispatch_tool()        ← switch a tool_*
-                                     │     │     └─ zoho.creator.getRecords (server-side)
+                                     │     │     └─ data_access (fetch/insert nativo server-side)
                                      │     ├─ compose_reply()        ← plantilla o Zia
                                      │     └─ create_message(ai) + update_session()
                                      │
@@ -34,35 +35,37 @@ poll(getRecord: Status)  ◀───   Status: pending → answered | failed
 deluge/
 ├── README.md                  ← este archivo
 ├── config/
-│   └── chat_config.dg         ← configuración central (link names + catálogo de tools)
+│   └── chat_config.deluge     ← configuración central (link names + catálogo de tools)
 ├── core/
-│   ├── chat_common.dg         ← helpers: criterios, parseo JSON robusto, formato de respuestas
-│   ├── chat_intent.dg         ← router: Zia task → JSON de intención
-│   ├── chat_invoke.dg         ← orquestador + persistencia de sesión/mensajes
-│   └── chat_list.dg           ← índice de conversaciones para la sidebar
+│   ├── chat_common.deluge     ← helpers: criterios, parseo JSON robusto, formato de respuestas
+│   ├── data_access.deluge     ← acceso nativo a datos (fetch/insert/mutate; 0 llamadas zoho.creator.*)
+│   ├── chat_intent.deluge     ← router: Zia task → JSON de intención
+│   ├── chat_invoke.deluge     ← orquestador + persistencia de sesión/mensajes
+│   └── chat_list.deluge       ← índice de conversaciones para la sidebar
 ├── tools/
-│   ├── tool_track_package.dg  ← estado de paquete por tracking number
-│   ├── tool_services.dg       ← servicios disponibles (filtros opcionales)
-│   ├── tool_offices.dg        ← oficinas comerciales (ciudad/país)
-│   ├── tool_coverage.dg       ← cobertura de países/proveedores por servicio
-│   └── tool_contacts.dg       ← búsqueda de contactos (remitente/receptor)
+│   ├── tool_track_package.deluge  ← estado de paquete por tracking number
+│   ├── tool_services.deluge       ← servicios disponibles (filtros opcionales)
+│   ├── tool_offices.deluge        ← oficinas comerciales (ciudad/país)
+│   ├── tool_coverage.deluge       ← cobertura de países/proveedores por servicio
+│   └── tool_contacts.deluge       ← búsqueda de contactos (remitente/receptor)
 └── workflow/
-    └── on_submit_chatrequests.dg  ← script del workflow On Submit de ChatRequests
+    └── on_submit_chatrequests.deluge  ← script del workflow On Submit de ChatRequests
 ```
 
 ## Funciones a crear en Creator (una por cada definición del archivo)
 
 | Archivo | Funciones |
 |---|---|
-| `chat_config.dg` | `chat_config` |
-| `chat_common.dg` | `append_criteria`, `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts` |
-| `chat_intent.dg` | `chat_intent`, `build_intent_prompt` |
-| `chat_invoke.dg` | `chat_invoke`, `resolve_reply`, `dispatch_tool`, `compose_with_ai`, `get_or_create_session`, `create_message`, `get_recent_history`, `update_session` |
-| `chat_list.dg` | `chat_list` |
-| `tools/*.dg` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts` |
+| `chat_config.deluge` | `chat_config` |
+| `chat_common.deluge` | `append_criteria`, `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts` |
+| `data_access.deluge` | `normalize_criteria`, `fetch_chat_requests`, `fetch_chat_sessions`, `fetch_chat_messages`, `insert_chat_session`, `insert_chat_message`, `fetch_packages`, `fetch_services`, `fetch_offices`, `fetch_coverage`, `fetch_contacts` |
+| `chat_intent.deluge` | `chat_intent`, `build_intent_prompt` |
+| `chat_invoke.deluge` | `chat_invoke`, `resolve_reply`, `dispatch_tool`, `compose_with_ai`, `get_or_create_session`, `create_message`, `get_recent_history`, `update_session` |
+| `chat_list.deluge` | `chat_list` |
+| `tools/*.deluge` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts` |
 
 > El nombre de la función en el editor de Creator debe coincidir EXACTAMENTE con el nombre
-> definido en el archivo (por ejemplo, crear la función `chat_invoke`, no `chat_invoke.dg`).
+> definido en el archivo (por ejemplo, crear la función `chat_invoke`, no `chat_invoke.deluge`).
 
 ## Requisitos previos
 
@@ -98,13 +101,14 @@ deluge/
 3. **Crear las funciones** listadas arriba pegando el contenido de cada archivo.
 
 4. **Crear el workflow "On Submit"** en el módulo `ChatRequests` con el script de
-   `workflow/on_submit_chatrequests.dg`.
+   `workflow/on_submit_chatrequests.deluge`.
 
 ## Configuración
 
-Abrir `config/chat_config.dg` y reemplazar los **link names** por los reales de tu app.
+Abrir `config/chat_config.deluge` y reemplazar los **link names** por los reales de tu app.
 Los link names se ven en la URL del módulo/form dentro de Creator (por ejemplo
-`https://creator.zoho.com/.../form/Package` → link name `Package`).
+`https://creator.zoho.com/.../form/Package` → link name `Package`). El backend ya NO
+necesita `appName`: todo el acceso a datos es nativo (no usa `zoho.creator.*`).
 
 ### Mapeo asumido de campos de negocio (AJUSTAR)
 
@@ -133,8 +137,9 @@ cambia los valores en `chat_config()` (sección `*Fields`) — el código no cam
 - **Scoping por usuario**: si un módulo es privado por usuario, pon el link name del campo
   lookup a Users en `ownerFields` de `chat_config()` (p. ej. `"contacts": "Owner"`) y las
   tools añadirán el filtro automáticamente.
-- **Límite de registros**: `getRecords` devuelve máximo 200; `getAllRecords` pagina
-  automáticamente (máx 200 por página).
+- **Límite de registros**: acceso nativo con `range from 0 to 199` (200 registros) en los
+  listados de negocio, `0 to 49` (50) en contactos y los 10 más recientes en el historial
+  del chat (`0 to 9`, orden `Created_Time desc`).
 
 ## Conexión con el widget (implementada)
 
@@ -151,8 +156,8 @@ permisos de Creator, no una consulta). `chat_list()` queda como helper server-si
 otros consumidores (páginas de Creator, integraciones).
 
 **Configuración en el widget**: en `LM2Chatbot/app/widget.html` → `CONFIG`:
-`appName` (REPLACE_WITH_APP_LINK_NAME — mismo link name que en `chat_config.dg`) y los
-nombres de módulo `ChatSessions`/`ChatMessages`/`ChatRequests`.
+`appName` (REPLACE_WITH_APP_LINK_NAME — solo para la Client API del widget; el backend
+ya NO usa `appName`) y los nombres de módulo `ChatSessions`/`ChatMessages`/`ChatRequests`.
 
 **Flujo de envío**: `sendMessage()` → `addRecord(ChatRequests, {Session_ID, Prompt})` →
 polling cada 1.5 s (timeout 45 s) sobre el `ChatRequests` más reciente de la sesión
