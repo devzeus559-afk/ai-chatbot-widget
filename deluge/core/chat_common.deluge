@@ -1,5 +1,5 @@
 /**
- * chat_common.dg
+ * chat_common.deluge
  *
  * Helpers compartidos por el backend del chatbot.
  * Funciones: append_criteria, parse_json_strict, compose_reply,
@@ -9,6 +9,13 @@
 
 // --------------------------------------------------------------------------
 // Construcción de criterios de búsqueda (evita errores de sintaxis)
+//
+// Contrato de sintaxis NATIVA (acceso nativo a datos de Creator):
+// - Los nombres de campo NO llevan comillas dobles:  Field == 'value'
+// - Los valores de texto van entre comillas simples:  'value'
+// - Las cláusulas se unen con " and " (p. ej. City == 'Lima' and Country == 'Peru')
+// - Lado vacío -> se devuelve el otro lado tal cual (passthrough)
+// Este builder lo comparten las 5 tools (spec lookup-tools).
 // --------------------------------------------------------------------------
 String append_criteria(String base, String clause)
 {
