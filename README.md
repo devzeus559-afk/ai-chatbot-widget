@@ -10,7 +10,9 @@ con la tarea `Zia`, y el widget se comunica por la Client API con un patrón de 
 
 1. Reemplazar los link names reales: `appName` en `LM2Chatbot/app/widget.html` (`CONFIG`,
    solo para la Client API del widget). El backend Deluge usa **acceso nativo a datos**
-   (`Form[criterio]`, `insert into`) y ya NO necesita `appName` ni `zoho.creator.*`.
+   (`Form[Field == valor]`, `insert into`; filtrado AND con patrón ID-list: IDs por
+   condición `.ID.getAll()` + `addAll`/`intersect` + `Form[ID in targetIDs]`) y ya NO
+   necesita `appName` ni `zoho.creator.*`.
 2. En la consola de Creator: habilitar la tarea Zia de Deluge (Zoho GenAI recomendado).
 3. Crear los 3 módulos de persistencia (`ChatSessions`, `ChatMessages`, `ChatRequests`)
    según el esquema del README del backend.
@@ -47,6 +49,10 @@ Principios de diseño:
   (`{"tool","params"}` / `{"answer"}` / `{"clarify"}`) y Deluge hace el `switch`.
 - **Composición por plantilla por defecto**: `composeWithAI: false` → respuestas
   deterministas baratas (el timeout de Zia es 40 s).
+- **Filtrado nativo sin builders de criterios**: `Form[criteriaVar]` es inválido en Creator
+  (gate 5.1). Las tools ramifican 0 filtros (`Form[ID != 0]`) / 1 filtro (igualdad inline) /
+  2+ filtros (IDs por condición con `addAll`/`intersect` y fetch final `Form[ID in targetIDs]`,
+  con guard si la intersección queda vacía). La tarea Zia se invoca sin comas entre parámetros.
 
 ## Estructura del repo
 
@@ -56,7 +62,7 @@ Principios de diseño:
 | `LM2Chatbot/` | Paquete de la extensión Zoho (app, server, manifest) — sin scripts Deluge |
 | `deluge/README.md` | Setup del backend: esquema de módulos, funciones, mapeo de campos |
 | `deluge/config/chat_config.deluge` | Configuración central: link names, campos, catálogo de 5 tools |
-| `deluge/core/` | `data_access` (acceso nativo a datos), `chat_common` (helpers), `chat_intent` (router Zia), `chat_invoke` (orquestador), `chat_list` (índice server-side) |
+| `deluge/core/` | `data_access` (acceso nativo tipado: helpers por forma/condición con campos literales), `chat_common` (helpers), `chat_intent` (router Zia), `chat_invoke` (orquestador), `chat_list` (índice server-side) |
 | `deluge/tools/` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts` |
 | `deluge/workflow/` | `on_submit_chatrequests.deluge` (script del workflow) |
 
