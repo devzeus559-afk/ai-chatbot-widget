@@ -5,8 +5,13 @@
  * Recibe (todos opcionales): {"name", "phone", "document"}
  * Devuelve: {"ok": true, "data": [{fullName, phone, email, document, role}]}
  *
- * Acceso nativo vía data_access.fetch_contacts (0 llamadas de API de Creator).
- * Límite 50 (range 0-49), orden Full_Name asc; criterio vacío -> [ID != 0].
+ * Acceso nativo vía data_access (0 llamadas de API de Creator). Patrón ID-list
+ * (gate 5.1: Form[criteriaVar] es inválido):
+ * - Sin filtros            -> fetch_contacts_all()        (Form[ID != 0])
+ * - 1+ filtros             -> IDs por condición (.ID.getAll()), addAll en el
+ *                             primero e intersect en los siguientes, guard de
+ *                             lista vacía y fetch final fetch_contacts_by_ids.
+ * Límite 50 (range 0-49), orden Full_Name asc.
  *
  * NOTA DE PRIVACIDAD: los resultados pueden contener PII. Si el LLM configurado
  * en Zia es externo (OpenAI/Gemini/Anthropic), la data sale de la organización;
@@ -18,27 +23,46 @@ Map tool_contacts(Map params)
     config = chat_config();
     fields = config.get("contactFields");
 
-    criteria = "";
+    targetIDs = List();
+    hasFilter = false;
 
     name = params.get("name");
     if (name != null && name != "") {
-        criteria = append_criteria(criteria,
-            fields.get("fullName") + " == '" + name + "'");
+        ids = fetch_contacts_ids_by_full_name(name);
+        targetIDs.addAll(ids);
+        hasFilter = true;
     }
 
     phone = params.get("phone");
     if (phone != null && phone != "") {
-        criteria = append_criteria(criteria,
-            fields.get("phone") + " == '" + phone + "'");
+        ids = fetch_contacts_ids_by_phone(phone);
+        if (hasFilter) {
+            targetIDs = targetIDs.intersect(ids);
+        } else {
+            targetIDs.addAll(ids);
+            hasFilter = true;
+        }
     }
 
     document = params.get("document");
     if (document != null && document != "") {
-        criteria = append_criteria(criteria,
-            fields.get("document") + " == '" + document + "'");
+        ids = fetch_contacts_ids_by_document(document);
+        if (hasFilter) {
+            targetIDs = targetIDs.intersect(ids);
+        } else {
+            targetIDs.addAll(ids);
+            hasFilter = true;
+        }
     }
 
-    records = fetch_contacts(criteria);
+    // Guard: intersección vacía -> data:[] (Form[ID in []] es desconocido en Creator)
+    if (!hasFilter) {
+        records = fetch_contacts_all();
+    } else if (targetIDs.size() == 0) {
+        records = List();
+    } else {
+        records = fetch_contacts_by_ids(targetIDs);
+    }
 
     resultList = List();
     if (records == null) {
