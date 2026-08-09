@@ -8,9 +8,13 @@
  * Recibe (todos opcionales): {"country", "vendor", "serviceType"}
  * Devuelve: {"ok": true, "data": [{country, vendor, serviceType, details}]}
  *
- * Acceso nativo vía data_access.fetch_coverage (0 llamadas de API de Creator).
- * Límite 200 (range 0-199), orden Country asc; cláusulas unidas con
- * append_criteria (sintaxis nativa, sin comillas dobles en los campos).
+ * Acceso nativo vía data_access (0 llamadas de API de Creator). Patrón ID-list
+ * (gate 5.1: Form[criteriaVar] es inválido), ver filter_solution_example.deluge:
+ * - Sin filtros            -> fetch_coverage_all()        (Form[ID != 0])
+ * - 1+ filtros             -> IDs por condición (.ID.getAll()), addAll en el
+ *                             primero e intersect en los siguientes, guard de
+ *                             lista vacía y fetch final fetch_coverage_by_ids.
+ * Límite 200 (range 0-199), orden Country asc.
  */
 
 Map tool_coverage(Map params)
@@ -18,27 +22,46 @@ Map tool_coverage(Map params)
     config = chat_config();
     fields = config.get("coverageFields");
 
-    criteria = "";
+    targetIDs = List();
+    hasFilter = false;
 
     country = params.get("country");
     if (country != null && country != "") {
-        criteria = append_criteria(criteria,
-            fields.get("country") + " == '" + country + "'");
+        ids = fetch_coverage_ids_by_country(country);
+        targetIDs.addAll(ids);
+        hasFilter = true;
     }
 
     vendor = params.get("vendor");
     if (vendor != null && vendor != "") {
-        criteria = append_criteria(criteria,
-            fields.get("vendor") + " == '" + vendor + "'");
+        ids = fetch_coverage_ids_by_vendor(vendor);
+        if (hasFilter) {
+            targetIDs = targetIDs.intersect(ids);
+        } else {
+            targetIDs.addAll(ids);
+            hasFilter = true;
+        }
     }
 
     serviceType = params.get("serviceType");
     if (serviceType != null && serviceType != "") {
-        criteria = append_criteria(criteria,
-            fields.get("serviceType") + " == '" + serviceType + "'");
+        ids = fetch_coverage_ids_by_service_type(serviceType);
+        if (hasFilter) {
+            targetIDs = targetIDs.intersect(ids);
+        } else {
+            targetIDs.addAll(ids);
+            hasFilter = true;
+        }
     }
 
-    records = fetch_coverage(criteria);
+    // Guard: intersección vacía -> data:[] (Form[ID in []] es desconocido en Creator)
+    if (!hasFilter) {
+        records = fetch_coverage_all();
+    } else if (targetIDs.size() == 0) {
+        records = List();
+    } else {
+        records = fetch_coverage_by_ids(targetIDs);
+    }
 
     resultList = List();
     if (records == null) {
