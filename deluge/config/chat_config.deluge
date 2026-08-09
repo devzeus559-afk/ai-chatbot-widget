@@ -28,7 +28,12 @@ Map chat_config()
     config.put("coverageLocation", "Coverage_Location");
 
     // --- Campos de negocio por módulo (link names) ---
-    // AJUSTAR al esquema real de la app. Campos vacíos = se omiten en la consulta.
+    // SOLO LECTURA para mapear la respuesta (leer el atributo del registro con
+    // Map.get, p. ej. pkg.get(fields.get("trackingNumber"))).
+    // Los nombres de campo de las CONSULTAS son LITERALES en data_access.deluge
+    // (Form[Field == valor]) — NUNCA usar fields.get(...) dentro de Form[...]
+    // (un nombre de campo desde variable es inválido en Creator).
+    // AJUSTAR al esquema real de la app. Campos vacíos = se omiten en el mapeo.
 
     packageFields = Map();
     packageFields.put("trackingNumber", "Tracking_Number");
