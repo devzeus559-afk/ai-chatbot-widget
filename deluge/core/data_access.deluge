@@ -7,71 +7,71 @@
  *   <var> = <Form>[<criteria>] sort by <Field> [desc] range from <a> to <b>;
  *   <id>  = insert into <Form> [ <Field> = <value> ];
  *
+ * Patrón de filtrado (tras gate 5.1: `Form[criteriaVar]` es INVÁLIDO en Creator
+ * y el nombre de campo tampoco puede venir de una variable dentro de corchetes):
+ * - 0 condiciones   -> Form[ID != 0]            (todos los registros)
+ * - 1 condición     -> Form[Field == valorVar]   (igualdad inline: campo literal,
+ *                      valor como variable)
+ * - 2+ condiciones  -> IDs por condición (Form[Field == valor].ID.getAll()),
+ *                      combinados en las tools con addAll / intersect, y fetch
+ *                      final Form[ID in targetIDs] (con guard si la lista queda
+ *                      vacía: el comportamiento de Form[ID in []] es desconocido).
+ *
  * Convenciones:
- * - Form link name, sort y rango son LITERALES (Creator no acepta variables
- *   en esas posiciones); solo el criterio (y el rango en fetch_chat_sessions)
- *   se parametriza.
- * - Criterios nativos: campo SIN comillas dobles, valor texto entre comillas
- *   simples (`Field == 'value'`); normalize_criteria("") -> "ID != 0".
+ * - Form link name, campo, sort y rango son LITERALES; solo los VALORES se
+ *   parametrizan. Los mapas *Fields de chat_config son SOLO lectura para mapear
+ *   la respuesta (lectura con Map.get sobre el registro); NUNCA dentro de Form[...].
  * - Los registros obtenidos están ENLAZADOS: mutarlos (rec.Campo = valor)
  *   persiste el cambio sin ninguna llamada de API.
  * - `insert into` NO ejecuta los scripts On Validate / On Success del módulo:
  *   verificar en la UI de Creator antes de publicar.
  *
- * Funciones: normalize_criteria, fetch_chat_requests, fetch_chat_sessions,
- *            fetch_chat_messages, insert_chat_session, insert_chat_message,
- *            fetch_packages, fetch_services, fetch_offices, fetch_coverage,
- *            fetch_contacts
+ * Funciones: fetch_chat_requests_by_id, fetch_chat_sessions_by_session_id,
+ *            fetch_chat_sessions_by_id, fetch_chat_sessions_by_user,
+ *            insert_chat_session, fetch_chat_messages_by_session,
+ *            insert_chat_message, fetch_packages_by_tracking,
+ *            fetch_services_ids_by_type/origin/destination, fetch_services_by_ids,
+ *            fetch_services_all, fetch_offices_ids_by_city/country,
+ *            fetch_offices_by_ids, fetch_offices_all,
+ *            fetch_coverage_ids_by_country/vendor/service_type, fetch_coverage_by_ids,
+ *            fetch_coverage_all, fetch_contacts_ids_by_full_name/phone/document,
+ *            fetch_contacts_by_ids, fetch_contacts_all
  */
 
 // --------------------------------------------------------------------------
-// Normalización de criterios: "" -> "ID != 0" (trae todos los registros)
+// ChatRequests — búsqueda por ID (igualdad inline)
 // --------------------------------------------------------------------------
-String normalize_criteria(String c)
+List fetch_chat_requests_by_id(Number requestId)
 {
     config = chat_config();
-    if (c == null || c == "") {
-        return "ID != 0";
-    }
-    return c;
-}
-
-// --------------------------------------------------------------------------
-// ChatRequests — búsqueda por criterio (sin sort/range)
-// --------------------------------------------------------------------------
-List fetch_chat_requests(String c)
-{
-    config = chat_config();
-    criteria = normalize_criteria(c);
-    records = ChatRequests[criteria];
+    records = ChatRequests[ID == requestId];
     return records;
 }
 
 // --------------------------------------------------------------------------
-// ChatSessions — ordenadas por Last_Activity desc, con rango parametrizado
+// ChatSessions
 // --------------------------------------------------------------------------
-List fetch_chat_sessions(String c, Number startIndex, Number endIndex)
+List fetch_chat_sessions_by_session_id(String sessionId)
 {
     config = chat_config();
-    criteria = normalize_criteria(c);
-    records = ChatSessions[criteria] sort by Last_Activity desc range from startIndex to endIndex;
+    records = ChatSessions[Session_ID == sessionId];
     return records;
 }
 
-// --------------------------------------------------------------------------
-// ChatMessages — últimos 10 (más recientes primero, sin reverse)
-// --------------------------------------------------------------------------
-List fetch_chat_messages(String c)
+List fetch_chat_sessions_by_id(Number id)
 {
     config = chat_config();
-    criteria = normalize_criteria(c);
-    records = ChatMessages[criteria] sort by Created_Time desc range from 0 to 9;
+    records = ChatSessions[ID == id];
     return records;
 }
 
-// --------------------------------------------------------------------------
-// Insert helpers — devuelven el ID numérico del registro creado
-// --------------------------------------------------------------------------
+List fetch_chat_sessions_by_user(Number userId, Number startIndex, Number endIndex)
+{
+    config = chat_config();
+    records = ChatSessions[User == userId] sort by Last_Activity desc range from startIndex to endIndex;
+    return records;
+}
+
 Number insert_chat_session(Map data)
 {
     config = chat_config();
@@ -83,6 +83,16 @@ Number insert_chat_session(Map data)
         Last_Activity = data.get("Last_Activity")
     ];
     return newId;
+}
+
+// --------------------------------------------------------------------------
+// ChatMessages — últimos 10 (más recientes primero, sin reverse)
+// --------------------------------------------------------------------------
+List fetch_chat_messages_by_session(Number sessionId)
+{
+    config = chat_config();
+    records = ChatMessages[Session == sessionId] sort by Created_Time desc range from 0 to 9;
+    return records;
 }
 
 Number insert_chat_message(Map data)
@@ -98,44 +108,156 @@ Number insert_chat_message(Map data)
 }
 
 // --------------------------------------------------------------------------
-// Módulos de negocio — límites y órdenes preservados (ver spec lookup-tools)
+// Package — seguimiento (igualdad inline, más reciente primero)
 // --------------------------------------------------------------------------
-List fetch_packages(String c)
+List fetch_packages_by_tracking(String trackingNumber)
 {
     config = chat_config();
-    criteria = normalize_criteria(c);
-    records = Package[criteria] sort by Created_Time desc;
+    records = Package[Tracking_Number == trackingNumber] sort by Created_Time desc;
     return records;
 }
 
-List fetch_services(String c)
+// --------------------------------------------------------------------------
+// Service — IDs por condición + fetch final por IDs + sin filtro
+// --------------------------------------------------------------------------
+List fetch_services_ids_by_type(String serviceType)
 {
     config = chat_config();
-    criteria = normalize_criteria(c);
-    records = Service[criteria] sort by Service_Name range from 0 to 199;
+    ids = Service[Service_Type == serviceType].ID.getAll();
+    return ids;
+}
+
+List fetch_services_ids_by_origin(String origin)
+{
+    config = chat_config();
+    ids = Service[Origin == origin].ID.getAll();
+    return ids;
+}
+
+List fetch_services_ids_by_destination(String destination)
+{
+    config = chat_config();
+    ids = Service[Destination == destination].ID.getAll();
+    return ids;
+}
+
+List fetch_services_by_ids(List ids)
+{
+    config = chat_config();
+    records = Service[ID in ids] sort by Service_Name range from 0 to 199;
     return records;
 }
 
-List fetch_offices(String c)
+List fetch_services_all()
 {
     config = chat_config();
-    criteria = normalize_criteria(c);
-    records = Commercial_Office[criteria] sort by Office_Name range from 0 to 199;
+    records = Service[ID != 0] sort by Service_Name range from 0 to 199;
     return records;
 }
 
-List fetch_coverage(String c)
+// --------------------------------------------------------------------------
+// Commercial_Office — IDs por condición + fetch final por IDs + sin filtro
+// --------------------------------------------------------------------------
+List fetch_offices_ids_by_city(String city)
 {
     config = chat_config();
-    criteria = normalize_criteria(c);
-    records = Coverage_Location[criteria] sort by Country range from 0 to 199;
+    ids = Commercial_Office[City == city].ID.getAll();
+    return ids;
+}
+
+List fetch_offices_ids_by_country(String country)
+{
+    config = chat_config();
+    ids = Commercial_Office[Country == country].ID.getAll();
+    return ids;
+}
+
+List fetch_offices_by_ids(List ids)
+{
+    config = chat_config();
+    records = Commercial_Office[ID in ids] sort by Office_Name range from 0 to 199;
     return records;
 }
 
-List fetch_contacts(String c)
+List fetch_offices_all()
 {
     config = chat_config();
-    criteria = normalize_criteria(c);
-    records = Contacts[criteria] sort by Full_Name range from 0 to 49;
+    records = Commercial_Office[ID != 0] sort by Office_Name range from 0 to 199;
+    return records;
+}
+
+// --------------------------------------------------------------------------
+// Coverage_Location — IDs por condición + fetch final por IDs + sin filtro
+// --------------------------------------------------------------------------
+List fetch_coverage_ids_by_country(String country)
+{
+    config = chat_config();
+    ids = Coverage_Location[Country == country].ID.getAll();
+    return ids;
+}
+
+List fetch_coverage_ids_by_vendor(String vendor)
+{
+    config = chat_config();
+    ids = Coverage_Location[Vendor == vendor].ID.getAll();
+    return ids;
+}
+
+List fetch_coverage_ids_by_service_type(String serviceType)
+{
+    config = chat_config();
+    ids = Coverage_Location[Service_Type == serviceType].ID.getAll();
+    return ids;
+}
+
+List fetch_coverage_by_ids(List ids)
+{
+    config = chat_config();
+    records = Coverage_Location[ID in ids] sort by Country range from 0 to 199;
+    return records;
+}
+
+List fetch_coverage_all()
+{
+    config = chat_config();
+    records = Coverage_Location[ID != 0] sort by Country range from 0 to 199;
+    return records;
+}
+
+// --------------------------------------------------------------------------
+// Contacts — IDs por condición + fetch final por IDs + sin filtro (límite 50)
+// --------------------------------------------------------------------------
+List fetch_contacts_ids_by_full_name(String fullName)
+{
+    config = chat_config();
+    ids = Contacts[Full_Name == fullName].ID.getAll();
+    return ids;
+}
+
+List fetch_contacts_ids_by_phone(String phone)
+{
+    config = chat_config();
+    ids = Contacts[Phone == phone].ID.getAll();
+    return ids;
+}
+
+List fetch_contacts_ids_by_document(String document)
+{
+    config = chat_config();
+    ids = Contacts[Document_Number == document].ID.getAll();
+    return ids;
+}
+
+List fetch_contacts_by_ids(List ids)
+{
+    config = chat_config();
+    records = Contacts[ID in ids] sort by Full_Name range from 0 to 49;
+    return records;
+}
+
+List fetch_contacts_all()
+{
+    config = chat_config();
+    records = Contacts[ID != 0] sort by Full_Name range from 0 to 49;
     return records;
 }
