@@ -5,8 +5,13 @@
  * Recibe (todos opcionales): {"city", "country"}
  * Devuelve: {"ok": true, "data": [{name, address, city, country, phone, hours}]}
  *
- * Acceso nativo vía data_access.fetch_offices (0 llamadas de API de Creator).
- * Límite 200 (range 0-199), orden Office_Name asc; criterio vacío -> [ID != 0].
+ * Acceso nativo vía data_access (0 llamadas de API de Creator). Patrón ID-list
+ * (gate 5.1: Form[criteriaVar] es inválido):
+ * - Sin filtros            -> fetch_offices_all()         (Form[ID != 0])
+ * - 1+ filtros             -> IDs por condición (.ID.getAll()), addAll en el
+ *                             primero e intersect en los siguientes, guard de
+ *                             lista vacía y fetch final fetch_offices_by_ids.
+ * Límite 200 (range 0-199), orden Office_Name asc.
  */
 
 Map tool_offices(Map params)
@@ -14,21 +19,35 @@ Map tool_offices(Map params)
     config = chat_config();
     fields = config.get("officeFields");
 
-    criteria = "";
+    targetIDs = List();
+    hasFilter = false;
 
     city = params.get("city");
     if (city != null && city != "") {
-        criteria = append_criteria(criteria,
-            fields.get("city") + " == '" + city + "'");
+        ids = fetch_offices_ids_by_city(city);
+        targetIDs.addAll(ids);
+        hasFilter = true;
     }
 
     country = params.get("country");
     if (country != null && country != "") {
-        criteria = append_criteria(criteria,
-            fields.get("country") + " == '" + country + "'");
+        ids = fetch_offices_ids_by_country(country);
+        if (hasFilter) {
+            targetIDs = targetIDs.intersect(ids);
+        } else {
+            targetIDs.addAll(ids);
+            hasFilter = true;
+        }
     }
 
-    records = fetch_offices(criteria);
+    // Guard: intersección vacía -> data:[] (Form[ID in []] es desconocido en Creator)
+    if (!hasFilter) {
+        records = fetch_offices_all();
+    } else if (targetIDs.size() == 0) {
+        records = List();
+    } else {
+        records = fetch_offices_by_ids(targetIDs);
+    }
 
     resultList = List();
     if (records == null) {
