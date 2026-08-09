@@ -6,8 +6,10 @@
  *
  *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
  *
- * Todo el acceso a datos es NATIVO (data_access.deluge): 0 llamadas de API de
- * Creator y 0 llamadas externas por turno.
+ * Todo el acceso a datos es NATIVO (data_access.deluge) con helpers TIPADOS
+ * (igualdad inline: campo literal, valor variable): 0 llamadas de API de
+ * Creator y 0 llamadas externas por turno. La tarea Zia usa la sintaxis
+ * oficial SIN comas (cada parámetro nombrado en su propia línea).
  *
  * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
  *            get_or_create_session, create_message, get_recent_history,
@@ -18,7 +20,7 @@ Map chat_invoke(String requestId)
 {
     config = chat_config();
 
-    requestRecords = fetch_chat_requests("ID == " + requestId);
+    requestRecords = fetch_chat_requests_by_id(requestId);
     if (requestRecords == null || requestRecords.size() == 0) {
         return {"status": "failed", "message": "Solicitud no encontrada"};
     }
@@ -106,9 +108,12 @@ String compose_with_ai(String toolName, Map toolResult, Map intent)
         return "No pude completar la búsqueda. " + toolResult.get("message");
     }
     dataText = compose_reply(toolResult, intent);
-    response = Zia[message: "Responde al usuario de forma natural y breve usando estos datos: " + dataText,
-                   context: "Eres un asistente de atención al cliente de una agencia de paquetería, remesas y recargas telefónicas.",
-                   parameters: {"temperature": 0.3}];
+    // Sintaxis oficial de la tarea Zia: parámetros SIN comas, uno por línea
+    response = Zia[
+        message : "Responde al usuario de forma natural y breve usando estos datos: " + dataText
+        context : "Eres un asistente de atención al cliente de una agencia de paquetería, remesas y recargas telefónicas."
+        parameters : {"temperature": 0.3}
+    ];
     if (response.get("status")) {
         return response.get("data");
     }
@@ -123,7 +128,7 @@ Map get_or_create_session(String sessionId)
     config = chat_config();
 
     // Sesión existente: registro ENLAZADO (mutable) vía fetch nativo
-    records = fetch_chat_sessions("Session_ID == '" + sessionId + "'", 0, 0);
+    records = fetch_chat_sessions_by_session_id(sessionId);
     if (records != null && records.size() > 0) {
         return records.get(0);
     }
@@ -137,7 +142,7 @@ Map get_or_create_session(String sessionId)
     data.put("Last_Activity", zoho.currentdatetime);
     newId = insert_chat_session(data);
 
-    newRecords = fetch_chat_sessions("ID == " + newId, 0, 0);
+    newRecords = fetch_chat_sessions_by_id(newId);
     if (newRecords != null && newRecords.size() > 0) {
         return newRecords.get(0);
     }
@@ -158,7 +163,7 @@ List get_recent_history(String sessionRecordId)
 {
     config = chat_config();
     // Últimos 10, más reciente primero (desc, range 0-9, SIN reverse)
-    records = fetch_chat_messages("Session == " + sessionRecordId);
+    records = fetch_chat_messages_by_session(sessionRecordId);
     history = List();
     if (records == null || records.size() == 0) {
         return history;
