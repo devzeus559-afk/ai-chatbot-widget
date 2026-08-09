@@ -5,8 +5,13 @@
  * Recibe (todos opcionales): {"serviceType", "origin", "destination"}
  * Devuelve: {"ok": true, "data": [{name, type, price, currency, description, estimatedTime}]}
  *
- * Acceso nativo vía data_access.fetch_services (0 llamadas de API de Creator).
- * Límite 200 (range 0-199), orden Service_Name asc; criterio vacío -> [ID != 0].
+ * Acceso nativo vía data_access (0 llamadas de API de Creator). Patrón ID-list
+ * (gate 5.1: Form[criteriaVar] es inválido):
+ * - Sin filtros            -> fetch_services_all()        (Form[ID != 0])
+ * - 1+ filtros             -> IDs por condición (.ID.getAll()), addAll en el
+ *                             primero e intersect en los siguientes, guard de
+ *                             lista vacía y fetch final fetch_services_by_ids.
+ * Límite 200 (range 0-199), orden Service_Name asc.
  */
 
 Map tool_services(Map params)
@@ -14,29 +19,46 @@ Map tool_services(Map params)
     config = chat_config();
     fields = config.get("serviceFields");
 
-    criteria = "";
+    targetIDs = List();
+    hasFilter = false;
 
     serviceType = params.get("serviceType");
     if (serviceType != null && serviceType != "") {
-        criteria = append_criteria(criteria,
-            fields.get("type") + " == '" + serviceType + "'");
+        ids = fetch_services_ids_by_type(serviceType);
+        targetIDs.addAll(ids);
+        hasFilter = true;
     }
 
-    originField = fields.get("origin");
     origin = params.get("origin");
-    if (origin != null && origin != "" && originField != null && originField != "") {
-        criteria = append_criteria(criteria,
-            originField + " == '" + origin + "'");
+    if (origin != null && origin != "") {
+        ids = fetch_services_ids_by_origin(origin);
+        if (hasFilter) {
+            targetIDs = targetIDs.intersect(ids);
+        } else {
+            targetIDs.addAll(ids);
+            hasFilter = true;
+        }
     }
 
-    destinationField = fields.get("destination");
     destination = params.get("destination");
-    if (destination != null && destination != "" && destinationField != null && destinationField != "") {
-        criteria = append_criteria(criteria,
-            destinationField + " == '" + destination + "'");
+    if (destination != null && destination != "") {
+        ids = fetch_services_ids_by_destination(destination);
+        if (hasFilter) {
+            targetIDs = targetIDs.intersect(ids);
+        } else {
+            targetIDs.addAll(ids);
+            hasFilter = true;
+        }
     }
 
-    records = fetch_services(criteria);
+    // Guard: intersección vacía -> data:[] (Form[ID in []] es desconocido en Creator)
+    if (!hasFilter) {
+        records = fetch_services_all();
+    } else if (targetIDs.size() == 0) {
+        records = List();
+    } else {
+        records = fetch_services_by_ids(targetIDs);
+    }
 
     resultList = List();
     if (records == null) {
