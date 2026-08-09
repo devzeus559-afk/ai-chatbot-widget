@@ -1,5 +1,5 @@
 /**
- * chat_intent.dg
+ * chat_intent.deluge
  *
  * Router de intención: llama a la tarea Zia de Deluge y normaliza la salida
  * a UNO de estos contratos:
@@ -9,7 +9,8 @@
  *   {"clarify": "<pregunta>"}                → falta información
  *
  * La salida de Zia es TEXTO; se pide JSON estricto con temperature 0 y se
- * valida con parse_json_strict (chat_common.dg).
+ * valida con parse_json_strict (chat_common.deluge). La llamada Zia usa la
+ * sintaxis oficial SIN comas (cada parámetro nombrado en su propia línea).
  */
 
 Map chat_intent(String userPrompt, List history)
@@ -24,9 +25,11 @@ Map chat_intent(String userPrompt, List history)
 
     message = build_intent_prompt(userPrompt, history, catalogText);
 
-    response = Zia[message: message,
-                   context: context,
-                   parameters: {"temperature": 0.0}];
+    response = Zia[
+        message : message
+        context : context
+        parameters : {"temperature": 0.0}
+    ];
 
     if (!response.get("status")) {
         return {"status": "error", "kind": "clarify",
