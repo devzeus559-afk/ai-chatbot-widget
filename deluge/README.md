@@ -4,8 +4,15 @@ Backend del widget de chat para agencia internacional de **paquetería, remesas 
 
 Se define en Deluge y se pega en la app de **Zoho Creator**. No consume llamadas a API de Creator:
 usa la tarea `Zia` de Deluge (solo disponible en Creator) y **acceso nativo a datos server-side**
-(sintaxis `Form[criterio]`, `insert into` y mutación en memoria vía `deluge/core/data_access.deluge`),
+(sintaxis `Form[Field == valor]`, `insert into` y mutación en memoria vía `deluge/core/data_access.deluge`),
 sin ninguna llamada `zoho.creator.*` — 0 llamadas externas y 0 Developer API por turno de chat.
+
+**Patrón de filtrado (gate 5.1)**: `Form[criteriaVar]` (criterio como variable de texto) es INVÁLIDO
+en Creator. El filtrado usa pares explícitos (campo literal, valor variable) con tres ramas:
+0 condiciones → `Form[ID != 0]`; 1 condición → igualdad inline `Form[Field == valor]`; 2+ condiciones
+(AND) → IDs por condición (`Form[Field == valor].ID.getAll()`), `addAll` en el primero e `intersect`
+en los siguientes, guard de lista vacía y fetch final `Form[ID in targetIDs]`. La tarea Zia se
+invoca con la sintaxis oficial SIN comas (cada parámetro nombrado en su propia línea).
 
 ---
 
@@ -37,8 +44,8 @@ deluge/
 ├── config/
 │   └── chat_config.deluge     ← configuración central (link names + catálogo de tools)
 ├── core/
-│   ├── chat_common.deluge     ← helpers: criterios, parseo JSON robusto, formato de respuestas
-│   ├── data_access.deluge     ← acceso nativo a datos (fetch/insert/mutate; 0 llamadas zoho.creator.*)
+│   ├── chat_common.deluge     ← helpers: parseo JSON robusto, composición y formato de respuestas
+│   ├── data_access.deluge     ← acceso nativo a datos (fetch/insert/mutate; helpers tipados con campos literales; 0 llamadas zoho.creator.*)
 │   ├── chat_intent.deluge     ← router: Zia task → JSON de intención
 │   ├── chat_invoke.deluge     ← orquestador + persistencia de sesión/mensajes
 │   └── chat_list.deluge       ← índice de conversaciones para la sidebar
@@ -57,8 +64,8 @@ deluge/
 | Archivo | Funciones |
 |---|---|
 | `chat_config.deluge` | `chat_config` |
-| `chat_common.deluge` | `append_criteria`, `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts` |
-| `data_access.deluge` | `normalize_criteria`, `fetch_chat_requests`, `fetch_chat_sessions`, `fetch_chat_messages`, `insert_chat_session`, `insert_chat_message`, `fetch_packages`, `fetch_services`, `fetch_offices`, `fetch_coverage`, `fetch_contacts` |
+| `chat_common.deluge` | `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts` |
+| `data_access.deluge` | `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_session_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_user`, `insert_chat_session`, `fetch_chat_messages_by_session`, `insert_chat_message`, `fetch_packages_by_tracking`, `fetch_services_ids_by_type/origin/destination`, `fetch_services_by_ids`, `fetch_services_all`, `fetch_offices_ids_by_city/country`, `fetch_offices_by_ids`, `fetch_offices_all`, `fetch_coverage_ids_by_country/vendor/service_type`, `fetch_coverage_by_ids`, `fetch_coverage_all`, `fetch_contacts_ids_by_full_name/phone/document`, `fetch_contacts_by_ids`, `fetch_contacts_all` |
 | `chat_intent.deluge` | `chat_intent`, `build_intent_prompt` |
 | `chat_invoke.deluge` | `chat_invoke`, `resolve_reply`, `dispatch_tool`, `compose_with_ai`, `get_or_create_session`, `create_message`, `get_recent_history`, `update_session` |
 | `chat_list.deluge` | `chat_list` |
@@ -113,7 +120,10 @@ necesita `appName`: todo el acceso a datos es nativo (no usa `zoho.creator.*`).
 ### Mapeo asumido de campos de negocio (AJUSTAR)
 
 El backend asume esta estructura para los módulos de negocio. Si tu esquema difiere,
-cambia los valores en `chat_config()` (sección `*Fields`) — el código no cambia.
+cambia los valores en `chat_config()` (sección `*Fields`) — los mapas `*Fields` se usan
+**solo lectura** para mapear la respuesta. Los nombres de campo de las CONSULTAS son
+LITERALES en `data_access.deluge`: si renombras un campo en Creator, hay que ajustarlo
+en AMBOS sitios (el literal de la consulta en `data_access` y el mapa `*Fields`).
 
 | Módulo | Campo asumido | Uso |
 |---|---|---|
