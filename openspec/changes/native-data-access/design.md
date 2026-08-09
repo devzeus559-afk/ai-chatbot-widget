@@ -2,78 +2,180 @@
 
 ## Technical Approach
 
-Replace all 16 `zoho.creator.*` calls (chat_invoke 8, chat_list 1, tools 5, on_submit 2) with native Creator access: `Form[criteria]` fetches (criteria string from `append_criteria`; blank → `[ID != 0]`), `insert into Form[...]` (returns numeric ID), and in-memory mutation of fetched records (auto-persists) — 0 external + 0 Developer API. Per specs `data-access-layer`, `chat-conversation-flows`, `lookup-tools`. Constraints respected: Zia 40s timeout, polling 45s, getRecords 200 max, no global Deluge state.
+Replace all 16 `zoho.creator.*` calls (chat_invoke 8, chat_list 1, tools 5, on_submit 2) with native Creator access: `Form[Field == valueVar]` fetches with LITERAL field names and variable values, `insert into Form[...]` (returns numeric ID), and in-memory mutation of bound records — 0 external + 0 Developer API calls (Zia aside).
+
+**CHANGED (gate 5.1)**: a criteria-string variable inside the brackets (`Form[criteriaVar]`) is INVALID in Creator, and field names cannot come from variables (e.g. `fields.get("country")` inside brackets) — they MUST be form literals. Filtering therefore uses explicit (literal field, value variable) pairs, with three branches per fetch site:
+
+- **0 conditions** → `Form[ID != 0]` (explicit user decision — NOT `ID != null`)
+- **exactly 1 condition** → inline single-equality fetch `Form[Field == valueVar] sort by ... range ...` (valid: only the value is a variable) — used by `track_package` and all chat flows (fixed, non-combinable conditions)
+- **2+ conditions (AND)** → ID-list pattern: per-condition `Form[Field == value].ID.getAll()`, seed `targetIDs` via `addAll`, `intersect` subsequent lists, final `Form[ID in targetIDs] sort by ... range ...`
+
+`normalize_criteria` (data_access) and `append_criteria` (chat_common) are **REMOVED** — no string criteria building anywhere. Per specs `data-access-layer`, `lookup-tools`, `chat-conversation-flows` (source of truth). Constraints respected: Zia 40s timeout, polling 45s, getRecords 200 max, no global Deluge state.
 
 ## Architecture Decisions
 
-### Decision: Per-form typed helpers (not generic `fetch_records(form, criteria, sort, range)`)
+### Decision: Criteria-string builders removed (`normalize_criteria`, `append_criteria`)
 
 | Option | Tradeoff | Decision |
 |---|---|---|
-| Generic helper with form/sort params | Native syntax requires **literal** form link names, sort fields, direction; only criteria string/range are variable-able → non-executable | Rejected |
-| Per-form helpers | More functions, 1–3 lines each, guaranteed valid, centralize syntax + empty-criteria rule | Chosen — literal form/sort/range baked in; only criteria (+optional range) parameterized |
+| Keep builders, emit `Form[criteriaVar]` | `Form[criteriaVar]` invalid in Creator → nothing executes | Rejected |
+| Remove both from the surface (spec already did); tools call typed per-condition helpers | No shared builder; each tool branches on active params | Chosen |
 
-### Decision: `append_criteria` stays in `chat_common.deluge`
+### Decision: Literal field names live ONLY in data_access helpers
 
-Tools already call it there — zero call-site churn. Only quoting changes: `"Field" == 'value'` → `Field == 'value'`; join stays ` and ` (proven live). Single shared builder for all 5 tools (spec).
+| Option | Tradeoff | Decision |
+|---|---|---|
+| Build `Field == 'value'` strings in tools from `*Fields` config maps | Field name from a variable inside brackets is invalid | Rejected |
+| Bake literal field names into per-form/per-condition helpers | Field names appear once per query; `*Fields` maps stay READ-ONLY for response attribute reads (`pkg.get(fields.get("trackingNumber"))` — plain Map.get, valid) | Chosen |
 
-### Decision: Mutable-record contract (session + request)
+### Decision: ID-list combination lives in the TOOLS (orchestration); data_access owns query shapes
 
-`get_or_create_session` returns a **bound record** both paths: existing → `ChatSessions[Session_ID == '...'].get(0)`; new → `insert into` returns only a numeric ID, so refetch `ChatSessions[ID == newId].get(0)`. `update_session(Map session, String firstPrompt)` receives that object and mutates `.Title` / `.Last_Activity` directly — fetched records persist mutation. Request answered by mutating the fetched record; `on_submit_chatrequests` mutates `input` on failure.
+| Option | Tradeoff | Decision |
+|---|---|---|
+| Generic criteria/ID helper parameterized by form/field | Native syntax requires literals for form/sort/range → non-executable | Rejected |
+| data_access: per-condition ID helpers (`Form[Field == value].ID.getAll()`) + final `Form[ID in targetIDs]` fetch (sort/range baked); tools seed `addAll`, `intersect`, branch any-vs-none | data_access stays declarative/syntax-safe; tools know how many conditions are active at runtime (Zia params) and compose with native List ops (`addAll`/`intersect` are built-ins — no custom helper needed) | Chosen |
 
-### Decision: Error contract
+### Decision: Uniform ID pipeline for any active condition in list tools
 
-`.size() == 0` drives existing not-found maps (chat_invoke `Solicitud no encontrada`; track_package `No se encontró un paquete...`); list tools: no matches → `{"ok":true,"data":[]}` (parity; ok:false only for missing required params).
+| Option | Tradeoff | Decision |
+|---|---|---|
+| 1 condition → inline full fetch; 2+ → ID-list | Two query paths per tool; contradicts spec scenario "Single-condition ID path" | Rejected |
+| Any active condition → per-condition IDs + final `[ID in targetIDs]`; 0 → `[ID != 0]` | One uniform path; the per-condition query IS the validated inline single-equality form; matches `data-access-layer` scenario | Chosen |
 
-### Decision: Remove `appName` from chat_config
+### Decision: `Form[ID != 0]` for no filters
 
-Consumed only by the removed calls → remove key + README mention; keep link names and `*Fields` maps.
+Explicit user decision — NOT `ID != null` — as the fetch-all guard in every form. Runtime confirmation per form is an open question (see Open Questions b).
 
-### Decision: History is newest-first
+### Decision: Mutable-record contract preserved (unchanged)
 
-`ChatMessages[Session == id] sort by Created_Time desc range from 0 to 9` → newest 10, no reverse; intentional carve-out (spec), passed to `chat_intent` in that order.
+`get_or_create_session` returns a BOUND record both paths: existing → `fetch_chat_sessions_by_session_id(...).get(0)`; new → `insert into` returns numeric ID → refetch `fetch_chat_sessions_by_id(newId).get(0)`. `update_session(Map session, ...)` and request-answered mutation (`request.Status = "answered"`) mutate the fetched record — persists with no API call. Keep the null/empty guard on the post-insert refetch.
+
+### Decision: History newest-first (unchanged)
+
+`ChatMessages[Session == sessionId] sort by Created_Time desc range from 0 to 9` — single-equality inline, no reverse; intentional carve-out (spec), passed to `chat_intent` in that order.
+
+### Decision: Zia task invocation — no commas between parameters (RESOLVED)
+
+Official syntax (Zoho Deluge docs, Zia task): parameters are NOT comma-separated; each named parameter goes on its own line inside `Zia[...]`:
+
+```
+response = Zia[
+    message : "message_prompt"
+    files : <file_name>        // optional
+    context : "context"        // optional
+    parameters : <param_type>  // optional
+];
+```
+
+Applies to the existing `Zia[message: ..., context: ..., parameters: {...}]` calls in `chat_intent` and `compose_with_ai` — they currently use commas (invalid in the Creator editor). Corrected form:
+
+```deluge
+response = Zia[
+    message : message
+    context : context
+    parameters : {"temperature": 0.0}
+];
+```
+
+Note: parameter order follows the docs (message, files, context, parameters); `files` omitted when unused.
 
 ## Data Flow
 
 ```
 On Submit -> chat_invoke(requestId)
-  request = fetch_chat_requests("ID == " + id).get(0)     (bound)
-  session = get_or_create_session(sessionId)              (bound; insert+refetch if new)
-  user msg insert -> history(10) -> chat_intent -> dispatch_tool -> tool_* -> {ok,data}
-  ai msg insert -> update_session(session, prompt)
-  request.Status = "answered"; request.Reply = reply      (mutates bound record)
+  request = fetch_chat_requests_by_id(requestId).get(0)      (bound)
+  session = get_or_create_session(sessionId)                 (bound; insert+refetch if new)
+    existing: fetch_chat_sessions_by_session_id(sessionId).get(0)
+    new:      insert_chat_session(data) -> fetch_chat_sessions_by_id(newId).get(0)
+  insert_chat_message(user) -> history(10, newest-first) -> chat_intent -> dispatch_tool
+    tool_* list:   0 filters -> fetch_<form>_all()              [ID != 0]
+                   1+ filters -> per-condition IDs + addAll/intersect -> fetch_<form>_by_ids(targetIDs)
+    track_package: fetch_packages_by_tracking(t).get(0)         (inline single equality)
+  insert_chat_message(ai) -> update_session(session, prompt)    (mutate bound record)
+  request.Status = "answered"; request.Reply = reply            (mutate bound record)
 ```
 
 ## File Changes
 
 | File | Action | Description |
-|---|---|---|
-| `deluge/core/data_access.deluge` | Create | Per-form native fetch/insert helpers + `normalize_criteria` |
-| `deluge/core/chat_common.deluge` | Modify | `append_criteria` native quoting |
-| `deluge/core/chat_invoke.deluge` | Modify | 8 → 0: request/session/messages/history native + record mutation |
-| `deluge/core/chat_list.deluge` | Modify | 1 → 0: `ChatSessions[User == userId] sort by Last_Activity desc range from 0 to 49` |
-| `deluge/tools/tool_*.deluge` (5) | Modify | 5 → 0: native fetch via data_access; limits/sorts preserved |
-| `deluge/workflow/on_submit_chatrequests.deluge` | Modify | 2 → 0: mutate `input.Status`/`input.Error` |
-| `deluge/config/chat_config.deluge` | Modify | Remove dead `appName` |
+|------|--------|-------------|
+| `deluge/core/data_access.deluge` | Modify | Replace criteria-string helpers with per-condition ID helpers + `_by_ids` + `_all` + typed chat helpers; remove `normalize_criteria` |
+| `deluge/core/chat_common.deluge` | Modify | Remove `append_criteria` (no callers remain); keep formatters/parse/compose |
+| `deluge/core/chat_invoke.deluge` | Modify | 8 → 0: typed fetch helpers + record mutation (contract unchanged) |
+| `deluge/core/chat_list.deluge` | Modify | 1 → 0: `fetch_chat_sessions_by_user(userId, 0, 49)` |
+| `deluge/tools/tool_*.deluge` (5) | Modify | 5 → 0: ID-list orchestration per tool; limits/sorts preserved; `*Fields` maps read-only for response mapping |
+| `deluge/workflow/on_submit_chatrequests.deluge` | Modify | 2 → 0: mutate `input.Status`/`input.Error` (unchanged) |
+| `deluge/config/chat_config.deluge` | Modify | Remove dead `appName`; `*Fields` maps stay (read-only response mapping) |
 | `deluge/README.md` | Modify | Diagram, function table (+data_access), appName removal |
 
 ## Interfaces / Contracts
 
-`data_access.deluge` (each function starts `config = chat_config();` per config.yaml). Signatures:
+`data_access.deluge` (each fn starts `config = chat_config();` per config.yaml). Literal form link names, sort fields and ranges are baked in; only VALUES are parameters. No criteria-string parameter anywhere:
 
 ```
-normalize_criteria(c)             "" -> "ID != 0"
-fetch_chat_requests(c)            ChatRequests[c]
-fetch_chat_sessions(c, from, to)  ChatSessions[c] sort by Last_Activity desc [range]
-fetch_chat_messages(c)            ChatMessages[c] sort by Created_Time desc range 0..9
-insert_chat_session(d)            insert into ChatSessions -> new ID
-insert_chat_message(d)            insert into ChatMessages -> new ID
-fetch_packages(c)                 Package[c] sort by Created_Time desc
-fetch_services(c) / fetch_offices(c) / fetch_coverage(c)   sort asc, range 0..199
-fetch_contacts(c)                 sort asc, range 0..49
+# ChatRequests
+List fetch_chat_requests_by_id(Number requestId)          # ChatRequests[ID == requestId]
+
+# ChatSessions
+List fetch_chat_sessions_by_session_id(String sessionId)  # ChatSessions[Session_ID == sessionId]
+List fetch_chat_sessions_by_id(Number id)                 # ChatSessions[ID == id]  (post-insert refetch)
+List fetch_chat_sessions_by_user(Number userId, Number from, Number to)   # ChatSessions[User == userId] sort by Last_Activity desc [range]
+Number insert_chat_session(Map data)                      # insert into ChatSessions -> new ID
+
+# ChatMessages
+List fetch_chat_messages_by_session(Number sessionId)     # ChatMessages[Session == sessionId] sort by Created_Time desc range from 0 to 9
+Number insert_chat_message(Map data)                      # insert into ChatMessages -> new ID
+
+# Package (track_package — inline single equality)
+List fetch_packages_by_tracking(String trackingNumber)    # Package[Tracking_Number == trackingNumber] sort by Created_Time desc
+
+# Service — per-condition ID helpers + final fetch + no-filter
+List fetch_services_ids_by_type(String serviceType)       # Service[Service_Type == serviceType].ID.getAll()
+List fetch_services_ids_by_origin(String origin)          # Service[Origin == origin].ID.getAll()
+List fetch_services_ids_by_destination(String destination)# Service[Destination == destination].ID.getAll()
+List fetch_services_by_ids(List ids)                      # Service[ID in ids] sort by Service_Name range from 0 to 199
+List fetch_services_all()                                 # Service[ID != 0] sort by Service_Name range from 0 to 199
+
+# Commercial_Office
+List fetch_offices_ids_by_city(String city)               # Commercial_Office[City == city].ID.getAll()
+List fetch_offices_ids_by_country(String country)         # Commercial_Office[Country == country].ID.getAll()
+List fetch_offices_by_ids(List ids)                       # Commercial_Office[ID in ids] sort by Office_Name range from 0 to 199
+List fetch_offices_all()                                  # Commercial_Office[ID != 0] sort by Office_Name range from 0 to 199
+
+# Coverage_Location
+List fetch_coverage_ids_by_country(String country)        # Coverage_Location[Country == country].ID.getAll()
+List fetch_coverage_ids_by_vendor(String vendor)          # Coverage_Location[Vendor == vendor].ID.getAll()
+List fetch_coverage_ids_by_service_type(String st)        # Coverage_Location[Service_Type == st].ID.getAll()
+List fetch_coverage_by_ids(List ids)                      # Coverage_Location[ID in ids] sort by Country range from 0 to 199
+List fetch_coverage_all()                                 # Coverage_Location[ID != 0] sort by Country range from 0 to 199
+
+# Contacts
+List fetch_contacts_ids_by_full_name(String fullName)     # Contacts[Full_Name == fullName].ID.getAll()
+List fetch_contacts_ids_by_phone(String phone)            # Contacts[Phone == phone].ID.getAll()
+List fetch_contacts_ids_by_document(String document)      # Contacts[Document_Number == document].ID.getAll()
+List fetch_contacts_by_ids(List ids)                      # Contacts[ID in ids] sort by Full_Name range from 0 to 49
+List fetch_contacts_all()                                 # Contacts[ID != 0] sort by Full_Name range from 0 to 49
 ```
 
-Contract notes: native clauses carry no quotes around field names; insert returns numeric ID → new-session path refetches for a bound record; tool return maps and `chat_invoke` status contract unchanged.
+**REMOVED from surface**: `normalize_criteria`, `append_criteria`, and every `fetch_*(criteria-string)` helper.
+
+Tool orchestration (the non-obvious pattern — `tool_coverage` example; native `List.addAll`/`intersect`):
+
+```
+targetIDs = List();
+hasFilter = false;
+if (country != null && country != "")   { targetIDs.addAll(fetch_coverage_ids_by_country(country)); hasFilter = true; }
+if (vendor != null && vendor != "")     { ids = fetch_coverage_ids_by_vendor(vendor);
+                                          if (hasFilter) { targetIDs = targetIDs.intersect(ids); }
+                                          else           { targetIDs.addAll(ids); hasFilter = true; } }
+if (serviceType != null && serviceType != "") { /* same pattern */ }
+if (!hasFilter)                  { records = fetch_coverage_all(); }
+else if (targetIDs.size() == 0)  { records = List(); }        // empty intersection -> data:[]
+else                             { records = fetch_coverage_by_ids(targetIDs); }
+// response mapping keeps fields.get("country") etc. (Map.get on record attributes — valid)
+```
+
+Contract notes: native clauses carry no quotes around field names; text values single-quoted; `insert into` returns numeric ID → new-session path refetches for a bound record; tool return maps and `chat_invoke` status contract unchanged; guard empty `targetIDs` before `[ID in []]` (Creator behavior unknown).
 
 ## Testing Strategy
 
@@ -81,18 +183,27 @@ No local runner — per-file Creator smoke checks before publish:
 
 | Layer | What to Test | Approach (Creator) |
 |---|---|---|
-| data_access | Counts/order per helper | Run each: criteria fetch, blank criteria, insert -> ID |
-| chat flows | Full turn end-to-end | Send via widget: session create/reuse, messages persist, `Status=answered` |
-| chat_list + tools | User scoping; limits/sorts/not-found | 2 users; each tool with/without params; count <= limit, sort, messages |
-| on_submit + regression | Failure path; history order | Force failure -> `input.Status="failed"`; >10 messages -> newest 10 |
+| data_access | Per-condition ID helpers (0/1/many matches), `_by_ids`, `_all` counts/order | Run each helper; verify `[ID != 0]` fetch-all and `[ID in ids]` sort/range |
+| chat flows | Full turn end-to-end | Widget: session create/reuse, messages persist, `Status=answered` |
+| chat_list + tools | User scoping; each tool 0/1/2+ params; limits/sorts/not-found; empty intersection | 2 users; per tool param combos; count ≤ limit, sort, empty `data:[]` |
+| on_submit + regression | Failure path; history order | Force failure → `input.Status="failed"`; >10 messages → newest 10 |
 
 ## Migration / Rollout
 
-No data migration. Publish order: `data_access` -> `chat_common` -> tools -> `chat_invoke`/`chat_list`/`on_submit`; smoke test each before publish. Rollback: git revert per-file commit + re-publish prior code.
+No data migration. Publish order: `data_access` → `chat_common` → tools → `chat_invoke`/`chat_list`/`on_submit`; smoke test each before publish. Rollback: git revert per-file commit + re-publish prior code. **Pre-apply blockers**: rewrite Zia calls to the documented no-comma syntax (Open Question a, now resolved — see Decision above) and confirm `Form[ID != 0]` fetch-all per form (Open Question b).
 
 ## Open Questions
 
-- [ ] Spec generic-signature vs Creator literal-syntax constraint (per-form chosen; revisit if form-name vars supported).
-- [ ] Confirm `ChatRequests[ID == requestId]` resolves in-workflow on Submit.
-- [ ] Confirm `User == <userId>` matches like today.
-- [ ] Confirm bound-record mutation persists via `update_session` arg.
+- [x] **(a) Zia task invocation syntax** — RESOLVED via official Zoho Deluge docs (Zia task): parameters are NOT comma-separated; each named parameter (`message`, `files`, `context`, `parameters`) goes on its own line inside `Zia[...]`. Apply phase must rewrite the calls in `chat_intent` and `compose_with_ai` to this form. A final editor smoke check still confirms the exact line/whitespace layout accepted by the Creator editor.
+- [ ] **(b) `Form[ID != 0]` as fetch-all** — confirm at runtime for each Form (manual gate, same spirit as gate 5.1).
+- [ ] **(c) Type match `ChatRequests[ID == requestId]`** — requestId arrives as String; ID is numeric. Only verifiable in Creator.
+
+## Risks
+
+| Risk | Mitigation |
+|---|---|
+| Field-literal drift: query field baked in data_access vs same field in `*Fields` config map (response reads) — a rename must hit both | Document the coupling (README field table); one smoke per helper |
+| Branching per tool (0 / 1+ conditions) — wrong branch = empty or unfiltered result | Uniform ID pipeline (any-vs-none only); seed/intersect per spec; smoke 0/1/2+ params |
+| Empty `targetIDs` → `Form[ID in []]` behavior unknown in Creator | Short-circuit `targetIDs.size() == 0` → `data:[]` without final fetch |
+| NPE if post-insert refetch returns null (new session) | Keep `newRecords != null && size() > 0` guard; `on_submit` catches → `Status=failed` |
+| Zia call syntax unconfirmed → apply blocked | Open Question (a); editor check before apply |

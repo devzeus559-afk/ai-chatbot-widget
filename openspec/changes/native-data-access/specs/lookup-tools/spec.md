@@ -1,10 +1,8 @@
-# Lookup Tools Specification
+# Delta Spec: lookup-tools
 
-## Purpose
+Change: **native-data-access** — migrates the 5 business tools (`track_package`, `search_services`, `find_offices`, `check_coverage`, `find_contacts`) to native Creator filters with limits and sorts preserved. This domain is new (no prior formal spec), so all requirements are ADDED.
 
-The 5 business tools (`track_package`, `search_services`, `find_offices`, `check_coverage`, `find_contacts`) read business data through the native data-access layer with limits and sorts preserved and backwards-compatible return shapes.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Backwards-Compatible Signatures
 

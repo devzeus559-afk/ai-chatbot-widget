@@ -1,12 +1,8 @@
-# Data Access Layer Specification
+# Delta Spec: data-access-layer
 
-## Purpose
+Change: **native-data-access** — introduces the central native Zoho Creator access module (`deluge/core/data_access.deluge`) and removes every `zoho.creator.*` Developer API call. This domain is new (no prior formal spec), so all requirements are ADDED.
 
-Central native Zoho Creator access module (`deluge/core/data_access.deluge`) shared by all chat flows and tools. Replaces every `zoho.creator.*` Developer API call with native `Form[...]` fetches, `insert into Form[...]`, and in-memory record mutation — 0 external + 0 Developer API calls.
-
-Native filter contract (Creator constraint): `Form[Field == value]` is valid when the field name is a LITERAL and the value is a variable. A criteria string variable inside the brackets (`Form[criteriaVar]`) is INVALID and MUST NOT be used; string criteria building (`append_criteria`) is removed. Filters take explicit (field, value) pairs; 2+ condition AND uses the ID-list pattern.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Native Fetch Wrapper
 

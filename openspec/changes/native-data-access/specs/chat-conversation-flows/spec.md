@@ -1,10 +1,8 @@
-# Chat Conversation Flows Specification
+# Delta Spec: chat-conversation-flows
 
-## Purpose
+Change: **native-data-access** — migrates `chat_invoke`, `chat_list`, and `on_submit_chatrequests` to the native data-access layer (0 external + 0 Developer API calls per turn). This domain is new (no prior formal spec), so all requirements are ADDED.
 
-`chat_invoke`, `chat_list`, and `on_submit_chatrequests` run entirely on the native data-access layer: 0 external + 0 Developer API calls per chat turn (Zia aside), with behavior parity to the previous `zoho.creator.*` flow.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Zero-API Chat Turn
 
