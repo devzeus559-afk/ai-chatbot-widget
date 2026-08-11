@@ -26,57 +26,63 @@ Map chat_config()
     config.put("service", "Service");
     config.put("package", "Package");
     config.put("coverageLocation", "Coverage_Location");
+    config.put("vendor", "Vendor");
 
-    // --- Campos de negocio por módulo (link names) ---
+    // --- Campos de negocio por módulo (link names REALES del dump de la app) ---
     // SOLO LECTURA para mapear la respuesta (leer el atributo del registro con
     // Map.get, p. ej. pkg.get(fields.get("trackingNumber"))).
     // Los nombres de campo de las CONSULTAS son LITERALES en data_access.deluge
     // (Form[Field == valor]) — NUNCA usar fields.get(...) dentro de Form[...]
     // (un nombre de campo desde variable es inválido en Creator).
-    // AJUSTAR al esquema real de la app. Campos vacíos = se omiten en el mapeo.
+    // Campos de tipo compuesto (name/address): el valor del mapa es el campo
+    // TOP-LEVEL y la tool lee los subcampos en memoria (p. ej.
+    // rec.get("First_Name").get("first_name")). Campos sin equivalente real
+    // (Current_Location, Estimated_Delivery, Currency, Phone, Business_Hours,
+    // Vendor/Service_Type/Details en Coverage_Location) se ELIMINARON — ver reporte.
 
     packageFields = Map();
     packageFields.put("trackingNumber", "Tracking_Number");
     packageFields.put("status", "Status");
-    packageFields.put("origin", "Origin");
-    packageFields.put("destination", "Destination");
-    packageFields.put("currentLocation", "Current_Location");
-    packageFields.put("estimatedDelivery", "Estimated_Delivery");
+    packageFields.put("origin", "Sender_Address");   // compuesto: country se lee en la tool
+    packageFields.put("destination", "City");        // ciudad del receptor (Package.City)
     config.put("packageFields", packageFields);
 
     serviceFields = Map();
-    serviceFields.put("name", "Service_Name");
-    serviceFields.put("type", "Service_Type");   // Paquetería | Remesa | Recarga
-    serviceFields.put("price", "Price");
-    serviceFields.put("currency", "Currency");
-    serviceFields.put("description", "Description");
-    serviceFields.put("estimatedTime", "Estimated_Time");
-    serviceFields.put("origin", "Origin");          // opcional
-    serviceFields.put("destination", "Destination"); // opcional
+    serviceFields.put("name", "Service_ID");          // identificador del servicio (no existe Service_Name)
+    serviceFields.put("type", "Service_Type");        // Package Receipt | Locker | Store | Remittance | Recharge | ...
+    // Price existe (Total Price, USD) pero se omitió del mapeo por decisión de
+    // producto; se muestra Service_ID + Service_Type.
     config.put("serviceFields", serviceFields);
 
     officeFields = Map();
-    officeFields.put("name", "Office_Name");
-    officeFields.put("address", "Address");
-    officeFields.put("city", "City");
-    officeFields.put("country", "Country");
-    officeFields.put("phone", "Phone");
-    officeFields.put("hours", "Business_Hours");
+    officeFields.put("name", "Office_Name");           // text (único)
+    officeFields.put("address", "Address");            // campo compuesto (address)
+    officeFields.put("city", "district_city");         // subfield de Address
+    officeFields.put("country", "country");             // subfield de Address
     config.put("officeFields", officeFields);
 
     coverageFields = Map();
-    coverageFields.put("country", "Country");
-    coverageFields.put("vendor", "Vendor");
-    coverageFields.put("serviceType", "Service_Type");
-    coverageFields.put("details", "Details");
+    coverageFields.put("name", "Location_Name");       // text
+    coverageFields.put("locationId", "Location_ID");   // text
+    coverageFields.put("address", "Address_Information1"); // compuesto (address)
+    coverageFields.put("country", "country");           // subfield de Address_Information1
+    coverageFields.put("state", "state_province");       // subfield (opcional)
     config.put("coverageFields", coverageFields);
 
+    vendorFields = Map();
+    vendorFields.put("name", "Vendor_Name");              // text
+    vendorFields.put("vendorId", "Vendor_ID");            // text
+    vendorFields.put("type", "Vendor_Type");              // list (Transporter|Freight Forwarder|Remittance|Recharge|Remittance & Recharge); cruza con Service.Service_Type
+    config.put("vendorFields", vendorFields);
+
     contactFields = Map();
-    contactFields.put("fullName", "Full_Name");
-    contactFields.put("phone", "Phone");
-    contactFields.put("email", "Email");
-    contactFields.put("document", "Document_Number");
-    contactFields.put("role", "Role");   // Sender | Receiver
+    contactFields.put("fullName", "First_Name");       // compuesto (name)
+    contactFields.put("firstName", "first_name");      // subfield de First_Name
+    contactFields.put("lastName", "last_name");        // subfield de First_Name
+    contactFields.put("phone", "Mobile");              // phonenumber (único)
+    contactFields.put("email", "Email");               // email
+    contactFields.put("document", "DNI");              // text
+    contactFields.put("role", "Type_field");           // picklist Sender | Receiver | Sender & Receiver
     config.put("contactFields", contactFields);
 
     // --- Scoping por usuario ---
@@ -106,10 +112,9 @@ Map chat_config()
 
     tool = Map();
     tool.put("name", "search_services");
-    tool.put("description", "Lista los servicios disponibles. Filtros opcionales: tipo de servicio (Paquetería, Remesa, Recarga), origen, destino.");
+    tool.put("description", "Lista los servicios disponibles. Filtros opcionales: tipo de servicio (Package Receipt, Locker, Store, Remittance, Recharge, Online Store, Other Services), ciudad destino.");
     tool.put("params", {
         "serviceType": "string opcional",
-        "origin": "string opcional",
         "destination": "string opcional"
     });
     tools.add(tool);
@@ -125,11 +130,11 @@ Map chat_config()
 
     tool = Map();
     tool.put("name", "check_coverage");
-    tool.put("description", "Consulta los países/zonas cubiertos por un proveedor para un tipo de servicio (remesas, recargas, paquetería).");
+    tool.put("description", "Consulta zonas cubiertas (Coverage_Location) por país y proveedores activos (Vendor) por tipo de servicio o nombre. Coverage_Location no modela vendor/service_type; los proveedores vienen del módulo Vendor (Vendor_Type coincide con Service.Service_Type).");
     tool.put("params", {
         "country": "string opcional",
-        "vendor": "string opcional",
-        "serviceType": "string opcional"
+        "serviceType": "string opcional",
+        "vendor": "string opcional"
     });
     tools.add(tool);
 
