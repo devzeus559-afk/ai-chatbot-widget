@@ -65,7 +65,7 @@ deluge/
 |---|---|
 | `chat_config.deluge` | `chat_config` |
 | `chat_common.deluge` | `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts` |
-| `data_access.deluge` | `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_session_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_user`, `insert_chat_session`, `fetch_chat_messages_by_session`, `insert_chat_message`, `fetch_packages_by_tracking`, `fetch_services_ids_by_type/origin/destination`, `fetch_services_by_ids`, `fetch_services_all`, `fetch_offices_ids_by_city/country`, `fetch_offices_by_ids`, `fetch_offices_all`, `fetch_coverage_ids_by_country/vendor/service_type`, `fetch_coverage_by_ids`, `fetch_coverage_all`, `fetch_contacts_ids_by_full_name/phone/document`, `fetch_contacts_by_ids`, `fetch_contacts_all` |
+| `data_access.deluge` | `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_session_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_user`, `insert_chat_session`, `fetch_chat_messages_by_session`, `insert_chat_message`, `fetch_packages_by_tracking`, `fetch_services_ids_by_type/_by_destination`, `fetch_services_by_ids`, `fetch_services_all`, `fetch_offices_by_ids`, `fetch_offices_all`, `fetch_coverage_by_ids`, `fetch_coverage_all`, `fetch_vendors_ids_by_type/_by_name`, `fetch_vendors_by_ids`, `fetch_vendors_all`, `fetch_contacts_ids_by_full_name/phone/document`, `fetch_contacts_by_ids`, `fetch_contacts_all` |
 | `chat_intent.deluge` | `chat_intent`, `build_intent_prompt` |
 | `chat_invoke.deluge` | `chat_invoke`, `resolve_reply`, `dispatch_tool`, `compose_with_ai`, `get_or_create_session`, `create_message`, `get_recent_history`, `update_session` |
 | `chat_list.deluge` | `chat_list` |
@@ -125,13 +125,16 @@ cambia los valores en `chat_config()` (sección `*Fields`) — los mapas `*Field
 LITERALES en `data_access.deluge`: si renombras un campo en Creator, hay que ajustarlo
 en AMBOS sitios (el literal de la consulta en `data_access` y el mapa `*Fields`).
 
-| Módulo | Campo asumido | Uso |
+| Módulo | Campo real (link name) | Uso |
 |---|---|---|
-| `Package` | `Tracking_Number`, `Status`, `Origin`, `Destination`, `Current_Location`, `Estimated_Delivery` | seguimiento |
-| `Service` | `Service_Name`, `Service_Type`, `Price`, `Currency`, `Description`, `Estimated_Time`, `Origin` (opcional), `Destination` (opcional) | catálogo de servicios |
-| `Commercial_Office` | `Office_Name`, `Address`, `City`, `Country`, `Phone`, `Business_Hours` | oficinas |
-| `Coverage_Location` | `Country`, `Vendor`, `Service_Type`, `Details` | cobertura por proveedor |
-| `Contacts` | `Full_Name`, `Phone`, `Email`, `Document_Number`, `Role` | remitente/receptor |
+| `Package` | `Tracking_Number`, `Status` (picklist), `Sender_Address` (address), `City` (texto, destino del receptor) | seguimiento (el historial en vivo está en `Pkg_Tracking`) |
+| `Service` | `Service_ID`, `Service_Type` (picklist), `City` (texto, destino), `Vendor` (→ Vendor: Vendor_Type) | catálogo de servicios (no hay Service_Name; el nombre que se muestra es el Service_ID). `Price` (Total Price, USD) EXISTE pero se omitió del mapeo por decisión de producto |
+| `Commercial_Office` | `Office_Name` (único), `Address` (compuesto: address_line_1, district_city, state_province, postal_Code, country) | oficinas (city/country se leen de subfields del Address; sin Phone/Business_Hours) |
+| `Coverage_Location` | `Location_ID`, `Location_Name`, `Address_Information1` (compuesto: country, state_province, ...) | zonas cubiertas por país/estado |
+| `Vendor` | `Vendor_Name`, `Vendor_ID`, `Vendor_Type` (list: Transporter, Freight Forwarder, Remittance, Recharge, Remittance & Recharge), `Active` | proveedores; Vendor_Type cruza con Service.Service_Type |
+| `Contacts` | `First_Name` (name: first_name, last_name), `Mobile` (único), `Email`, `DNI`, `Type_field` (Sender/Receiver/Sender & Receiver) | remitente/receptor |
+
+> ⚠️ Los campos de tipo **composite** (`address`, `name`) NO se comparan como un TODO contra un string plano con `Form[campo == valor]`; los SUBCAMPOS sí se usan con dot-syntax en criterios (el propio app usa p. ej. `Contacts[Address.state_province == ...]`) y el filtrado en memoria sobre el subfield es el enfoque determinista elegido en las tools. `check_coverage` conecta geografía (Coverage_Location, country) con proveedores (Vendor, Vendor_Type ↔ Service.Service_Type): Coverage_Location NO tiene vendor/service_type. `Service` no tiene Service_Name y `Package` no tiene Current_Location/Estimated_Delivery; `Service.Price` (Total Price, USD) existe pero se omitió del mapeo por decisión de producto.
 
 ## Seguridad y límites (leer)
 
@@ -166,8 +169,11 @@ permisos de Creator, no una consulta). `chat_list()` queda como helper server-si
 otros consumidores (páginas de Creator, integraciones).
 
 **Configuración en el widget**: en `LM2Chatbot/app/widget.html` → `CONFIG`:
-`appName` (REPLACE_WITH_APP_LINK_NAME — solo para la Client API del widget; el backend
-ya NO usa `appName`) y los nombres de módulo `ChatSessions`/`ChatMessages`/`ChatRequests`.
+`appName` ya está configurado con el link name real de la app
+(`copy-1-of-logistic-management-ii`; solo lo usa la Client API del widget — el backend
+ya NO usa `appName`). Si la app de destino difiere, reemplázalo por el link name real
+de esa app. Los nombres de módulo `ChatSessions`/`ChatMessages`/`ChatRequests` deben
+mantenerse en sincronía con `chat_config()`.
 
 **Flujo de envío**: `sendMessage()` → `addRecord(ChatRequests, {Session_ID, Prompt})` →
 polling cada 1.5 s (timeout 45 s) sobre el `ChatRequests` más reciente de la sesión
