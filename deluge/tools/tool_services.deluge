@@ -2,8 +2,8 @@
  * tool_services.deluge
  *
  * Lista servicios disponibles desde el módulo Service.
- * Recibe (todos opcionales): {"serviceType", "origin", "destination"}
- * Devuelve: {"ok": true, "data": [{name, type, price, currency, description, estimatedTime}]}
+ * Recibe (todos opcionales): {"serviceType", "destination"}  (sin "origin")
+ * Devuelve: {"ok": true, "data": [{name, type}]}
  *
  * Acceso nativo vía data_access (0 llamadas de API de Creator). Patrón ID-list
  * (gate 5.1: Form[criteriaVar] es inválido):
@@ -11,7 +11,15 @@
  * - 1+ filtros             -> IDs por condición (.ID.getAll()), addAll en el
  *                             primero e intersect en los siguientes, guard de
  *                             lista vacía y fetch final fetch_services_by_ids.
- * Límite 200 (range 0-199), orden Service_Name asc.
+ * Límite 200 (range 0-199), orden Service_ID asc.
+ *
+ * CAMPOS REALES (dump): Service.Service_Type (picklist), Service.Service_ID,
+ * Service.City (text, destino), Service.Price (Total Price, USD — EXISTE pero
+ * se omitió del mapeo por decisión de producto). NO existen Service_Name,
+ * Origin, Destination, Currency, Description ni Estimated_Time -> el filtro
+ * "destination" consulta el campo REAL Service.City (ciudad destino) y el
+ * filtro "origin" se ELIMINÓ (no hay campo de origen en Service). El listado
+ * devuelve Service_ID (como "name") y Service_Type (como "type"); sin precio.
  */
 
 Map tool_services(Map params)
@@ -27,17 +35,6 @@ Map tool_services(Map params)
         ids = fetch_services_ids_by_type(serviceType);
         targetIDs.addAll(ids);
         hasFilter = true;
-    }
-
-    origin = params.get("origin");
-    if (origin != null && origin != "") {
-        ids = fetch_services_ids_by_origin(origin);
-        if (hasFilter) {
-            targetIDs = targetIDs.intersect(ids);
-        } else {
-            targetIDs.addAll(ids);
-            hasFilter = true;
-        }
     }
 
     destination = params.get("destination");
@@ -69,10 +66,6 @@ Map tool_services(Map params)
         item = Map();
         item.put("name", s.get(fields.get("name")));
         item.put("type", s.get(fields.get("type")));
-        item.put("price", s.get(fields.get("price")));
-        item.put("currency", s.get(fields.get("currency")));
-        item.put("description", s.get(fields.get("description")));
-        item.put("estimatedTime", s.get(fields.get("estimatedTime")));
         resultList.add(item);
     }
 

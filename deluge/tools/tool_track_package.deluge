@@ -8,6 +8,12 @@
  * Acceso nativo vía data_access.fetch_packages_by_tracking (0 llamadas de API
  * de Creator): igualdad inline con campo LITERAL (Tracking_Number) y valor como
  * variable; orden Created_Time desc; .get(0) = paquete más reciente.
+ *
+ * CAMPOS REALES (dump): Package.Tracking_Number, Package.Status (picklist
+ * Received|Dispatched|Delivered|Returned|Invoiced|Labeled), Package.Sender_Address
+ * (address compuesto: pais del remitente), Package.City (ciudad del receptor).
+ * NO existen Current_Location ni Estimated_Delivery; el historial de tracking
+ * en vivo (Latest_Status/Last_Updated) vive en Pkg_Tracking (ver reporte).
  */
 
 Map tool_track_package(Map params)
@@ -30,10 +36,16 @@ Map tool_track_package(Map params)
     data = Map();
     data.put("trackingNumber", pkg.get(fields.get("trackingNumber")));
     data.put("status", pkg.get(fields.get("status")));
-    data.put("origin", pkg.get(fields.get("origin")));
+
+    // Origen: Package.Sender_Address (address compuesto) -> leer subcampo country
+    senderAddr = pkg.get(fields.get("origin"));
+    originValue = "";
+    if (senderAddr != null) {
+        originValue = senderAddr.get("country");
+    }
+    data.put("origin", originValue);
+
     data.put("destination", pkg.get(fields.get("destination")));
-    data.put("currentLocation", pkg.get(fields.get("currentLocation")));
-    data.put("estimatedDelivery", pkg.get(fields.get("estimatedDelivery")));
 
     return {"ok": true, "data": data};
 }

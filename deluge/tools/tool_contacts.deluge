@@ -1,17 +1,27 @@
 /**
  * tool_contacts.deluge
  *
- * Busca contactos (remitente o receptor) en el módulo Contacts.
+ * Lista contactos disponibles desde Contacts.
  * Recibe (todos opcionales): {"name", "phone", "document"}
+ *   - name: filtra en MEMORIA sobre los subcampos de First_Name (name
+ *     composite) — first_name/last_name, case-insensitive (el composite no
+ *     se compara a un string plano; ver fetch_contacts_ids_by_full_name).
  * Devuelve: {"ok": true, "data": [{fullName, phone, email, document, role}]}
  *
  * Acceso nativo vía data_access (0 llamadas de API de Creator). Patrón ID-list
  * (gate 5.1: Form[criteriaVar] es inválido):
  * - Sin filtros            -> fetch_contacts_all()        (Form[ID != 0])
- * - 1+ filtros             -> IDs por condición (.ID.getAll()), addAll en el
- *                             primero e intersect en los siguientes, guard de
- *                             lista vacía y fetch final fetch_contacts_by_ids.
- * Límite 50 (range 0-49), orden Full_Name asc.
+ * - 1+ filtros             -> IDs por condición, addAll en el primero e
+ *                             intersect en los siguientes, guard de lista
+ *                             vacía y fetch final fetch_contacts_by_ids.
+ *                             name = filtro en memoria sobre First_Name
+ *                             (subcampos); phone/document = .ID.getAll().
+ *  Límite de SALIDA 50 (range 0-49), orden First_Name asc. El filtro por
+ *  nombre escanea una ventana MAYOR en memoria (fetch_contacts_ids_by_full_name
+ *  usa range 0-999): si no, solo se verían los primeros 50 alfabéticos y los
+ *  contactos fuera de esa ventana jamás matchearían por nombre (phone/document
+ *  sí son globales vía .ID.getAll()). El límite 50 final lo aplica el fetch
+ *  fetch_contacts_by_ids.
  *
  * NOTA DE PRIVACIDAD: los resultados pueden contener PII. Si el LLM configurado
  * en Zia es externo (OpenAI/Gemini/Anthropic), la data sale de la organización;
@@ -71,7 +81,24 @@ Map tool_contacts(Map params)
 
     for each c in records {
         item = Map();
-        item.put("fullName", c.get(fields.get("fullName")));
+        // First_Name es un campo compuesto (name): leer nombres de subfields
+        nameRec = c.get(fields.get("fullName"));
+        firstName = "";
+        lastName = "";
+        if (nameRec != null) {
+            fn = nameRec.get(fields.get("firstName"));
+            ln = nameRec.get(fields.get("lastName"));
+            if (fn != null) { firstName = "" + fn; }
+            if (ln != null) { lastName = "" + ln; }
+        }
+        if (firstName != "" && lastName != "") {
+            fullName = firstName + " " + lastName;
+        } else if (firstName != "") {
+            fullName = firstName;
+        } else {
+            fullName = lastName;
+        }
+        item.put("fullName", fullName);
         item.put("phone", c.get(fields.get("phone")));
         item.put("email", c.get(fields.get("email")));
         item.put("document", c.get(fields.get("document")));
