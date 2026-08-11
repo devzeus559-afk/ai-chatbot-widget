@@ -26,15 +26,47 @@
  * - `insert into` NO ejecuta los scripts On Validate / On Success del módulo:
  *   verificar en la UI de Creator antes de publicar.
  *
- * Funciones: fetch_chat_requests_by_id, fetch_chat_sessions_by_session_id,
+ * CAMPOS REALES DE LA APP (ver dump Logistic_Management_II (1).ds):
+ * - Package:    Tracking_Number (text), Status (picklist), Sender_Address
+ *               (address compuesto), City (text) — sin Current_Location /
+ *               Estimated_Pickup / Origin / Destination.
+ *   ACTUALIZACIÓN IMPORTANTE: el estado de seguimiento (Latest_Status,
+ *   Last_Updated, Status_History) NO vive en Package sino en Pkg_Tracking
+ *   (ver "Pkg_Tracking vs Package" abajo); track_package sigue leyendo
+ *   Package.Status (existe) y el resto de campos accesibles.
+ * - Service: Service_ID (text), Service_Type (picklist), Price (currency USD),
+ *   City (text, destino). AUSENTES: Service_Name, Origin, Destination,
+ *   Currency, Description, Estimated_Time -> eliminados del mapa.
+ * - Commercial_Office: Office_Name (unique), Address (address compuesto:
+ *   address_line_1, district_city, state_province, postal_Code, country).
+ *   AUSENTES top-level: City, Country, Phone, Business_Hours -> ciudad/país
+ *   se contestan desde el compuesto Address en la tool; no hay filtros de
+ *   ciudad/país (no hay campo simple).
+ * - Coverage_Location: Location_ID (text), Location_Name (text),
+ *   Address_Information1 (address compuesto). AUSENTES: Country, Vendor,
+ *   Service_Type, Details -> país se lee del compuesto; no hay filtros
+ *   country/vendor/serviceType (no top-level). El puente a vendor/serviceType
+ *   se hace en la tool vía el módulo Vendor (Vendor_Type).
+ * - Vendor: Vendor_Name (text), Vendor_ID, Vendor_Type (list:
+ *   Transporter, Freight Forwarder, Remittance, Recharge, Remittance & Recharge),
+ *   Active. Vendor_Type cruza con Service.Service_Type (el app usa
+ *   `Vendor[Vendor_Type == input.Service_Type && Active == true]`).
+ * - Contacts: First_Name (name compuesto), Mobile (único), Email, DNI,
+ *   Type_field (Sender|Receiver|Sender & Receiver). AUSENTES top-level:
+ *   Full_Name, Phone, Document_Number, Role -> se leen subcampos (First_Name
+ *   compuesto) y Mobil/DNI reemplazan Phone/Document_Number.
+ *
+ * Funciones (25): fetch_chat_requests_by_id, fetch_chat_sessions_by_session_id,
  *            fetch_chat_sessions_by_id, fetch_chat_sessions_by_user,
  *            insert_chat_session, fetch_chat_messages_by_session,
  *            insert_chat_message, fetch_packages_by_tracking,
- *            fetch_services_ids_by_type/origin/destination, fetch_services_by_ids,
- *            fetch_services_all, fetch_offices_ids_by_city/country,
+ *            fetch_services_ids_by_type / _by_destination,
+ *            fetch_services_by_ids, fetch_services_all,
  *            fetch_offices_by_ids, fetch_offices_all,
- *            fetch_coverage_ids_by_country/vendor/service_type, fetch_coverage_by_ids,
- *            fetch_coverage_all, fetch_contacts_ids_by_full_name/phone/document,
+ *            fetch_coverage_by_ids, fetch_coverage_all,
+ *            fetch_vendors_ids_by_type / _by_name, fetch_vendors_by_ids,
+ *            fetch_vendors_all,
+ *            fetch_contacts_ids_by_full_name/phone/document,
  *            fetch_contacts_by_ids, fetch_contacts_all
  */
 
@@ -108,7 +140,7 @@ Number insert_chat_message(Map data)
 }
 
 // --------------------------------------------------------------------------
-// Package — seguimiento (igualdad inline, más reciente primero)
+// Package — seguimiento (Tracking_Number real, sin Current_*)
 // --------------------------------------------------------------------------
 List fetch_packages_by_tracking(String trackingNumber)
 {
@@ -119,6 +151,7 @@ List fetch_packages_by_tracking(String trackingNumber)
 
 // --------------------------------------------------------------------------
 // Service — IDs por condición + fetch final por IDs + sin filtro
+// (solo filtros REALES: Service_Type y City/destino; Origin NO existe)
 // --------------------------------------------------------------------------
 List fetch_services_ids_by_type(String serviceType)
 {
@@ -127,51 +160,31 @@ List fetch_services_ids_by_type(String serviceType)
     return ids;
 }
 
-List fetch_services_ids_by_origin(String origin)
-{
-    config = chat_config();
-    ids = Service[Origin == origin].ID.getAll();
-    return ids;
-}
-
 List fetch_services_ids_by_destination(String destination)
 {
     config = chat_config();
-    ids = Service[Destination == destination].ID.getAll();
+    ids = Service[City == destination].ID.getAll();
     return ids;
 }
 
 List fetch_services_by_ids(List ids)
 {
     config = chat_config();
-    records = Service[ID in ids] sort by Service_Name range from 0 to 199;
+    records = Service[ID in ids] sort by Service_ID range from 0 to 199;
     return records;
 }
 
 List fetch_services_all()
 {
     config = chat_config();
-    records = Service[ID != 0] sort by Service_Name range from 0 to 199;
+    records = Service[ID != 0] sort by Service_ID range from 0 to 199;
     return records;
 }
 
 // --------------------------------------------------------------------------
-// Commercial_Office — IDs por condición + fetch final por IDs + sin filtro
+// Commercial_Office — sin filtros (no hay City/Country top-level), solo
+// fetch final por IDs + sin filtro; ciudad/país se leen del compuesto Address
 // --------------------------------------------------------------------------
-List fetch_offices_ids_by_city(String city)
-{
-    config = chat_config();
-    ids = Commercial_Office[City == city].ID.getAll();
-    return ids;
-}
-
-List fetch_offices_ids_by_country(String country)
-{
-    config = chat_config();
-    ids = Commercial_Office[Country == country].ID.getAll();
-    return ids;
-}
-
 List fetch_offices_by_ids(List ids)
 {
     config = chat_config();
@@ -187,77 +200,131 @@ List fetch_offices_all()
 }
 
 // --------------------------------------------------------------------------
-// Coverage_Location — IDs por condición + fetch final por IDs + sin filtro
+// Coverage_Location — sin filtros REALES (Country/Vendor/Service_Type NO
+// existen top-level), fetch_all + fetch_by_ids; país se lee del compuesto
+// Address_Information1 en la tool
 // --------------------------------------------------------------------------
-List fetch_coverage_ids_by_country(String country)
-{
-    config = chat_config();
-    ids = Coverage_Location[Country == country].ID.getAll();
-    return ids;
-}
-
-List fetch_coverage_ids_by_vendor(String vendor)
-{
-    config = chat_config();
-    ids = Coverage_Location[Vendor == vendor].ID.getAll();
-    return ids;
-}
-
-List fetch_coverage_ids_by_service_type(String serviceType)
-{
-    config = chat_config();
-    ids = Coverage_Location[Service_Type == serviceType].ID.getAll();
-    return ids;
-}
-
 List fetch_coverage_by_ids(List ids)
 {
     config = chat_config();
-    records = Coverage_Location[ID in ids] sort by Country range from 0 to 199;
+    records = Coverage_Location[ID in ids] sort by Location_Name range from 0 to 199;
     return records;
 }
 
 List fetch_coverage_all()
 {
     config = chat_config();
-    records = Coverage_Location[ID != 0] sort by Country range from 0 to 199;
+    records = Coverage_Location[ID != 0] sort by Location_Name range from 0 to 199;
+    return records;
+}
+
+// --------------------------------------------------------------------------
+// Vendor — IDs por condición + fetch final por IDs + sin filtro.
+// Vendor_Type es un campo LIST (multi-select): el == se evalúa como
+// "contiene" (mismo criterio que el picklist list‑name del propio app:
+// Vendor[Vendor_Type == input.Service_Type && Active == true]).
+// --------------------------------------------------------------------------
+List fetch_vendors_ids_by_type(String serviceType)
+{
+    config = chat_config();
+    ids = Vendor[Vendor_Type == serviceType && Active == true].ID.getAll();
+    return ids;
+}
+
+List fetch_vendors_ids_by_name(String vendor)
+{
+    config = chat_config();
+    ids = Vendor[Vendor_Name == vendor && Active == true].ID.getAll();
+    return ids;
+}
+
+List fetch_vendors_by_ids(List ids)
+{
+    config = chat_config();
+    records = Vendor[ID in ids] sort by Vendor_Name range from 0 to 199;
+    return records;
+}
+
+List fetch_vendors_all()
+{
+    config = chat_config();
+    records = Vendor[ID != 0] sort by Vendor_Name range from 0 to 199;
     return records;
 }
 
 // --------------------------------------------------------------------------
 // Contacts — IDs por condición + fetch final por IDs + sin filtro (límite 50)
+// Full_Name -> First_Name (compuesto: full_name filtra en memoria sobre los
+// subcampos; no hay igualdad inline contra el composite), Phone -> Mobile,
+// Document_Number -> DNI
+// CONTRATO DE SALIDA: ≤50 registros, orden First_Name asc. La ventana de
+// ESCANEO de fetch_contacts_ids_by_full_name (0-999) es deliberadamente mayor
+// que ese límite (el filtro por nombre es en memoria; phone/document son
+// globales vía .ID.getAll()).
 // --------------------------------------------------------------------------
 List fetch_contacts_ids_by_full_name(String fullName)
 {
     config = chat_config();
-    ids = Contacts[Full_Name == fullName].ID.getAll();
+    ids = List();
+    if (fullName == null || fullName == "") {
+        return ids;
+    }
+    // First_Name es un campo compuesto (name): NO se compara el composite
+    // completo contra un string plano (regla del proyecto). Se filtra en
+    // memoria sobre los subcampos first_name/last_name (case-insensitive),
+    // mismo enfoque determinista que offices/coverage para country.
+    // La ventana de escaneo (scanCap = 999) es MAYOR que el límite de salida
+    // (50): un range 0-49 solo alcanzaría los primeros 50 alfabéticos y los
+    // contactos fuera de esa ventana jamás matchearían por nombre. El cap
+    // superior lo garantiza el fetch final fetch_contacts_by_ids (0-49).
+    scanCap = 999;
+    query = toLowerCase("" + fullName).trim();
+    records = Contacts[ID != 0] sort by First_Name range from 0 to scanCap;
+    if (records == null) {
+        return ids;
+    }
+    for each c in records {
+        nameRec = c.get("First_Name");
+        if (nameRec == null) {
+            continue;
+        }
+        fn = nameRec.get("first_name");
+        ln = nameRec.get("last_name");
+        candidate = "";
+        if (fn != null) { candidate = candidate + fn; }
+        if (ln != null) { candidate = candidate + " " + ln; }
+        candidate = toLowerCase(candidate).trim();
+        if (candidate.indexOf(query) >= 0) {
+            ids.add(c.get("ID"));
+        }
+    }
     return ids;
 }
 
 List fetch_contacts_ids_by_phone(String phone)
 {
     config = chat_config();
-    ids = Contacts[Phone == phone].ID.getAll();
+    ids = Contacts[Mobile == phone].ID.getAll();
     return ids;
 }
 
 List fetch_contacts_ids_by_document(String document)
 {
     config = chat_config();
-    ids = Contacts[Document_Number == document].ID.getAll();
+    ids = Contacts[DNI == document].ID.getAll();
     return ids;
 }
 
 List fetch_contacts_by_ids(List ids)
 {
     config = chat_config();
-    records = Contacts[ID in ids] sort by Full_Name range from 0 to 49;
+    records = Contacts[ID in ids] sort by First_Name range from 0 to 49;
     return records;
 }
 
 List fetch_contacts_all()
 {
     config = chat_config();
-    records = Contacts[ID != 0] sort by Full_Name range from 0 to 49;
+    records = Contacts[ID != 0] sort by First_Name range from 0 to 49;
     return records;
 }
