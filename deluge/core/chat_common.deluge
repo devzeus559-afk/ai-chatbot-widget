@@ -57,7 +57,8 @@ String compose_reply(Map toolResult, Map intent)
         return format_offices(data);
     }
     if (toolName == "check_coverage") {
-        return format_coverage(data);
+        // La tool devuelve locations (data) + proveedores (vendors): mostrar ambos
+        return format_coverage(data, toolResult.get("vendors"));
     }
     if (toolName == "find_contacts") {
         return format_contacts(data);
@@ -73,14 +74,10 @@ String format_tracking(Map pkg)
     }
     text = "Paquete " + pkg.get("trackingNumber") + "\n";
     text = text + "Estado: " + pkg.get("status") + "\n";
-    if (pkg.get("currentLocation") != null && pkg.get("currentLocation") != "") {
-        text = text + "Ubicación actual: " + pkg.get("currentLocation") + "\n";
-    }
+    // Sin currentLocation/estimatedDelivery: no existen en Package (dump);
+    // tool_track_package solo emite trackingNumber/status/origin/destination.
     text = text + "Origen: " + pkg.get("origin") + "\n";
     text = text + "Destino: " + pkg.get("destination") + "\n";
-    if (pkg.get("estimatedDelivery") != null && pkg.get("estimatedDelivery") != "") {
-        text = text + "Entrega estimada: " + pkg.get("estimatedDelivery");
-    }
     return text;
 }
 
@@ -92,13 +89,10 @@ String format_services(List services)
     text = "Servicios disponibles:\n";
     index = 1;
     for each s in services {
+        // Sin price/currency/estimatedTime: Service.Price existe pero se omitió
+        // del mapeo por decisión de producto; Currency/Estimated_Time no existen
+        // en el dump; tool_services solo emite name/type.
         line = index + ". " + s.get("name") + " (" + s.get("type") + ")";
-        if (s.get("price") != null && s.get("currency") != null) {
-            line = line + " - " + s.get("price") + " " + s.get("currency");
-        }
-        if (s.get("estimatedTime") != null && s.get("estimatedTime") != "") {
-            line = line + " - " + s.get("estimatedTime");
-        }
         text = text + line + "\n";
         index = index + 1;
     }
@@ -122,35 +116,43 @@ String format_offices(List offices)
         if (o.get("country") != null) {
             line = line + ", " + o.get("country");
         }
-        if (o.get("phone") != null) {
-            line = line + ". Tel: " + o.get("phone");
-        }
-        if (o.get("hours") != null) {
-            line = line + ". Horario: " + o.get("hours");
-        }
+        // Sin phone/hours: no existen top-level en Commercial_Office (dump);
+        // tool_offices solo emite name/address/city/country.
         text = text + line + "\n";
     }
     return text;
 }
 
-String format_coverage(List coverage)
+String format_coverage(List coverage, List vendors)
 {
-    if (coverage == null || coverage.size() == 0) {
+    hasLocations = (coverage != null && coverage.size() > 0);
+    hasVendors = (vendors != null && vendors.size() > 0);
+    if (!hasLocations && !hasVendors) {
         return "No encontré cobertura para esa búsqueda.";
     }
-    text = "Cobertura disponible:\n";
-    for each c in coverage {
-        line = "- " + c.get("country");
-        if (c.get("serviceType") != null) {
-            line = line + " (" + c.get("serviceType") + ")";
+    text = "";
+    if (hasLocations) {
+        text = text + "Cobertura disponible:\n";
+        for each c in coverage {
+            line = "- " + c.get("country");
+            if (c.get("state") != null && c.get("state") != "") {
+                line = line + ", " + c.get("state");
+            }
+            text = text + line + "\n";
         }
-        if (c.get("vendor") != null) {
-            line = line + " - proveedor: " + c.get("vendor");
+    }
+    if (hasVendors) {
+        if (hasLocations) {
+            text = text + "\n";
         }
-        if (c.get("details") != null) {
-            line = line + " - " + c.get("details");
+        text = text + "Proveedores disponibles:\n";
+        for each v in vendors {
+            line = "- " + v.get("name");
+            if (v.get("type") != null && v.get("type") != "") {
+                line = line + " (" + v.get("type") + ")";
+            }
+            text = text + line + "\n";
         }
-        text = text + line + "\n";
     }
     return text;
 }

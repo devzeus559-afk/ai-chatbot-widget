@@ -1,40 +1,75 @@
 /**
  * tool_coverage.deluge
  *
- * Consulta la cobertura de países/proveedores desde el módulo Coverage_Location
- * (zonas cubiertas por cada vendor para un tipo de servicio: remesas, recargas,
- * paquetería).
+ * Consulta zonas cubiertas (Coverage_Location) y proveedores activos (Vendor)
+ * para un tipo de servicio / proveedor.
+ * Recibe (todos opcionales): {"country", "serviceType", "vendor"}
+ *   - country: filtra Coverage_Location en MEMORIA sobre el subfield `country`
+ *     de Address_Information1 (Coverage_Location NO tiene campo top-level Country).
+ *   - serviceType: lista proveedores (Vendor) cuyo Vendor_Type coincide con el
+ *     tipo de servicio (Vendor[Vendor_Type == serviceType && Active == true]).
+ *     Vendor_Type cruza con Service.Service_Type (mismo criterio que usa el app).
+ *   - vendor: filtra proveedores por nombre exacto (Vendor_Name).
+ * Devuelve: {"ok": true, "data": [locations:{name, locationId, country, state}],
+ *           "vendors": [vendors:{name, vendorId, type}]}
  *
- * Recibe (todos opcionales): {"country", "vendor", "serviceType"}
- * Devuelve: {"ok": true, "data": [{country, vendor, serviceType, details}]}
- *
- * Acceso nativo vía data_access (0 llamadas de API de Creator). Patrón ID-list
- * (gate 5.1: Form[criteriaVar] es inválido), ver filter_solution_example.deluge:
- * - Sin filtros            -> fetch_coverage_all()        (Form[ID != 0])
- * - 1+ filtros             -> IDs por condición (.ID.getAll()), addAll en el
- *                             primero e intersect en los siguientes, guard de
- *                             lista vacía y fetch final fetch_coverage_by_ids.
- * Límite 200 (range 0-199), orden Country asc.
+ * Acceso nativo vía data_access (0 llamadas de API). CAMPOS REALES (dump):
+ * - Coverage_Location: Location_ID, Location_Name, Address_Information1 (address
+ *   compuesto: address_line_1, district_city, state_province, postal_Code, country).
+ *   NO existen Country/Vendor/Service_Type/Details top-level.
+ * - Vendor: Vendor_Name, Vendor_ID, Vendor_Type (list), Active.
+ * Límite 200 (range 0-199), orden Location_Name / Vendor_Name asc.
  */
 
 Map tool_coverage(Map params)
 {
     config = chat_config();
-    fields = config.get("coverageFields");
+    locFields = config.get("coverageFields");
+    vFields = config.get("vendorFields");
 
+    // --- ubicaciones (Coverage_Location): TODO el el catálogo y filtro country en memoria ---
+    records = fetch_coverage_all();
+    if (records == null) {
+        records = List();
+    }
+    country = params.get("country");
+
+    locList = List();
+    for each c in records {
+        addr = c.get(locFields.get("address"));
+        countryValue = "";
+        stateValue = "";
+        if (addr != null) {
+            co = addr.get(locFields.get("country"));
+            if (co != null) { countryValue = "" + co; }
+            st = addr.get(locFields.get("state"));
+            if (st != null) { stateValue = "" + st; }
+        }
+        if (country != null && country != "") {
+            if (toLowerCase("" + country).trim() != toLowerCase(countryValue).trim()) {
+                continue;
+            }
+        }
+        item = Map();
+        item.put("name", c.get(locFields.get("name")));
+        item.put("locationId", c.get(locFields.get("locationId")));
+        item.put("country", countryValue);
+        item.put("state", stateValue);
+        locList.add(item);
+    }
+
+    // --- proveedores (Vendor): ID-list por Service_Type / nombre, con guard de lista vacía ---
+    serviceType = params.get("serviceType");
+    vendor = params.get("vendor");
     targetIDs = List();
     hasFilter = false;
 
-    country = params.get("country");
-    if (country != null && country != "") {
-        ids = fetch_coverage_ids_by_country(country);
-        targetIDs.addAll(ids);
+    if (serviceType != null && serviceType != "") {
+        targetIDs.addAll(fetch_vendors_ids_by_type(serviceType));
         hasFilter = true;
     }
-
-    vendor = params.get("vendor");
     if (vendor != null && vendor != "") {
-        ids = fetch_coverage_ids_by_vendor(vendor);
+        ids = fetch_vendors_ids_by_name(vendor);
         if (hasFilter) {
             targetIDs = targetIDs.intersect(ids);
         } else {
@@ -43,39 +78,24 @@ Map tool_coverage(Map params)
         }
     }
 
-    serviceType = params.get("serviceType");
-    if (serviceType != null && serviceType != "") {
-        ids = fetch_coverage_ids_by_service_type(serviceType);
-        if (hasFilter) {
-            targetIDs = targetIDs.intersect(ids);
-        } else {
-            targetIDs.addAll(ids);
-            hasFilter = true;
-        }
-    }
-
-    // Guard: intersección vacía -> data:[] (Form[ID in []] es desconocido en Creator)
     if (!hasFilter) {
-        records = fetch_coverage_all();
+        vendorRecords = fetch_vendors_all();
     } else if (targetIDs.size() == 0) {
-        records = List();
+        vendorRecords = List();
     } else {
-        records = fetch_coverage_by_ids(targetIDs);
+        vendorRecords = fetch_vendors_by_ids(targetIDs);
     }
 
-    resultList = List();
-    if (records == null) {
-        return {"ok": true, "data": resultList};
+    vendorList = List();
+    if (vendorRecords != null) {
+        for each v in vendorRecords {
+            vitem = Map();
+            vitem.put("name", v.get(vFields.get("name")));
+            vitem.put("vendorId", v.get(vFields.get("vendorId")));
+            vitem.put("type", v.get(vFields.get("type")));
+            vendorList.add(vitem);
+        }
     }
 
-    for each c in records {
-        item = Map();
-        item.put("country", c.get(fields.get("country")));
-        item.put("vendor", c.get(fields.get("vendor")));
-        item.put("serviceType", c.get(fields.get("serviceType")));
-        item.put("details", c.get(fields.get("details")));
-        resultList.add(item);
-    }
-
-    return {"ok": true, "data": resultList};
+    return {"ok": true, "data": locList, "vendors": vendorList};
 }
