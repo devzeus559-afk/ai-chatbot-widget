@@ -131,49 +131,59 @@ List fetch_packages_by_tracking(String trackingNumber)    # Package[Tracking_Num
 
 # Service — per-condition ID helpers + final fetch + no-filter
 List fetch_services_ids_by_type(String serviceType)       # Service[Service_Type == serviceType].ID.getAll()
-List fetch_services_ids_by_origin(String origin)          # Service[Origin == origin].ID.getAll()
-List fetch_services_ids_by_destination(String destination)# Service[Destination == destination].ID.getAll()
-List fetch_services_by_ids(List ids)                      # Service[ID in ids] sort by Service_Name range from 0 to 199
-List fetch_services_all()                                 # Service[ID != 0] sort by Service_Name range from 0 to 199
+List fetch_services_ids_by_destination(String destination)# Service[City == destination].ID.getAll()
+List fetch_services_by_ids(List ids)                      # Service[ID in ids] sort by Service_ID range from 0 to 199
+List fetch_services_all()                                 # Service[ID != 0] sort by Service_ID range from 0 to 199
+# (sin fetch por origin: Service no tiene campo de origen; sort real por Service_ID, no Service_Name)
 
-# Commercial_Office
-List fetch_offices_ids_by_city(String city)               # Commercial_Office[City == city].ID.getAll()
-List fetch_offices_ids_by_country(String country)         # Commercial_Office[Country == country].ID.getAll()
+# Commercial_Office — SIN per-condition ID helpers (no hay City/Country top-level;
+# son subfields del compuesto Address): fetch_all + filtro en memoria en la tool
 List fetch_offices_by_ids(List ids)                       # Commercial_Office[ID in ids] sort by Office_Name range from 0 to 199
 List fetch_offices_all()                                  # Commercial_Office[ID != 0] sort by Office_Name range from 0 to 199
 
-# Coverage_Location
-List fetch_coverage_ids_by_country(String country)        # Coverage_Location[Country == country].ID.getAll()
-List fetch_coverage_ids_by_vendor(String vendor)          # Coverage_Location[Vendor == vendor].ID.getAll()
-List fetch_coverage_ids_by_service_type(String st)        # Coverage_Location[Service_Type == st].ID.getAll()
-List fetch_coverage_by_ids(List ids)                      # Coverage_Location[ID in ids] sort by Country range from 0 to 199
-List fetch_coverage_all()                                 # Coverage_Location[ID != 0] sort by Country range from 0 to 199
+# Coverage_Location — SIN per-condition ID helpers (no hay Country/Vendor/Service_Type
+# top-level; Country se lee del compuesto Address_Information1): fetch_all + filtro
+# country en memoria; serviceType/vendor se resuelven contra el módulo Vendor
+# (Vendor_Type ↔ Service.Service_Type)
+List fetch_coverage_by_ids(List ids)                      # Coverage_Location[ID in ids] sort by Location_Name range from 0 to 199
+List fetch_coverage_all()                                 # Coverage_Location[ID != 0] sort by Location_Name range from 0 to 199
 
-# Contacts
-List fetch_contacts_ids_by_full_name(String fullName)     # Contacts[Full_Name == fullName].ID.getAll()
-List fetch_contacts_ids_by_phone(String phone)            # Contacts[Phone == phone].ID.getAll()
-List fetch_contacts_ids_by_document(String document)      # Contacts[Document_Number == document].ID.getAll()
-List fetch_contacts_by_ids(List ids)                      # Contacts[ID in ids] sort by Full_Name range from 0 to 49
-List fetch_contacts_all()                                 # Contacts[ID != 0] sort by Full_Name range from 0 to 49
+# Vendor — per-condition ID helpers + final fetch + no-filter
+List fetch_vendors_ids_by_type(String serviceType)        # Vendor[Vendor_Type == serviceType && Active == true].ID.getAll()
+List fetch_vendors_ids_by_name(String vendor)             # Vendor[Vendor_Name == vendor && Active == true].ID.getAll()
+List fetch_vendors_by_ids(List ids)                       # Vendor[ID in ids] sort by Vendor_Name range from 0 to 199
+List fetch_vendors_all()                                  # Vendor[ID != 0] sort by Vendor_Name range from 0 to 199
+
+# Contacts — full_name filtra en MEMORIA sobre subcampos de First_Name (el composite
+# no se compara a un string plano); phone/document usan .ID.getAll()
+List fetch_contacts_ids_by_full_name(String fullName)     # Contacts[ID != 0] + match en memoria (First_Name.first_name/last_name, case-insensitive)
+List fetch_contacts_ids_by_phone(String phone)            # Contacts[Mobile == phone].ID.getAll()
+List fetch_contacts_ids_by_document(String document)      # Contacts[DNI == document].ID.getAll()
+List fetch_contacts_by_ids(List ids)                      # Contacts[ID in ids] sort by First_Name range from 0 to 49
+List fetch_contacts_all()                                 # Contacts[ID != 0] sort by First_Name range from 0 to 49
 ```
 
 **REMOVED from surface**: `normalize_criteria`, `append_criteria`, and every `fetch_*(criteria-string)` helper.
 
-Tool orchestration (the non-obvious pattern — `tool_coverage` example; native `List.addAll`/`intersect`):
+Tool orchestration (the non-obvious pattern — `tool_services` example; native `List.addAll`/`intersect`):
 
 ```
 targetIDs = List();
 hasFilter = false;
-if (country != null && country != "")   { targetIDs.addAll(fetch_coverage_ids_by_country(country)); hasFilter = true; }
-if (vendor != null && vendor != "")     { ids = fetch_coverage_ids_by_vendor(vendor);
-                                          if (hasFilter) { targetIDs = targetIDs.intersect(ids); }
-                                          else           { targetIDs.addAll(ids); hasFilter = true; } }
-if (serviceType != null && serviceType != "") { /* same pattern */ }
-if (!hasFilter)                  { records = fetch_coverage_all(); }
+if (serviceType != null && serviceType != "")  { targetIDs.addAll(fetch_services_ids_by_type(serviceType)); hasFilter = true; }
+if (destination != null && destination != "")  { ids = fetch_services_ids_by_destination(destination);
+                                                 if (hasFilter) { targetIDs = targetIDs.intersect(ids); }
+                                                 else           { targetIDs.addAll(ids); hasFilter = true; } }
+if (!hasFilter)                  { records = fetch_services_all(); }
 else if (targetIDs.size() == 0)  { records = List(); }        // empty intersection -> data:[]
-else                             { records = fetch_coverage_by_ids(targetIDs); }
-// response mapping keeps fields.get("country") etc. (Map.get on record attributes — valid)
+else                             { records = fetch_services_by_ids(targetIDs); }
+// response mapping keeps fields.get("type") etc. (Map.get on record attributes — valid)
 ```
+
+Coverage se desvía de este patrón por esquema real: Country/Vendor/Service_Type NO existen en
+Coverage_Location → la tool filtra `country` en memoria sobre `Address_Information1.country`
+y resuelve `serviceType`/`vendor` contra el módulo Vendor (`fetch_vendors_ids_by_type` /
+`fetch_vendors_ids_by_name`, mismo ID-list + empty guard) devolviendo `{data: locations, vendors}`.
 
 Contract notes: native clauses carry no quotes around field names; text values single-quoted; `insert into` returns numeric ID → new-session path refetches for a bound record; tool return maps and `chat_invoke` status contract unchanged; guard empty `targetIDs` before `[ID in []]` (Creator behavior unknown).
 
