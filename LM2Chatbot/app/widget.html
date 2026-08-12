@@ -19,6 +19,9 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap"
     />
+    <!-- SDK de la JS API de Zoho Creator (v1): sin él no existe window.ZOHO.
+         Requiere ZOHO.CREATOR.init() antes de usar ZOHO.CREATOR.API (ver 3.1). -->
+    <script src="https://static.zohocdn.com/creator/widgets/version/1.0/widgetsdk-min.js"></script>
     <style>
       /* ============================================================
          1. CSS — estilos del widget
@@ -828,14 +831,19 @@
       // appName ya apunta al link name real de esta app (copy-1-of-logistic-management-ii);
       // si la app de destino difiere, reemplázalo por el suyo. Mantener los nombres de
       // módulo en sincronía con deluge/config/chat_config.deluge
-      const CONFIG = {
+const CONFIG = {
         appName: "copy-1-of-logistic-management-ii",
-        chatSessions: "ChatSessions",
+        chatSessions: "ChatSessions_Report",
         chatMessages: "ChatMessages",
         chatRequests: "ChatRequests",
-        pollIntervalMs: 1500, // cadencia del polling de ChatRequests
-        pollTimeoutMs: 45000, // timeout total de espera de respuesta
-        forceLocal: false, // true = usar localStorage aunque haya Client API (pruebas)
+        // Field link names del formulario ChatRequests en el live (pueden diferir del dump al copiar app)
+        chatRequestsFields: {
+          sessionId: "Session_ID",
+          prompt: "Prompt",
+        },
+        pollIntervalMs: 1500,
+        pollTimeoutMs: 45000,
+        forceLocal: false,
       };
 
       const MAX_CONVERSATIONS = 50;
@@ -872,8 +880,27 @@
       //   respuestas. La UI consume la misma interfaz: list/get/create/update/remove.
       // Capa local (localStorage): sin backend — vista previa / modo local.
       // ------------------------------------------------------------------
-      const hasClientAPI = !!(window.ZOHO && ZOHO.CREATOR && ZOHO.CREATOR.API);
-      const BACKEND_MODE = !CONFIG.forceLocal && hasClientAPI ? "server" : "local";
+      // El modo NO se decide en el parseo: el SDK (v1) expone ZOHO.CREATOR.API
+      // solo después de ZOHO.CREATOR.init(), así que esperamos a que resuelva
+      // (con timeout de respaldo para la vista previa fuera de Creator).
+      let BACKEND_MODE = "local";
+
+      async function resolveBackendMode() {
+        if (CONFIG.forceLocal) return "local";
+        if (!(window.ZOHO && ZOHO.CREATOR && typeof ZOHO.CREATOR.init === "function")) {
+          return "local";
+        }
+        try {
+          await Promise.race([
+            ZOHO.CREATOR.init(),
+            new Promise((r) => setTimeout(r, 3000)),
+          ]);
+        } catch (err) {
+          console.error("ZOHO.CREATOR.init", err);
+          return "local";
+        }
+        return ZOHO.CREATOR && ZOHO.CREATOR.API ? "server" : "local";
+      }
 
       // --- Cliente mínimo sobre ZOHO.CREATOR.API (callback + promesa) ---
       // ==== 3.2  Adapter server (Client API) ====
@@ -898,6 +925,9 @@
         const res = await clientApi("getAllRecords", params);
         const data = res && (res.data || res.records);
         if (Array.isArray(data)) return data;
+        // Reporte vacío: la REST API v2 responde 404 con code 3100
+        // ("No Data Available") cuando el reporte existe pero no tiene registros.
+        if (res && Number(res.code) === 3100) return [];
         throw new Error("getAllRecords(" + form + ") failed: " + (res && res.message));
       }
 
@@ -955,12 +985,18 @@
       // Envía un prompt al backend: crea ChatRequests (workflow On Submit →
       // chat_invoke) y hace polling del Status hasta answered/failed.
       async function sendToServer(convId, prompt) {
+        const recordData = {
+          [CONFIG.chatRequestsFields.sessionId]: convId,
+          [CONFIG.chatRequestsFields.prompt]: prompt,
+        };
+        console.log("[LM2Chatbot] sendToServer payload:", recordData);
         const res = await clientApi("addRecord", {
           appName: CONFIG.appName,
           formName: CONFIG.chatRequests,
-          data: { Session_ID: convId, Prompt: prompt },
+          data: { data: recordData },
         });
         if (!res || Number(res.code) !== 3000) {
+          console.error("[LM2Chatbot] addRecord failed:", res);
           throw new Error("addRecord(ChatRequests) failed: " + (res && res.message));
         }
 
@@ -971,7 +1007,7 @@
           let recs;
           try {
             recs = await apiGetAll(CONFIG.chatRequests, {
-              criteria: "Session_ID == '" + convId + "'",
+              criteria: CONFIG.chatRequestsFields.sessionId + " == '" + convId + "'",
               limit: 10,
             });
           } catch (err) {
@@ -1598,6 +1634,10 @@
       // 3.11  Init (arranque)
       // ================================================================
       async function init() {
+        // 1) Resolver el modo backend (server si la JS API de Creator está lista)
+        BACKEND_MODE = await resolveBackendMode();
+        historyStore.mode = BACKEND_MODE;
+        // 2) Cargar el historial con el modo ya decidido
         await historyStore.init();
         renderSidebar();
         applyViewportMode();
