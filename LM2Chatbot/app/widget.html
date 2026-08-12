@@ -827,15 +827,17 @@
       // ================================================================
 
       // ==== 3.1  Config, constantes y estado ====
-      // Configuración del backend (Zoho Creator / Client API)
+// Configuración del backend (Zoho Creator / Client API)
       // appName ya apunta al link name real de esta app (copy-1-of-logistic-management-ii);
       // si la app de destino difiere, reemplázalo por el suyo. Mantener los nombres de
       // módulo en sincronía con deluge/config/chat_config.deluge
-const CONFIG = {
+      // IMPORTANTE: Los nombres aquí son los REPORT link names (no form link names)
+      // tal como aparecen en el dump de la app.
+      const CONFIG = {
         appName: "copy-1-of-logistic-management-ii",
         chatSessions: "ChatSessions_Report",
-        chatMessages: "ChatMessages",
-        chatRequests: "ChatRequests",
+        chatMessages: "ChatMessages_Report",
+        chatRequests: "ChatRequests_Report",
         // Field link names del formulario ChatRequests en el live (pueden diferir del dump al copiar app)
         chatRequestsFields: {
           sessionId: "Session_ID",
