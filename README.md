@@ -8,11 +8,14 @@ con la tarea `Zia`, y el widget se comunica por la Client API con un patrón de 
 
 ## Quick path
 
-1. Reemplazar los link names reales: `appName` en `LM2Chatbot/app/widget.html` (`CONFIG`,
-   solo para la Client API del widget). El backend Deluge usa **acceso nativo a datos**
-   (`Form[Field == valor]`, `insert into`; filtrado AND con patrón ID-list: IDs por
-   condición `.ID.getAll()` + `addAll`/`intersect` + `Form[ID in targetIDs]`) y ya NO
-   necesita `appName` ni `zoho.creator.*`.
+1. Reemplazar los link names reales en `LM2Chatbot/app/widget.html` (`CONFIG`, solo para
+   la Client API del widget). El widget distingue **report link names** (para
+   `getAllRecords`) y **form link names** (para `addRecord`/`deleteRecord`):
+   - `chatSessionsReport` / `chatMessagesReport` / `chatRequestsReport` → report link names
+   - `chatSessionsForm` / `chatMessagesForm` / `chatRequestsForm` → form link names
+   El backend Deluge usa **acceso nativo a datos** (`Form[Field == valor]`, `insert into`;
+   filtrado AND con patrón ID-list: IDs por condición `.ID.getAll()` + `addAll`/`intersect`
+   + `Form[ID in targetIDs]`) y ya NO necesita `appName` ni `zoho.creator.*`.
 2. En la consola de Creator: habilitar la tarea Zia de Deluge (Zoho GenAI recomendado).
 3. Crear los 3 módulos de persistencia (`ChatSessions`, `ChatMessages`, `ChatRequests`)
    según el esquema del README del backend.
@@ -80,7 +83,9 @@ queda como helper server-side para otros consumidores.
 
 ## Configuración (checklist)
 
-- [ ] `CONFIG.appName` en `widget.html` con el link name real (solo Client API del widget; el backend es acceso nativo, sin `appName`)
+- [ ] `CONFIG.appName` en `widget.html` con el link name real de la app (solo Client API del widget; el backend es acceso nativo, sin `appName`)
+- [ ] `CONFIG.chatSessionsReport` / `chatMessagesReport` / `chatRequestsReport` → **report link names** (para `getAllRecords`)
+- [ ] `CONFIG.chatSessionsForm` / `chatMessagesForm` / `chatRequestsForm` → **form link names** (para `addRecord`/`deleteRecord`)
 - [ ] Módulos de negocio: validar que los `*Fields` de `chat_config()` coinciden con el esquema real
 - [ ] Módulos de chat creados según el esquema del `deluge/README.md`
 - [ ] Funciones Deluge creadas con el MISMO nombre que en los archivos

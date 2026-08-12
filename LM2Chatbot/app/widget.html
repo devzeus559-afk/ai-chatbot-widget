@@ -831,13 +831,20 @@
       // appName ya apunta al link name real de esta app (copy-1-of-logistic-management-ii);
       // si la app de destino difiere, reemplázalo por el suyo. Mantener los nombres de
       // módulo en sincronía con deluge/config/chat_config.deluge
-      // IMPORTANTE: Los nombres aquí son los REPORT link names (no form link names)
-      // tal como aparecen en el dump de la app.
+      // IMPORTANTE: 
+      // - reportNames: para getAllRecords (reportName param) → report link names
+      // - formNames: para addRecord/deleteRecord (formName param) → form link names
+      // Ambos tal como aparecen en el dump de la app.
       const CONFIG = {
         appName: "copy-1-of-logistic-management-ii",
-        chatSessions: "ChatSessions_Report",
-        chatMessages: "ChatMessages_Report",
-        chatRequests: "ChatRequests_Report",
+        // Report link names (para getAllRecords)
+        chatSessionsReport: "ChatSessions_Report",
+        chatMessagesReport: "ChatMessages_Report",
+        chatRequestsReport: "ChatRequests_Report",
+        // Form link names (para addRecord, deleteRecord)
+        chatSessionsForm: "ChatSessions",
+        chatMessagesForm: "ChatMessages",
+        chatRequestsForm: "ChatRequests",
         // Field link names del formulario ChatRequests en el live (pueden diferir del dump al copiar app)
         chatRequestsFields: {
           sessionId: "Session_ID",
@@ -917,8 +924,8 @@
         });
       }
 
-      async function apiGetAll(form, opts) {
-        const params = { appName: CONFIG.appName, reportName: form, page: 1, limit: 200 };
+      async function apiGetAll(reportName, opts) {
+        const params = { appName: CONFIG.appName, reportName: reportName, page: 1, limit: 200 };
         if (opts) {
           if (opts.page) params.page = opts.page;
           if (opts.limit) params.limit = opts.limit;
@@ -930,7 +937,7 @@
         // Reporte vacío: la REST API v2 responde 404 con code 3100
         // ("No Data Available") cuando el reporte existe pero no tiene registros.
         if (res && Number(res.code) === 3100) return [];
-        throw new Error("getAllRecords(" + form + ") failed: " + (res && res.message));
+        throw new Error("getAllRecords(" + reportName + ") failed: " + (res && res.message));
       }
 
       function toTimestamp(v) {
@@ -950,7 +957,7 @@
 
       // --- Capa servidor: lectura/escritura sobre los módulos de Creator ---
       async function fetchSessions() {
-        const recs = await apiGetAll(CONFIG.chatSessions, { limit: MAX_CONVERSATIONS });
+        const recs = await apiGetAll(CONFIG.chatSessionsReport, { limit: MAX_CONVERSATIONS });
         return recs
           .filter((r) => r.Session_ID)
           .map((r) => ({
@@ -964,13 +971,13 @@
       }
 
       async function loadThread(convId) {
-        const sessions = await apiGetAll(CONFIG.chatSessions, {
+        const sessions = await apiGetAll(CONFIG.chatSessionsReport, {
           criteria: "Session_ID == '" + convId + "'",
           limit: 1,
         });
         const session = sessions[0];
         if (!session) return null;
-        const msgs = await apiGetAll(CONFIG.chatMessages, {
+        const msgs = await apiGetAll(CONFIG.chatMessagesReport, {
           criteria: "Session == '" + session.ID + "'",
           limit: 200,
         });
@@ -994,7 +1001,7 @@
         console.log("[LM2Chatbot] sendToServer payload:", recordData);
         const res = await clientApi("addRecord", {
           appName: CONFIG.appName,
-          formName: CONFIG.chatRequests,
+          formName: CONFIG.chatRequestsForm,
           data: { data: recordData },
         });
         if (!res || Number(res.code) !== 3000) {
@@ -1008,7 +1015,7 @@
           await sleep(CONFIG.pollIntervalMs);
           let recs;
           try {
-            recs = await apiGetAll(CONFIG.chatRequests, {
+            recs = await apiGetAll(CONFIG.chatRequestsReport, {
               criteria: CONFIG.chatRequestsFields.sessionId + " == '" + convId + "'",
               limit: 10,
             });
@@ -1036,34 +1043,34 @@
       }
 
       async function deleteSessionOnServer(convId) {
-        const sessions = await apiGetAll(CONFIG.chatSessions, {
+        const sessions = await apiGetAll(CONFIG.chatSessionsReport, {
           criteria: "Session_ID == '" + convId + "'",
           limit: 1,
         });
         const session = sessions[0];
         if (!session) return;
-        async function deleteAll(form, recs) {
+        async function deleteAll(formName, recs) {
           for (const rec of recs) {
             await clientApi("deleteRecord", {
               appName: CONFIG.appName,
-              formName: form,
+              formName: formName,
               id: rec.ID,
             });
           }
         }
-        const msgs = await apiGetAll(CONFIG.chatMessages, {
+        const msgs = await apiGetAll(CONFIG.chatMessagesReport, {
           criteria: "Session == '" + session.ID + "'",
           limit: 200,
         });
-        await deleteAll(CONFIG.chatMessages, msgs);
-        const reqs = await apiGetAll(CONFIG.chatRequests, {
+        await deleteAll(CONFIG.chatMessagesForm, msgs);
+        const reqs = await apiGetAll(CONFIG.chatRequestsReport, {
           criteria: "Session_ID == '" + convId + "'",
           limit: 200,
         });
-        await deleteAll(CONFIG.chatRequests, reqs);
+        await deleteAll(CONFIG.chatRequestsForm, reqs);
         await clientApi("deleteRecord", {
           appName: CONFIG.appName,
-          formName: CONFIG.chatSessions,
+          formName: CONFIG.chatSessionsForm,
           id: session.ID,
         });
       }
