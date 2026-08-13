@@ -16,7 +16,7 @@
  *            update_session
  */
 
-Map chat_invoke(String requestId)
+Map chat_invoke(Number requestId)
 {
     config = chat_config();
 

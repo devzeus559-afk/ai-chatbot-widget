@@ -15,7 +15,6 @@
 
 Map chat_list()
 {
-    config = chat_config();
     userId = zoho.loginuser.get("Id");
 
     records = fetch_chat_sessions_by_user(userId, 0, 49);

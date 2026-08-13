@@ -75,7 +75,6 @@
 // --------------------------------------------------------------------------
 List fetch_chat_requests_by_id(Number requestId)
 {
-    config = chat_config();
     records = ChatRequests[ID == requestId];
     return records;
 }
@@ -85,28 +84,24 @@ List fetch_chat_requests_by_id(Number requestId)
 // --------------------------------------------------------------------------
 List fetch_chat_sessions_by_session_id(String sessionId)
 {
-    config = chat_config();
     records = ChatSessions[Session_ID == sessionId];
     return records;
 }
 
 List fetch_chat_sessions_by_id(Number id)
 {
-    config = chat_config();
     records = ChatSessions[ID == id];
     return records;
 }
 
 List fetch_chat_sessions_by_user(Number userId, Number startIndex, Number endIndex)
 {
-    config = chat_config();
     records = ChatSessions[User == userId] sort by Last_Activity desc range from startIndex to endIndex;
     return records;
 }
 
 Number insert_chat_session(Map data)
 {
-    config = chat_config();
     newId = insert into ChatSessions
     [
         Session_ID = data.get("Session_ID")
@@ -122,14 +117,12 @@ Number insert_chat_session(Map data)
 // --------------------------------------------------------------------------
 List fetch_chat_messages_by_session(Number sessionId)
 {
-    config = chat_config();
     records = ChatMessages[Session == sessionId] sort by Created_Time desc range from 0 to 9;
     return records;
 }
 
 Number insert_chat_message(Map data)
 {
-    config = chat_config();
     newId = insert into ChatMessages
     [
         Session = data.get("Session")
@@ -144,7 +137,6 @@ Number insert_chat_message(Map data)
 // --------------------------------------------------------------------------
 List fetch_packages_by_tracking(String trackingNumber)
 {
-    config = chat_config();
     records = Package[Tracking_Number == trackingNumber] sort by Created_Time desc;
     return records;
 }
@@ -155,28 +147,24 @@ List fetch_packages_by_tracking(String trackingNumber)
 // --------------------------------------------------------------------------
 List fetch_services_ids_by_type(String serviceType)
 {
-    config = chat_config();
     ids = Service[Service_Type == serviceType].ID.getAll();
     return ids;
 }
 
 List fetch_services_ids_by_destination(String destination)
 {
-    config = chat_config();
     ids = Service[City == destination].ID.getAll();
     return ids;
 }
 
 List fetch_services_by_ids(List ids)
 {
-    config = chat_config();
     records = Service[ID in ids] sort by Service_ID range from 0 to 199;
     return records;
 }
 
 List fetch_services_all()
 {
-    config = chat_config();
     records = Service[ID != 0] sort by Service_ID range from 0 to 199;
     return records;
 }
@@ -187,14 +175,12 @@ List fetch_services_all()
 // --------------------------------------------------------------------------
 List fetch_offices_by_ids(List ids)
 {
-    config = chat_config();
     records = Commercial_Office[ID in ids] sort by Office_Name range from 0 to 199;
     return records;
 }
 
 List fetch_offices_all()
 {
-    config = chat_config();
     records = Commercial_Office[ID != 0] sort by Office_Name range from 0 to 199;
     return records;
 }
@@ -206,14 +192,12 @@ List fetch_offices_all()
 // --------------------------------------------------------------------------
 List fetch_coverage_by_ids(List ids)
 {
-    config = chat_config();
     records = Coverage_Location[ID in ids] sort by Location_Name range from 0 to 199;
     return records;
 }
 
 List fetch_coverage_all()
 {
-    config = chat_config();
     records = Coverage_Location[ID != 0] sort by Location_Name range from 0 to 199;
     return records;
 }
@@ -226,28 +210,24 @@ List fetch_coverage_all()
 // --------------------------------------------------------------------------
 List fetch_vendors_ids_by_type(String serviceType)
 {
-    config = chat_config();
     ids = Vendor[Vendor_Type == serviceType && Active == true].ID.getAll();
     return ids;
 }
 
 List fetch_vendors_ids_by_name(String vendor)
 {
-    config = chat_config();
     ids = Vendor[Vendor_Name == vendor && Active == true].ID.getAll();
     return ids;
 }
 
 List fetch_vendors_by_ids(List ids)
 {
-    config = chat_config();
     records = Vendor[ID in ids] sort by Vendor_Name range from 0 to 199;
     return records;
 }
 
 List fetch_vendors_all()
 {
-    config = chat_config();
     records = Vendor[ID != 0] sort by Vendor_Name range from 0 to 199;
     return records;
 }
@@ -264,7 +244,6 @@ List fetch_vendors_all()
 // --------------------------------------------------------------------------
 List fetch_contacts_ids_by_full_name(String fullName)
 {
-    config = chat_config();
     ids = List();
     if (fullName == null || fullName == "") {
         return ids;
@@ -303,28 +282,24 @@ List fetch_contacts_ids_by_full_name(String fullName)
 
 List fetch_contacts_ids_by_phone(String phone)
 {
-    config = chat_config();
     ids = Contacts[Mobile == phone].ID.getAll();
     return ids;
 }
 
 List fetch_contacts_ids_by_document(String document)
 {
-    config = chat_config();
     ids = Contacts[DNI == document].ID.getAll();
     return ids;
 }
 
 List fetch_contacts_by_ids(List ids)
 {
-    config = chat_config();
     records = Contacts[ID in ids] sort by First_Name range from 0 to 49;
     return records;
 }
 
 List fetch_contacts_all()
 {
-    config = chat_config();
     records = Contacts[ID != 0] sort by First_Name range from 0 to 49;
     return records;
 }
