@@ -31,12 +31,23 @@ Map chat_intent(String userPrompt, List history)
         parameters : {"temperature": 0.0}
     ];
 
-    if (!response.get("status")) {
+    // Zia puede devolver null al fallar (p. ej. IA no habilitada en la
+    // organización). Nunca evaluar !null en Deluge: derivar a la rama de
+    // error, no romper el turno.
+    if (response == null) {
         return {"status": "error", "kind": "clarify",
                 "text": "No pude interpretar tu solicitud. ¿Puedes reformularla?"};
     }
 
-    parsed = parse_json_strict(response.get("data"));
+    // Formas de respuesta de Zia (observadas en gate 5.1):
+    //  A) {"status": true, "data": "<json>"} → wrapper clásico
+    //  B) {"answer": ...} (o {"tool": ...})   → JSON directo sin wrapper
+    data = response.get("data");
+    if (response.get("status") == true && data != null) {
+        parsed = parse_json_strict(data.toString());
+    } else {
+        parsed = parse_json_strict(response.toString());
+    }
 
     // Normalización del contrato (con try/catch por si el JSON no es un objeto)
     try {

@@ -18,22 +18,25 @@
 // extraer el bloque entre el primer "{" y el último "}".
 Map parse_json_strict(String text)
 {
-    result = {"parse_error": text};
     try {
-        result = text.toMap();
+        return text.toMap();
     } catch (e) {
+        // text == null: toMap() lanza y no se puede operar sobre null
+        if (text == null) {
+            return {"parse_error": ""};
+        }
         startIndex = text.indexOf("{");
         endIndex = text.lastIndexOf("}");
         if (startIndex >= 0 && endIndex > startIndex) {
             candidate = text.substring(startIndex, endIndex + 1);
             try {
-                result = candidate.toMap();
+                return candidate.toMap();
             } catch (e2) {
-                result = {"parse_error": text};
+                return {"parse_error": text};
             }
         }
+        return {"parse_error": text};
     }
-    return result;
 }
 
 // --------------------------------------------------------------------------

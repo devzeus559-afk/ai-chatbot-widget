@@ -114,8 +114,12 @@ String compose_with_ai(String toolName, Map toolResult, Map intent)
         context : "Eres un asistente de atención al cliente de una agencia de paquetería, remesas y recargas telefónicas."
         parameters : {"temperature": 0.3}
     ];
-    if (response.get("status")) {
-        return response.get("data");
+    // Null-safe (mismo patrón que chat_intent): Zia puede devolver null o
+    // un Map sin "status" al fallar; nunca evaluar !null en Deluge.
+    if (response != null) {
+        if (response.get("status") == true) {
+            return response.get("data");
+        }
     }
     return compose_reply(toolResult, intent);
 }
