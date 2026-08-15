@@ -29,7 +29,7 @@ testing:
 rules:
   proposal:
     - Include rollback plan for risky changes
-    - Keep scope aligned with the 5 business tools (track_package, services, offices, coverage, contacts)
+    - Keep scope aligned with the business tools catalog: 5 lookup tools (track_package, search_services, find_offices, check_coverage, find_contacts) + metric/reporting tools (report_top_customers)
   specs:
     - Use Given/When/Then for scenarios
     - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
