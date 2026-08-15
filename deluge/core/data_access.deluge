@@ -56,12 +56,13 @@
  *   Full_Name, Phone, Document_Number, Role -> se leen subcampos (First_Name
  *   compuesto) y Mobil/DNI reemplazan Phone/Document_Number.
  *
- * Funciones (25): fetch_chat_requests_by_id, fetch_chat_sessions_by_session_id,
+ * Funciones (28): fetch_chat_requests_by_id, fetch_chat_sessions_by_session_id,
  *            fetch_chat_sessions_by_id, fetch_chat_sessions_by_user,
  *            insert_chat_session, fetch_chat_messages_by_session,
  *            insert_chat_message, fetch_packages_by_tracking,
  *            fetch_services_ids_by_type / _by_destination,
  *            fetch_services_by_ids, fetch_services_all,
+ *            fetch_services_count_by_date_window / _ids_by_date_window / _by_date_window,
  *            fetch_offices_by_ids, fetch_offices_all,
  *            fetch_coverage_by_ids, fetch_coverage_all,
  *            fetch_vendors_ids_by_type / _by_name, fetch_vendors_by_ids,
@@ -166,6 +167,34 @@ List fetch_services_by_ids(List ids)
 List fetch_services_all()
 {
     records = Service[ID != 0] sort by Service_ID range from 0 to 199;
+    return records;
+}
+
+// --------------------------------------------------------------------------
+// Service — ventana de fecha sobre Date_field1 (fecha de negocio).
+// Rango sobre UN campo (2 condiciones = rango): campo LITERAL, valores como
+// variables (gate 5.1). Count-first para el flag truncated de la tool de
+// reporte; el fetch acotado a 200 (range 0-199) devuelve la ventana ordenada
+// por Date_field1 asc.
+// --------------------------------------------------------------------------
+Number fetch_services_count_by_date_window(Date startDate, Date endDate)
+{
+    count = Service[Date_field1 >= startDate && Date_field1 <= endDate].count(ID);
+    if (count == null) {
+        return 0;
+    }
+    return count;
+}
+
+List fetch_services_ids_by_date_window(Date startDate, Date endDate)
+{
+    ids = Service[Date_field1 >= startDate && Date_field1 <= endDate].ID.getAll();
+    return ids;
+}
+
+List fetch_services_by_date_window(Date startDate, Date endDate)
+{
+    records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
     return records;
 }
 
