@@ -1,0 +1,289 @@
+/**
+ * tool_report_top_customers.deluge
+ *
+ * Reporte métrico: clientes más frecuentes (top N) por cantidad de servicios
+ * en una ventana FIJA de 30 días sobre Date_field1 (fecha de negocio del
+ * servicio). Filtro opcional por serviceType (coincidencia EXACTA, sensible
+ * a mayúsculas; los valores del picklist están enumerados en la descripción
+ * del catálogo en chat_config).
+ *
+ * Recibe: {"serviceType"?: string, "limit"?: string|number (default 10)}
+ * Devuelve: {"ok": true, "data": {
+ *   reportType: "top_customers", periodStart, periodEnd,
+ *   serviceType (null sin filtro), totalServices, totalCustomers,
+ *   truncated, customers: [{rank, customerId, customerName, totalServices,
+ *   firstServiceDate, serviceBreakdown}]}}
+ *
+ * Acceso nativo vía data_access (0 llamadas de API de Creator). Algoritmo:
+ * count-first → fetch acotado a 200 (range 0-199) → agregación por remitente
+ * (Sender_field; se ignoran los vacíos; IDs normalizados a Number) → top-N
+ * por inserción O(n·limit) con desempate por fecha más antigua → resolución
+ * de nombres SOLO para el top-N vía fetch_contacts_by_ids. Si el conteo de la
+ * ventana supera 200, el ranking es APROXIMADO (truncated: true) y la reply
+ * muestra un aviso.
+ *
+ * GATE 5.1: todos los criterios usan campos LITERALES con valores variables;
+ * el filtro por tipo se combina por ID-list (intersect), nunca criterios
+ * string. List.add() de Deluge solo APPENDEA: la inserción indexada del
+ * ranking usa el helper shift-copy insert_ranked_entry (operaciones
+ * garantizadas: size/get/add).
+ */
+
+Map tool_report_top_customers(Map params)
+{
+    config = chat_config();
+    fields = config.get("serviceFields");
+    contactFields = config.get("contactFields");
+
+    // Filtro opcional: null/"" => sin filtro (cuenta TODOS los tipos)
+    serviceType = params.get("serviceType");
+    if (serviceType == null) {
+        serviceType = "";
+    }
+    hasFilter = (serviceType != "");
+    reportedType = null;
+    if (hasFilter) {
+        reportedType = serviceType;
+    }
+
+    // limit: Zia puede enviarlo como string; toNumber + default 10
+    limitNum = 10;
+    limit = params.get("limit");
+    if (limit != null && limit != "") {
+        limitNum = toNumber("" + limit);
+        if (limitNum == null || limitNum <= 0) {
+            limitNum = 10;
+        }
+    }
+
+    // Ventana FIJA de 30 días (no configurable este slice)
+    endDate = zoho.currentdate;
+    startDate = endDate.subDay(30);
+
+    // Count-first + fetch acotado a 200; con filtro, intersección por IDs
+    if (!hasFilter) {
+        total = fetch_services_count_by_date_window(startDate, endDate);
+        truncated = (total > 200);
+        records = fetch_services_by_date_window(startDate, endDate);
+    } else {
+        windowIDs = fetch_services_ids_by_date_window(startDate, endDate);
+        typeIDs = fetch_services_ids_by_type(serviceType);
+        // Guard: Form[ID in []] tiene comportamiento desconocido en Creator
+        if (windowIDs == null || windowIDs.size() == 0
+            || typeIDs == null || typeIDs.size() == 0) {
+            return build_empty_report(startDate, endDate, reportedType);
+        }
+        targetIDs = windowIDs.intersect(typeIDs);
+        if (targetIDs == null || targetIDs.size() == 0) {
+            return build_empty_report(startDate, endDate, reportedType);
+        }
+        total = targetIDs.size();
+        truncated = (total > 200);
+        records = fetch_services_by_ids(targetIDs);
+    }
+
+    // Agregación por remitente (Map clave = "" + senderId normalizado)
+    senderMap = Map();
+    if (records == null) {
+        records = List();
+    }
+    for each s in records {
+        senderVal = s.get(fields.get("sender"));
+        if (senderVal == null) {
+            continue;
+        }
+        senderStr = "" + senderVal;
+        if (senderStr == "") {
+            continue;
+        }
+        senderId = toNumber(senderStr);
+        if (senderId == null) {
+            continue;
+        }
+        key = "" + senderId;
+
+        serviceDate = s.get(fields.get("date"));
+        st = s.get(fields.get("type"));
+        if (st == null || st == "") {
+            st = "Other";   // convención zia: tipo vacío cae a "Other"
+        }
+
+        entry = senderMap.get(key);
+        if (entry == null) {
+            entry = Map();
+            entry.put("customerId", senderId);
+            entry.put("count", 1);
+            entry.put("firstDate", serviceDate);
+            breakdown = Map();
+            breakdown.put(st, 1);
+            entry.put("breakdown", breakdown);
+            senderMap.put(key, entry);
+        } else {
+            entry.put("count", entry.get("count") + 1);
+            // Seniority tie-break: conservar la fecha de servicio MÁS antigua
+            if (serviceDate != null) {
+                current = entry.get("firstDate");
+                if (current == null || serviceDate < current) {
+                    entry.put("firstDate", serviceDate);
+                }
+            }
+            breakdown = entry.get("breakdown");
+            n = breakdown.get(st);
+            if (n == null) {
+                n = 0;
+            }
+            breakdown.put(st, n + 1);
+        }
+    }
+
+    // Top-N por inserción O(n·limit): recorre el ranking actual y coloca la
+    // entrada en su posición (count desc; empate => fecha más antigua
+    // primero); se trunca a limitNum sin ordenar la lista completa.
+    ranking = List();
+    for each key in senderMap.keys() {
+        entry = senderMap.get(key);
+        entryCount = entry.get("count");
+        entryDate = entry.get("firstDate");
+        pos = ranking.size();
+        for each index i in ranking {
+            cur = ranking.get(i);
+            if (entryCount > cur.get("count")) {
+                pos = i;
+                break;
+            }
+            if (entryCount == cur.get("count")) {
+                curDate = cur.get("firstDate");
+                if (entryDate != null && (curDate == null || entryDate < curDate)) {
+                    pos = i;
+                    break;
+                }
+            }
+        }
+        ranking = insert_ranked_entry(ranking, pos, entry);
+        if (ranking.size() > limitNum) {
+            ranking = ranking.subList(0, limitNum);
+        }
+    }
+
+    // Nombres SOLO para el top-N (fetch_contacts_by_ids, ventana 0-49)
+    nameIDs = List();
+    for each e in ranking {
+        id = e.get("customerId");
+        if (nameIDs.indexOf(id) < 0) {
+            nameIDs.add(id);
+        }
+    }
+    contactsMap = Map();
+    if (nameIDs.size() > 0) {
+        contactRecords = fetch_contacts_by_ids(nameIDs);
+        if (contactRecords != null) {
+            for each c in contactRecords {
+                contactsMap.put("" + c.get("ID"), c);
+            }
+        }
+    }
+
+    // Completar cada entrada del ranking (shape final de data.customers[])
+    for each index i in ranking {
+        e = ranking.get(i);
+        e.put("rank", i + 1);
+
+        cid = e.get("customerId");
+        name = "Unknown";
+        cRec = contactsMap.get("" + cid);
+        if (cRec != null) {
+            nameRec = cRec.get(contactFields.get("fullName"));
+            fn = "";
+            ln = "";
+            if (nameRec != null) {
+                f = nameRec.get(contactFields.get("firstName"));
+                l = nameRec.get(contactFields.get("lastName"));
+                if (f != null) {
+                    fn = "" + f;
+                }
+                if (l != null) {
+                    ln = "" + l;
+                }
+            }
+            if (fn != "" && ln != "") {
+                name = fn + " " + ln;
+            } else if (fn != "") {
+                name = fn;
+            } else if (ln != "") {
+                name = ln;
+            }
+        }
+        e.put("customerName", name);
+
+        b = e.get("breakdown");
+        breakdownStr = "";
+        if (b != null) {
+            for each t in b.keys() {
+                if (breakdownStr == "") {
+                    breakdownStr = t + ": " + b.get(t);
+                } else {
+                    breakdownStr = breakdownStr + ", " + t + ": " + b.get(t);
+                }
+            }
+        }
+        e.put("serviceBreakdown", breakdownStr);
+        e.put("firstServiceDate", e.get("firstDate"));
+        e.put("totalServices", e.get("count"));
+        e.remove("count");
+        e.remove("firstDate");
+        e.remove("breakdown");
+    }
+
+    data = Map();
+    data.put("reportType", "top_customers");
+    data.put("periodStart", startDate);
+    data.put("periodEnd", endDate);
+    data.put("serviceType", reportedType);
+    data.put("totalServices", total);
+    data.put("totalCustomers", ranking.size());
+    data.put("truncated", truncated);
+    data.put("customers", ranking);
+
+    return {"ok": true, "data": data};
+}
+
+// Inserción indexada por shift-copy: List.add() solo appendea, así que se
+// reconstruye la lista con operaciones garantizadas (size/get/add). El
+// editor de Creator no expone add(index, value); si un día lo hiciera, este
+// helper puede reemplazarse por la llamada directa (ver smoke 6.1b).
+List insert_ranked_entry(List list, Number index, Map entry)
+{
+    result = List();
+    if (index == null || index < 0) {
+        index = 0;
+    }
+    if (index > list.size()) {
+        index = list.size();
+    }
+    for each index i in list {
+        if (i == index) {
+            result.add(entry);
+        }
+        result.add(list.get(i));
+    }
+    if (index >= list.size()) {
+        result.add(entry);
+    }
+    return result;
+}
+
+// Reporte vacío (ventana sin datos o intersección vacía): customers: []
+// para que format_top_customers responda con el mensaje de "no encontré".
+Map build_empty_report(Date startDate, Date endDate, String serviceType)
+{
+    data = Map();
+    data.put("reportType", "top_customers");
+    data.put("periodStart", startDate);
+    data.put("periodEnd", endDate);
+    data.put("serviceType", serviceType);
+    data.put("totalServices", 0);
+    data.put("totalCustomers", 0);
+    data.put("truncated", false);
+    data.put("customers", List());
+    return {"ok": true, "data": data};
+}

@@ -50,6 +50,8 @@ Map chat_config()
     serviceFields = Map();
     serviceFields.put("name", "Service_ID");          // identificador del servicio (no existe Service_Name)
     serviceFields.put("type", "Service_Type");        // Package Receipt | Locker | Store | Remittance | Recharge | ...
+    serviceFields.put("sender", "Sender_field");      // remitente del servicio (reporte top customers)
+    serviceFields.put("date", "Date_field1");         // fecha de negocio del servicio (ventana de 30 días)
     // Price existe (Total Price, USD) pero se omitió del mapeo por decisión de
     // producto; se muestra Service_ID + Service_Type.
     config.put("serviceFields", serviceFields);
@@ -145,6 +147,15 @@ Map chat_config()
         "name": "string opcional",
         "phone": "string opcional",
         "document": "string opcional"
+    });
+    tools.add(tool);
+
+    tool = Map();
+    tool.put("name", "report_top_customers");
+    tool.put("description", "Reporte de los clientes más frecuentes (top N) por cantidad de servicios en los últimos 30 días. Filtro opcional de tipo de servicio (valores exactos, sensibles a mayúsculas): Package Receipt, Locker, Store, Remittance, Recharge, Online Store, Other Services.");
+    tool.put("params", {
+        "serviceType": "string opcional",
+        "limit": "string opcional"
     });
     tools.add(tool);
 

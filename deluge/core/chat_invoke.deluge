@@ -98,6 +98,9 @@ Map dispatch_tool(String toolName, Map params)
     if (toolName == "find_contacts") {
         return tool_contacts(params);
     }
+    if (toolName == "report_top_customers") {
+        return tool_report_top_customers(params);
+    }
     return {"ok": false, "message": "Herramienta desconocida: " + toolName};
 }
 

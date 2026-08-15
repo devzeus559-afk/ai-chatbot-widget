@@ -4,7 +4,7 @@
  * Helpers compartidos por el backend del chatbot.
  * Funciones: parse_json_strict, compose_reply, format_tracking,
  *            format_services, format_offices, format_coverage,
- *            format_contacts
+ *            format_contacts, format_top_customers
  *
  * Nota: el filtrado nativo NO usa builders de criterios (Form[criteriaVar]
  * es inválido en Creator, gate 5.1). La combinación AND se hace en las tools
@@ -65,6 +65,9 @@ String compose_reply(Map toolResult, Map intent)
     }
     if (toolName == "find_contacts") {
         return format_contacts(data);
+    }
+    if (toolName == "report_top_customers") {
+        return format_top_customers(data);
     }
 
     return "Datos obtenidos: " + data.toString();
@@ -178,6 +181,36 @@ String format_contacts(List contacts)
             line = line + ". Email: " + c.get("email");
         }
         text = text + line + "\n";
+    }
+    return text;
+}
+
+// --------------------------------------------------------------------------
+// Plantilla del reporte top customers (composeWithAI=false: los nombres y
+// conteos NUNCA se envían al LLM). El breakdown por tipo se omite cuando la
+// tool no emitió ninguno; con truncated: true se añade el aviso de ranking
+// aproximado (ventana > 200 servicios, se analizaron los primeros 200).
+// --------------------------------------------------------------------------
+String format_top_customers(Map data)
+{
+    if (data == null) {
+        return "No encontré servicios en los últimos 30 días.";
+    }
+    customers = data.get("customers");
+    if (customers == null || customers.size() == 0) {
+        return "No encontré servicios en los últimos 30 días.";
+    }
+    text = "Clientes más frecuentes (últimos 30 días):\n";
+    for each c in customers {
+        line = c.get("rank") + ". " + c.get("customerName") + " — " + c.get("totalServices") + " servicios";
+        breakdown = c.get("serviceBreakdown");
+        if (breakdown != null && breakdown != "") {
+            line = line + " (" + breakdown + ")";
+        }
+        text = text + line + "\n";
+    }
+    if (data.get("truncated") == true) {
+        text = text + "Nota: el ranking es aproximado (se analizaron los primeros 200 servicios).\n";
     }
     return text;
 }

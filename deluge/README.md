@@ -54,7 +54,8 @@ deluge/
 │   ├── tool_services.deluge       ← servicios disponibles (filtros opcionales)
 │   ├── tool_offices.deluge        ← oficinas comerciales (ciudad/país)
 │   ├── tool_coverage.deluge       ← cobertura de países/proveedores por servicio
-│   └── tool_contacts.deluge       ← búsqueda de contactos (remitente/receptor)
+│   ├── tool_contacts.deluge       ← búsqueda de contactos (remitente/receptor)
+│   └── tool_report_top_customers.deluge ← clientes más frecuentes (top N, ventana fija de 30 días)
 └── workflow/
     └── on_submit_chatrequests.deluge  ← script del workflow On Submit de ChatRequests
 ```
@@ -64,12 +65,12 @@ deluge/
 | Archivo | Funciones |
 |---|---|
 | `chat_config.deluge` | `chat_config` |
-| `chat_common.deluge` | `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts` |
-| `data_access.deluge` | `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_session_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_user`, `insert_chat_session`, `fetch_chat_messages_by_session`, `insert_chat_message`, `fetch_packages_by_tracking`, `fetch_services_ids_by_type/_by_destination`, `fetch_services_by_ids`, `fetch_services_all`, `fetch_offices_by_ids`, `fetch_offices_all`, `fetch_coverage_by_ids`, `fetch_coverage_all`, `fetch_vendors_ids_by_type/_by_name`, `fetch_vendors_by_ids`, `fetch_vendors_all`, `fetch_contacts_ids_by_full_name/phone/document`, `fetch_contacts_by_ids`, `fetch_contacts_all` |
+| `chat_common.deluge` | `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts`, `format_top_customers` |
+| `data_access.deluge` | `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_session_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_user`, `insert_chat_session`, `fetch_chat_messages_by_session`, `insert_chat_message`, `fetch_packages_by_tracking`, `fetch_services_ids_by_type/_by_destination`, `fetch_services_by_ids`, `fetch_services_all`, `fetch_services_count_by_date_window/_ids_by_date_window/_by_date_window`, `fetch_offices_by_ids`, `fetch_offices_all`, `fetch_coverage_by_ids`, `fetch_coverage_all`, `fetch_vendors_ids_by_type/_by_name`, `fetch_vendors_by_ids`, `fetch_vendors_all`, `fetch_contacts_ids_by_full_name/phone/document`, `fetch_contacts_by_ids`, `fetch_contacts_all` |
 | `chat_intent.deluge` | `chat_intent`, `build_intent_prompt` |
 | `chat_invoke.deluge` | `chat_invoke`, `resolve_reply`, `dispatch_tool`, `compose_with_ai`, `get_or_create_session`, `create_message`, `get_recent_history`, `update_session` |
 | `chat_list.deluge` | `chat_list` |
-| `tools/*.deluge` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts` |
+| `tools/*.deluge` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts`, `tool_report_top_customers` (+ helpers `insert_ranked_entry`, `build_empty_report`) |
 
 > El nombre de la función en el editor de Creator debe coincidir EXACTAMENTE con el nombre
 > definido en el archivo (por ejemplo, crear la función `chat_invoke`, no `chat_invoke.deluge`).
@@ -152,7 +153,10 @@ en AMBOS sitios (el literal de la consulta en `data_access` y el mapa `*Fields`)
   tools añadirán el filtro automáticamente.
 - **Límite de registros**: acceso nativo con `range from 0 to 199` (200 registros) en los
   listados de negocio, `0 to 49` (50) en contactos y los 10 más recientes en el historial
-  del chat (`0 to 9`, orden `Created_Time desc`).
+  del chat (`0 to 9`, orden `Created_Time desc`). `report_top_customers` procesa la ventana
+  fija de 30 días acotada a 200 servicios: si el conteo exacto de la ventana supera 200,
+  devuelve `truncated: true` y la reply avisa que el ranking es aproximado (se analizaron
+  los primeros 200 por fecha de negocio).
 
 ## Conexión con el widget (implementada)
 
