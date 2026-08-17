@@ -8,9 +8,10 @@
  *   {"answer": "<texto>"}                    → respuesta directa sin tools
  *   {"clarify": "<pregunta>"}                → falta información
  *
- * La salida de Zia es TEXTO; se pide JSON estricto con temperature 0 y se
- * valida con parse_json_strict (chat_common.deluge). La llamada Zia usa la
- * sintaxis oficial SIN comas (cada parámetro nombrado en su propia línea).
+ * La tarea Zia retorna un objeto con atributos .status, .data, .error.
+ * .data es el TEXTO del LLM (se parsea con parse_json_strict de
+ * chat_common.deluge). La llamada Zia usa la sintaxis oficial SIN comas
+ * (cada parámetro nombrado en su propia línea).
  */
 
 Map chat_intent(String userPrompt, List history)
@@ -39,14 +40,33 @@ Map chat_intent(String userPrompt, List history)
                 "text": "No pude interpretar tu solicitud. ¿Puedes reformularla?"};
     }
 
-    // Formas de respuesta de Zia (observadas en gate 5.1):
-    //  A) {"status": true, "data": "<json>"} → wrapper clásico
-    //  B) {"answer": ...} (o {"tool": ...})   → JSON directo sin wrapper
-    data = response.get("data");
-    if (response.get("status") == true && data != null) {
-        parsed = parse_json_strict(data.toString());
+    // La respuesta de Zia task es un objeto con atributos accedidos por punto:
+    //   response.status → boolean (éxito de la tarea)
+    //   response.data   → Map o String (el LLM retorna JSON; Zia puede
+    //                      devolverlo ya parseado como Map o como String)
+    //   response.error  → String/null (mensaje si falló)
+    if (response.status == true && response.data != null) {
+        // Zia puede devolver data como Map (ya parseado) o como String (crudo).
+        // Si es Map, toMap() produce formato Deluge (sin comillas) → parse_error.
+        // Solución: intentar usar directamente; si no es Map, parsear como String.
+        dataValue = response.data;
+        parsed = null;
+        try {
+            // Si es Map, containsKey funciona directamente
+            if (dataValue.containsKey("tool") || dataValue.containsKey("answer")
+                    || dataValue.containsKey("clarify")) {
+                parsed = dataValue;
+            }
+        } catch (e) {
+            // No es Map — tratar como String
+        }
+        if (parsed == null) {
+            parsed = parse_json_strict(dataValue.toString());
+        }
     } else {
-        parsed = parse_json_strict(response.toString());
+        errorMsg = (response.error != null) ? response.error : "Error desconocido";
+        return {"status": "error", "kind": "clarify",
+                "text": "No pude interpretar tu solicitud. " + errorMsg};
     }
 
     // Normalización del contrato (con try/catch por si el JSON no es un objeto)
