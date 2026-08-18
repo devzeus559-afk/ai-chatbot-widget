@@ -911,16 +911,44 @@
         return ZOHO.CREATOR && ZOHO.CREATOR.API ? "server" : "local";
       }
 
-      // --- Cliente mínimo sobre ZOHO.CREATOR.API (callback + promesa) ---
+      // --- Cliente mínimo sobre ZOHO.CREATOR.API (callback + promesa + timeout) ---
+      // El widgets SDK (version/1.0) puede invocar el callback O devolver una
+      // Promise, según la versión que Zoho sirva. Peor aún: algunas versiones
+      // ejecutan la operación (el registro se crea) pero NUNCA resuelven la
+      // llamada. Sin timeout el widget se cuelga para siempre en el await.
+      // Este wrapper resuelve con cualquiera de las dos vías + timeout.
       // ==== 3.2  Adapter server (Client API) ====
-      function clientApi(method, config) {
+      function clientApi(method, config, timeoutMs) {
         return new Promise((resolve) => {
           const fn = ZOHO.CREATOR.API[method];
           if (!fn) {
             resolve({ code: 0, message: "Client API method not found: " + method });
             return;
           }
-          fn(config, (res) => resolve(res || {}));
+          let settled = false;
+          let timer = null;
+          const done = (res) => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timer);
+              resolve(res || {});
+            }
+          };
+          timer = setTimeout(
+            () => done({ code: 0, timedOut: true, message: "Client API timeout: " + method }),
+            timeoutMs || 8000
+          );
+          try {
+            const maybePromise = fn(config, done);
+            if (maybePromise && typeof maybePromise.then === "function") {
+              maybePromise.then(
+                (res) => done(res),
+                (err) => done({ code: 0, message: "Client API call failed: " + ((err && err.message) || err) })
+              );
+            }
+          } catch (err) {
+            done({ code: 0, message: "Client API call failed: " + ((err && err.message) || err) });
+          }
         });
       }
 
@@ -940,14 +968,24 @@
         throw new Error("getAllRecords(" + reportName + ") failed: " + (res && res.message));
       }
 
+      const _MONTHS = {
+        Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+        Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+      };
       function toTimestamp(v) {
         if (!v) return 0;
         if (typeof v === "number") return v;
-        const s = String(v).trim();
+        let s = String(v).trim();
         if (!s) return 0;
-        // "2026-08-05 10:00:00" → ISO UTC (Creator devuelve UTC)
-        const iso = s.includes("T") ? s : s.replace(" ", "T") + "Z";
-        const t = Date.parse(iso);
+        // Zoho Creator formato live: "17-Aug-2026 22:35:37" → ISO numérico
+        const zm = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})\s+(.+)$/);
+        if (zm && _MONTHS[zm[2]]) {
+          s = `${zm[3]}-${_MONTHS[zm[2]]}-${zm[1].padStart(2, "0")}T${zm[4]}Z`;
+        } else if (!s.includes("T")) {
+          // "2026-08-05 10:00:00" → ISO UTC (Creator devuelve UTC)
+          s = s.replace(" ", "T") + "Z";
+        }
+        const t = Date.parse(s);
         return isNaN(t) ? 0 : t;
       }
 
@@ -971,17 +1009,18 @@
       }
 
       async function loadThread(convId) {
-        const sessions = await apiGetAll(CONFIG.chatSessionsReport, {
-          criteria: "Session_ID == '" + convId + "'",
-          limit: 1,
-        });
-        const session = sessions[0];
+        // Sin criteria string: el API del live rechaza Session_ID == '<uuid>'
+        // con 3330 (parsea el valor como DATE-TIME). Se filtra en JS.
+        const sessions = await apiGetAll(CONFIG.chatSessionsReport, { limit: 200 });
+        const session = (sessions || []).find((s) => s.Session_ID === convId);
         if (!session) return null;
         const msgs = await apiGetAll(CONFIG.chatMessagesReport, {
-          criteria: "Session == '" + session.ID + "'",
+          criteria: "Session == " + session.ID,
           limit: 200,
         });
-        msgs.sort((a, b) => toTimestamp(a.Created_Time) - toTimestamp(b.Created_Time));
+        // IDs de Creator son strings de 19 dígitos — Number() pierde precisión.
+        // Comparación string lexicográfica es cronológica para IDs de mismo largo.
+        msgs.sort((a, b) => String(a.ID || "").localeCompare(String(b.ID || "")));
         return {
           title: session.Title || "",
           messages: msgs.map((m) => ({
@@ -999,35 +1038,82 @@
           [CONFIG.chatRequestsFields.prompt]: prompt,
         };
         console.log("[LM2Chatbot] sendToServer payload:", recordData);
-        const res = await clientApi("addRecord", {
-          appName: CONFIG.appName,
-          formName: CONFIG.chatRequestsForm,
-          data: { data: recordData },
-        });
-        if (!res || Number(res.code) !== 3000) {
+        const res = await clientApi(
+          "addRecord",
+          {
+            appName: CONFIG.appName,
+            formName: CONFIG.chatRequestsForm,
+            data: { data: recordData },
+          },
+          5000
+        );
+        console.log("[LM2Chatbot] addRecord response:", res);
+        if (res && res.timedOut) {
+          // El SDK creó el registro pero nunca respondió (bug observado del
+          // widgets SDK): continuar al polling, filtrando Session_ID en JS.
+          console.warn("[LM2Chatbot] addRecord sin respuesta del SDK; el registro suele crearse igual.");
+        } else if (!res || Number(res.code) !== 3000) {
           console.error("[LM2Chatbot] addRecord failed:", res);
           throw new Error("addRecord(ChatRequests) failed: " + (res && res.message));
         }
 
+        // Poll por ID del registro recién creado. El criteria por Session_ID
+        // es frágil: el API del live parsea strings con formato de fecha como
+        // DATE-TIME y rechaza con code 3330 (Invalid criteria specified).
+        const createdId = res && res.data && (res.data.ID || (res.data[0] && res.data[0].ID));
+
         const deadline = Date.now() + CONFIG.pollTimeoutMs;
         let lastError = null;
+        // ID del registro ACTUAL de esta solicitud. Si addRecord devolvió ID lo
+        // usamos directo; si no (timeout del SDK), se resuelve abajo en el
+        // primer poll sin depender de Created_Time.
+        let pollId = createdId || null;
         while (Date.now() < deadline) {
           await sleep(CONFIG.pollIntervalMs);
           let recs;
           try {
-            recs = await apiGetAll(CONFIG.chatRequestsReport, {
-              criteria: CONFIG.chatRequestsFields.sessionId + " == '" + convId + "'",
-              limit: 10,
-            });
+            if (pollId) {
+              // ID numérico: criteria seguro (sin parseo de fecha)
+              recs = await apiGetAll(CONFIG.chatRequestsReport, {
+                criteria: "ID == " + pollId,
+                limit: 10,
+              });
+            } else {
+              // Sin criteria: el live rechaza Session_ID == '<valor>' con 3330.
+              // Se trae la página 1 y se filtra Session_ID en JS.
+              recs = await apiGetAll(CONFIG.chatRequestsReport, { limit: 200 });
+              recs = (recs || []).filter((r) => r.Session_ID === convId);
+              // El live puede no exponer Created_Time en el reporte: si el sort
+              // quedaba todo en cero, recs[0] era el PRIMER registro de la
+              // conversación (el saludo) → respondía siempre lo mismo.
+              // Identificar el registro ACTUAL sin depender de la fecha:
+              // 1) el que está pendiente (recién creado, workflow corriendo)
+              // 2) el que matchea el Prompt que acabamos de enviar
+              // 3) último recurso: el más nuevo por Created_Time
+              const current =
+                recs.find((r) => r.Status === "pending" || r.Status === "processing") ||
+                recs.find((r) => r.Prompt === prompt) ||
+                recs.sort((a, b) => toTimestamp(b.Created_Time) - toTimestamp(a.Created_Time))[0];
+              if (!current) continue;
+              pollId = current.ID;
+              recs = [current];
+            }
+            console.log("[LM2Chatbot] poll:", { mode: pollId ? "by-id" : "filter-js", recs: recs });
           } catch (err) {
             lastError = err;
+            console.error("[LM2Chatbot] poll error:", err);
             continue;
           }
           recs.sort((a, b) => toTimestamp(b.Created_Time) - toTimestamp(a.Created_Time));
           const latest = recs[0];
           if (!latest) continue;
           const status = String(latest.Status || "");
-          if (status === "answered") return { ok: true, reply: latest.Reply || "" };
+          if (status === "answered") {
+            // Fallback si el reporte no expone Reply: último mensaje ai del hilo
+            let reply = latest.Reply || "";
+            if (!reply) reply = await replyFallback(convId);
+            return { ok: true, reply: reply };
+          }
           if (status === "failed") {
             return { ok: false, error: latest.Error || "Error en el servidor." };
           }
@@ -1043,11 +1129,9 @@
       }
 
       async function deleteSessionOnServer(convId) {
-        const sessions = await apiGetAll(CONFIG.chatSessionsReport, {
-          criteria: "Session_ID == '" + convId + "'",
-          limit: 1,
-        });
-        const session = sessions[0];
+        // Sin criteria string (mismo motivo: 3330 en el live). Filtrado en JS.
+        const sessions = await apiGetAll(CONFIG.chatSessionsReport, { limit: 200 });
+        const session = (sessions || []).find((s) => s.Session_ID === convId);
         if (!session) return;
         async function deleteAll(formName, recs) {
           for (const rec of recs) {
@@ -1059,20 +1143,44 @@
           }
         }
         const msgs = await apiGetAll(CONFIG.chatMessagesReport, {
-          criteria: "Session == '" + session.ID + "'",
+          criteria: "Session == " + session.ID,
           limit: 200,
         });
         await deleteAll(CONFIG.chatMessagesForm, msgs);
-        const reqs = await apiGetAll(CONFIG.chatRequestsReport, {
-          criteria: "Session_ID == '" + convId + "'",
-          limit: 200,
-        });
+        let reqs = await apiGetAll(CONFIG.chatRequestsReport, { limit: 200 });
+        reqs = (reqs || []).filter((r) => r.Session_ID === convId);
         await deleteAll(CONFIG.chatRequestsForm, reqs);
         await clientApi("deleteRecord", {
           appName: CONFIG.appName,
           formName: CONFIG.chatSessionsForm,
           id: session.ID,
         });
+      }
+
+      // Si el reporte ChatRequests no expone Reply en el live, lee el último
+      // mensaje "ai" del hilo desde ChatMessages_Report.
+      async function replyFallback(convId) {
+        try {
+          const sessions = await apiGetAll(CONFIG.chatSessionsReport, { limit: 200 });
+          // Puede haber VARIAS sesiones con el mismo Session_ID (bug del backend
+          // que crea una sesión por mensaje). Con .find() agarraba SIEMPRE la
+          // primera sesión → respondía lo mismo a todo. Usar la MÁS RECIENTE.
+          const session = (sessions || [])
+            .filter((s) => s.Session_ID === convId)
+            .sort((a, b) => toTimestamp(b.Created_Time) - toTimestamp(a.Created_Time))[0];
+          if (!session) return "";
+          const msgs = await apiGetAll(CONFIG.chatMessagesReport, {
+            criteria: "Session == " + session.ID,
+            limit: 50,
+          });
+          const ai = (msgs || [])
+            .filter((m) => String(m.Role || "").toLowerCase() === "ai")
+            .sort((a, b) => toTimestamp(b.Created_Time) - toTimestamp(a.Created_Time))[0];
+          return (ai && ai.Content) || "";
+        } catch (err) {
+          console.error("[LM2Chatbot] replyFallback failed:", err);
+          return "";
+        }
       }
 
       // --- Capa local (localStorage) ---
