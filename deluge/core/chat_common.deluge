@@ -42,35 +42,35 @@ Map parse_json_strict(String text)
 // --------------------------------------------------------------------------
 // Composición de respuestas por plantilla (default, sin segunda llamada Zia)
 // --------------------------------------------------------------------------
-String compose_reply(Map toolResult, Map intent)
+Map compose_reply(Map toolResult, Map intent)
 {
     if (!toolResult.get("ok")) {
-        return "No pude completar la búsqueda. " + toolResult.get("message");
+        return {"text": "No pude completar la búsqueda. " + toolResult.get("message"), "visualization": null};
     }
     toolName = intent.get("tool");
     data = toolResult.get("data");
+    viz = toolResult.get("visualization");
 
     if (toolName == "track_package") {
-        return format_tracking(data);
+        return {"text": format_tracking(data), "visualization": viz};
     }
     if (toolName == "search_services") {
-        return format_services(data);
+        return {"text": format_services(data), "visualization": viz};
     }
     if (toolName == "find_offices") {
-        return format_offices(data);
+        return {"text": format_offices(data), "visualization": viz};
     }
     if (toolName == "check_coverage") {
-        // La tool devuelve locations (data) + proveedores (vendors): mostrar ambos
-        return format_coverage(data, toolResult.get("vendors"));
+        return {"text": format_coverage(data, toolResult.get("vendors")), "visualization": viz};
     }
     if (toolName == "find_contacts") {
-        return format_contacts(data);
+        return {"text": format_contacts(data), "visualization": viz};
     }
     if (toolName == "report_top_customers") {
-        return format_top_customers(data);
+        return {"text": format_top_customers(data), "visualization": viz};
     }
 
-    return "Datos obtenidos: " + data.toString();
+    return {"text": "Datos obtenidos: " + data.toString(), "visualization": viz};
 }
 
 String format_tracking(Map pkg)
@@ -183,6 +183,146 @@ String format_contacts(List contacts)
         text = text + line + "\n";
     }
     return text;
+}
+
+// --------------------------------------------------------------------------
+// Motor de visualización: construye el envelope JSON para el widget.
+// type: "bar" | "table" | "none" (decisión determinista, no-Zia).
+// labels: categorías para el eje X (e.g. ["Juan", "María", "Pedro"]).
+// series: [{name, values}] — una o más series de datos.
+// title: texto descriptivo del gráfico.
+// El widget recibe {text, visualization} y renderiza sin dependencias.
+// --------------------------------------------------------------------------
+Map build_viz(String type, String title, List labels, List series)
+{
+    if (type == null || type == "") {
+        type = "none";
+    }
+    viz = Map();
+    viz.put("type", type);
+    viz.put("title", title);
+    viz.put("labels", labels);
+    viz.put("series", series);
+    return viz;
+}
+
+// Decide el tipo de visualización de forma determinista (sin Zia):
+// - breakdown vacío o 1 categoría → "none" (solo texto)
+// - ≤8 categorías, no serie temporal → "bar"
+// - ≥9 categorías → "table" (fallback seguro)
+String decidirVisualizacion(List labels, Boolean esSerieTiempo)
+{
+    if (labels == null || labels.size() <= 1) {
+        return "none";
+    }
+    if (esSerieTiempo != null && esSerieTiempo == true) {
+        return "line"; // fase 2; por ahora devuelve "line" y el widget ignora
+    }
+    if (labels.size() <= 8) {
+        return "bar";
+    }
+    return "table";
+}
+
+// --------------------------------------------------------------------------
+// Serialización JSON manual — Deluge Map.toString() NO produce JSON válido
+// (genera {key=value} en vez de {"key":"value"}). Esta función serializa
+// el envelope {text, visualization} a JSON válido para el widget.
+// --------------------------------------------------------------------------
+// Escape manual: itera carácter por carácter para manejar \n, \t, \r, etc.
+// (Deluge replace() puede no manejar correctamente secuencias de escape)
+String escapeJsonStr(String s)
+{
+    if (s == null) { return "null"; }
+    src = "" + s;
+    result = "\"";
+    len = src.length();
+    i = 0;
+    while (i < len) {
+        ch = src.subString(i, i + 1);
+        if (ch == "\\") {
+            result = result + "\\\\";
+        } else if (ch == "\"") {
+            result = result + "\\\"";
+        } else if (ch == "\n") {
+            result = result + "\\n";
+        } else if (ch == "\r") {
+            result = result + "\\r";
+        } else if (ch == "\t") {
+            result = result + "\\t";
+        } else {
+            result = result + ch;
+        }
+        i = i + 1;
+    }
+    result = result + "\"";
+    return result;
+}
+
+String numberToStr(Object n)
+{
+    if (n == null) { return "0"; }
+    return "" + n;
+}
+
+// Join manual: concatena una List<String> con un separador
+String joinList(List items, String sep)
+{
+    result = "";
+    for each i in items {
+        if (result == "") {
+            result = "" + i;
+        } else {
+            result = result + sep + i;
+        }
+    }
+    return result;
+}
+
+String seriesToJson(Map s)
+{
+    namePart = "\"name\":" + escapeJsonStr(s.get("name"));
+    vals = List();
+    v = s.get("values");
+    if (v != null) {
+        for each item in v {
+            vals.add(numberToStr(item));
+        }
+    }
+    return "{" + namePart + ",\"values\":[" + joinList(vals, ",") + "]}";
+}
+
+String vizToJson(Map viz)
+{
+    if (viz == null) { return "null"; }
+    result = "{";
+    result = result + "\"type\":" + escapeJsonStr(viz.get("type"));
+    result = result + ",\"title\":" + escapeJsonStr(viz.get("title"));
+    // labels
+    labels = viz.get("labels");
+    labelParts = List();
+    if (labels != null) {
+        for each l in labels {
+            labelParts.add(escapeJsonStr("" + l));
+        }
+    }
+    result = result + ",\"labels\":[" + joinList(labelParts, ",") + "]";
+    // series
+    series = viz.get("series");
+    seriesParts = List();
+    if (series != null) {
+        for each s in series {
+            seriesParts.add(seriesToJson(s));
+        }
+    }
+    result = result + ",\"series\":[" + joinList(seriesParts, ",") + "]";
+    result = result + "}";
+    return result;
+}
+
+String envelopeToJson(String text, Map viz)
+{
+    return "{\"text\":" + escapeJsonStr(text) + ",\"visualization\":" + vizToJson(viz) + "}";
 }
 
 // --------------------------------------------------------------------------

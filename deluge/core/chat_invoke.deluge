@@ -72,10 +72,18 @@ String resolve_reply(Map intent)
     if (kind == "tool") {
         toolResult = dispatch_tool(intent.get("tool"), intent.get("params"));
         config = chat_config();
+        replyText = "";
+        viz = null;
         if (config.get("composeWithAI")) {
-            return compose_with_ai(intent.get("tool"), toolResult, intent);
+            replyText = compose_with_ai(intent.get("tool"), toolResult, intent);
+            viz = toolResult.get("visualization");
+        } else {
+            replyObj = compose_reply(toolResult, intent);
+            replyText = replyObj.get("text");
+            viz = replyObj.get("visualization");
         }
-        return compose_reply(toolResult, intent);
+        // Serializar a JSON válido (Deluge Map.toString() NO es JSON)
+        return envelopeToJson(replyText, viz);
     }
 
     return "Lo siento, no pude procesar tu solicitud. Por favor intenta de nuevo.";
@@ -105,12 +113,15 @@ Map dispatch_tool(String toolName, Map params)
 }
 
 // Composición con segunda llamada Zia (opcional, activada con composeWithAI)
+// Retorna solo el texto; el envelope JSON (text + visualization) se arma en resolve_reply.
 String compose_with_ai(String toolName, Map toolResult, Map intent)
 {
     if (!toolResult.get("ok")) {
         return "No pude completar la búsqueda. " + toolResult.get("message");
     }
-    dataText = compose_reply(toolResult, intent);
+    // compose_reply ahora retorna Map{text, visualization}; extraer el texto
+    replyObj = compose_reply(toolResult, intent);
+    dataText = replyObj.get("text");
     // Sintaxis oficial de la tarea Zia: parámetros SIN comas, uno por línea
     response = Zia[
         message : "Responde al usuario de forma natural y breve usando estos datos: " + dataText
@@ -124,7 +135,7 @@ String compose_with_ai(String toolName, Map toolResult, Map intent)
             return response.get("data");
         }
     }
-    return compose_reply(toolResult, intent);
+    return dataText;
 }
 
 // --------------------------------------------------------------------------
@@ -156,9 +167,12 @@ Map get_or_create_session(String sessionId)
     return null;
 }
 
-void create_message(String sessionRecordId, String role, String content)
+void create_message(String sessionRecordId, String role, Object content)
 {
     config = chat_config();
+    // Almacenar el envelope completo (text + visualization) para que el widget
+    // pueda reconstruir la visualización al cargar mensajes históricos.
+    // El widget hace JSON.parse(content) y extrae text/visualization.
     data = Map();
     data.put("Session", sessionRecordId);
     data.put("Role", role);

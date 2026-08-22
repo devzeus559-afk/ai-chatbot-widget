@@ -244,7 +244,26 @@ Map tool_report_top_customers(Map params)
     data.put("truncated", truncated);
     data.put("customers", ranking);
 
-    return {"ok": true, "data": data};
+    // Visualización: labels = nombres, values = servicios. Decisión determinista.
+    vizLabels = List();
+    vizValues = List();
+    vizTitle = "Clientes más frecuentes";
+    if (hasFilter) {
+        vizTitle = vizTitle + " (" + reportedType + ")";
+    }
+    for each c in ranking {
+        vizLabels.add(c.get("customerName"));
+        vizValues.add(c.get("totalServices"));
+    }
+    vizType = decidirVisualizacion(vizLabels, false);
+    series = List();
+    s = Map();
+    s.put("name", "Servicios");
+    s.put("values", vizValues);
+    series.add(s);
+    viz = build_viz(vizType, vizTitle, vizLabels, series);
+
+    return {"ok": true, "data": data, "visualization": viz};
 }
 
 // Inserción indexada por shift-copy: List.add() solo appendea, así que se

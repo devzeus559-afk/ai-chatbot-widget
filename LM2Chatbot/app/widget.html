@@ -449,6 +449,71 @@
         color: var(--text-dark);
       }
 
+      /* 1.8b  Visualización (tablas y gráficas de barras) */
+      .zc-viz-container {
+        margin-top: 8px;
+        padding: 8px 0;
+      }
+      .zc-viz-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-gray);
+        margin-bottom: 8px;
+      }
+      .zc-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .zc-table th,
+      .zc-table td {
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--border-color);
+        text-align: left;
+      }
+      .zc-table th {
+        font-weight: 600;
+        color: var(--text-gray);
+      }
+      .zc-bar-chart {
+        display: flex;
+        align-items: flex-end;
+        gap: 12px;
+        height: 160px;
+        padding: 10px 0;
+      }
+      .zc-bar-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        flex: 1;
+        height: 100%;
+        min-width: 0;
+      }
+      .zc-bar {
+        width: 100%;
+        max-width: 40px;
+        background: var(--primary-blue);
+        border-radius: 4px 4px 0 0;
+        transition: height 0.3s ease;
+      }
+      .zc-bar-value {
+        font-size: 11px;
+        margin-bottom: 4px;
+        color: var(--text-gray);
+      }
+      .zc-bar-label {
+        font-size: 11px;
+        margin-top: 6px;
+        color: var(--text-gray);
+        text-align: center;
+        word-break: break-word;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 60px;
+      }
+
       /* 1.9  Input y botón enviar */
       .input-area {
         padding: 16px 20px;
@@ -1532,11 +1597,162 @@
       // ================================================================
       // 3.8  Mensajes — render, thinking, scroll
       // ================================================================
+      // --- Visualización: motor de render (bar + table, sin dependencias) ---
+
+      // Reparación de JSON con newlines literales (mensajes guardados antes del
+      // fix de escaping). Reemplaza \n \r \t dentro de strings JSON por sus
+      // secuencias escapadas, respetando el contexto de string vs fuera de string.
+      function repairJson(raw) {
+        let out = "";
+        let inStr = false;
+        for (let i = 0; i < raw.length; i++) {
+          const ch = raw[i];
+          if (ch === '"') {
+            // Verificar si es comilla escapada (\")
+            let bs = 0;
+            let j = i - 1;
+            while (j >= 0 && raw[j] === "\\") { bs++; j--; }
+            if (bs % 2 === 0) {
+              // Comilla real: alterna inStr
+              inStr = !inStr;
+            }
+            out += ch;
+          } else if (inStr) {
+            if (ch === "\n") { out += "\\n"; }
+            else if (ch === "\r") { out += "\\r"; }
+            else if (ch === "\t") { out += "\\t"; }
+            else { out += ch; }
+          } else {
+            out += ch;
+          }
+        }
+        return out;
+      }
+
+      function renderTable(viz, container) {
+        const table = document.createElement("table");
+        table.className = "zc-table";
+        const thead = document.createElement("thead");
+        const headRow = document.createElement("tr");
+        // Headers: "Categoría" + nombre de cada serie
+        const thLabel = document.createElement("th");
+        thLabel.textContent = "Categoría";
+        headRow.appendChild(thLabel);
+        (viz.series || []).forEach((s) => {
+          const th = document.createElement("th");
+          th.textContent = s.name;
+          headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement("tbody");
+        (viz.labels || []).forEach((label, i) => {
+          const tr = document.createElement("tr");
+          const tdLabel = document.createElement("td");
+          tdLabel.textContent = label;
+          tr.appendChild(tdLabel);
+          (viz.series || []).forEach((s) => {
+            const td = document.createElement("td");
+            td.textContent = s.values[i] != null ? s.values[i] : "";
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+      }
+
+      function renderBarChart(viz, container) {
+        const values = (viz.series && viz.series[0] && viz.series[0].values) || [];
+        const maxVal = Math.max(...values, 1);
+        const chart = document.createElement("div");
+        chart.className = "zc-bar-chart";
+
+        (viz.labels || []).forEach((label, i) => {
+          const val = values[i] || 0;
+          const pct = (val / maxVal) * 100;
+          const barWrap = document.createElement("div");
+          barWrap.className = "zc-bar-wrap";
+          const barValue = document.createElement("div");
+          barValue.className = "zc-bar-value";
+          barValue.textContent = val;
+          const bar = document.createElement("div");
+          bar.className = "zc-bar";
+          bar.style.height = "0%";
+          const barLabel = document.createElement("div");
+          barLabel.className = "zc-bar-label";
+          barLabel.textContent = label;
+          barLabel.title = label;
+          barWrap.appendChild(barValue);
+          barWrap.appendChild(bar);
+          barWrap.appendChild(barLabel);
+          chart.appendChild(barWrap);
+          // Animar entrada: height desde 0
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              bar.style.height = pct + "%";
+            });
+          });
+        });
+        container.appendChild(chart);
+      }
+
+      function renderVisualization(viz, container) {
+        if (!viz || viz.type === "none" || !viz.type) return;
+        const wrapper = document.createElement("div");
+        wrapper.className = "zc-viz-container";
+        if (viz.title) {
+          const title = document.createElement("div");
+          title.className = "zc-viz-title";
+          title.textContent = viz.title;
+          wrapper.appendChild(title);
+        }
+        switch (viz.type) {
+          case "table":
+            renderTable(viz, wrapper);
+            break;
+          case "bar":
+            renderBarChart(viz, wrapper);
+            break;
+          // "line" se soportará en fase 2
+        }
+        container.appendChild(wrapper);
+      }
+
       function renderMessageNode(content, role) {
+        // Intentar parsear JSON envelope (text + visualization) de mensajes AI
+        let text = content;
+        let viz = null;
+        if (role === "ai" && typeof content === "string") {
+          try {
+            const parsed = JSON.parse(content);
+            if (parsed && typeof parsed === "object" && parsed.text != null) {
+              text = parsed.text;
+              viz = parsed.visualization || null;
+            }
+          } catch (e) {
+            // Fallback: reparar JSON con newlines literales (mensajes de DB)
+            try {
+              const repaired = repairJson(content);
+              const parsed = JSON.parse(repaired);
+              if (parsed && typeof parsed === "object" && parsed.text != null) {
+                text = parsed.text;
+                viz = parsed.visualization || null;
+              }
+            } catch (e2) {
+              // Texto plano — respuesta de answer/clarify/error (sin viz)
+            }
+          }
+        }
         const div = document.createElement("div");
         div.className = `message ${role}`;
-        div.textContent = content;
+        div.textContent = text;
         messageList.appendChild(div);
+        if (viz && viz.type && viz.type !== "none") {
+          renderVisualization(viz, messageList);
+          scrollToBottom();
+        }
       }
 
       function addMessage(content, role) {
@@ -1608,6 +1824,8 @@
           const result = await historyStore.send(state.currentConv.id, content);
           removeThinking();
           if (result.ok) {
+            // result.reply es el envelope JSON: {"text":"...","visualization":{...}}
+            // renderMessageNode parsea internamente y renderiza texto + viz.
             addMessage(result.reply, "ai");
           } else {
             addMessage(
