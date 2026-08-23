@@ -24,8 +24,6 @@
 
 map chat_tools.search_services(map params)
 {
-  config = thisapp.chat_config.chat_config();
-  fields = config.get("serviceFields");
   targetIDs = List();
   hasFilter = false;
   serviceType = params.get("serviceType");
