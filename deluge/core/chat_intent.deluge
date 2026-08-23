@@ -1,119 +1,131 @@
 /**
- * chat_intent.deluge
- *
- * Router de intención: llama a la tarea Zia de Deluge y normaliza la salida
- * a UNO de estos contratos:
- *
- *   {"tool": "<nombre>", "params": {...}}   → necesita datos de la app
- *   {"answer": "<texto>"}                    → respuesta directa sin tools
- *   {"clarify": "<pregunta>"}                → falta información
- *
- * La tarea Zia retorna un objeto con atributos .status, .data, .error.
- * .data es el TEXTO del LLM (se parsea con parse_json_strict de
- * chat_common.deluge). La llamada Zia usa la sintaxis oficial SIN comas
- * (cada parámetro nombrado en su propia línea).
- */
+* chat_intent.deluge
+*
+* Router de intención: llama a la tarea Zia de Deluge y normaliza la salida
+* a UNO de estos contratos:
+*
+*   {"tool": "<nombre>", "params": {...}}   → necesita datos de la app
+*   {"answer": "<texto>"}                    → respuesta directa sin tools
+*   {"clarify": "<pregunta>"}                → falta información
+*
+* La tarea Zia retorna un objeto con atributos .status, .data, .error.
+* .data es el TEXTO del LLM (se parsea con parse_json_strict de
+* chat_common.deluge). La llamada Zia usa la sintaxis oficial SIN comas
+* (cada parámetro nombrado en su propia línea).
+*/
 
-Map chat_intent(String userPrompt, List history)
+string chat_intent.build_intent_prompt(string userPrompt, list history, string catalogText)
 {
-    config = chat_config();
-    catalogText = config.get("toolsText");
-
-    context = "Eres un asistente virtual de una agencia internacional de paquetería, "
-            + "remesas y recargas telefónicas. Ayudas a clientes y agentes a consultar "
-            + "datos de la aplicación. Debes responder ÚNICAMENTE con JSON válido, "
-            + "sin texto adicional ni markdown.";
-
-    message = build_intent_prompt(userPrompt, history, catalogText);
-
-    response = Zia[
-        message : message
-        context : context
-        parameters : {"temperature": 0.0}
-    ];
-
-    // Zia puede devolver null al fallar (p. ej. IA no habilitada en la
-    // organización). Nunca evaluar !null en Deluge: derivar a la rama de
-    // error, no romper el turno.
-    if (response == null) {
-        return {"status": "error", "kind": "clarify",
-                "text": "No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  prompt = "CONTRATO DE SALIDA: Devuelve SOLO JSON válido con UNO de estos tres formatos:\n";
+  prompt = prompt + "1) {\"tool\": \"<nombre_tool>\", \"params\": {<parámetros>}} cuando necesites datos de la app.\n";
+  prompt = prompt + "2) {\"answer\": \"<texto>\"} cuando puedas responder sin consultar datos.\n";
+  prompt = prompt + "3) {\"clarify\": \"<pregunta>\"} cuando falte información para elegir una herramienta.\n\n";
+  prompt = prompt + "HERRAMIENTAS DISPONIBLES:\n" + catalogText + "\n\n";
+  if(history != null && history.size() > 0)
+  {
+    prompt = prompt + "HISTORIAL RECIENTE:\n";
+    for each  m in history
+    {
+      prompt = prompt + m.get("role") + ": " + m.get("content") + "\n";
     }
-
-    // La respuesta de Zia task es un objeto con atributos accedidos por punto:
-    //   response.status → boolean (éxito de la tarea)
-    //   response.data   → Map o String (el LLM retorna JSON; Zia puede
-    //                      devolverlo ya parseado como Map o como String)
-    //   response.error  → String/null (mensaje si falló)
-    if (response.status == true && response.data != null) {
-        // Zia puede devolver data como Map (ya parseado) o como String (crudo).
-        // Si es Map, toMap() produce formato Deluge (sin comillas) → parse_error.
-        // Solución: intentar usar directamente; si no es Map, parsear como String.
-        dataValue = response.data;
-        parsed = null;
-        try {
-            // Si es Map, containsKey funciona directamente
-            if (dataValue.containsKey("tool") || dataValue.containsKey("answer")
-                    || dataValue.containsKey("clarify")) {
-                parsed = dataValue;
-            }
-        } catch (e) {
-            // No es Map — tratar como String
-        }
-        if (parsed == null) {
-            parsed = parse_json_strict(dataValue.toString());
-        }
-    } else {
-        errorMsg = (response.error != null) ? response.error : "Error desconocido";
-        return {"status": "error", "kind": "clarify",
-                "text": "No pude interpretar tu solicitud. " + errorMsg};
-    }
-
-    // Normalización del contrato (con try/catch por si el JSON no es un objeto)
-    try {
-        if (parsed.containsKey("parse_error")) {
-            return {"status": "error", "kind": "clarify",
-                    "text": "No pude interpretar tu solicitud. ¿Puedes reformularla?"};
-        }
-        if (parsed.containsKey("tool")) {
-            params = parsed.get("params");
-            if (params == null) {
-                params = Map();
-            }
-            return {"status": "ok", "kind": "tool",
-                    "tool": parsed.get("tool"), "params": params};
-        }
-        if (parsed.containsKey("answer")) {
-            return {"status": "ok", "kind": "answer", "text": parsed.get("answer")};
-        }
-        if (parsed.containsKey("clarify")) {
-            return {"status": "ok", "kind": "clarify", "text": parsed.get("clarify")};
-        }
-    } catch (e) {
-        // JSON válido pero con otra forma: pedir reformulación
-    }
-
-    return {"status": "error", "kind": "clarify",
-            "text": "No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    prompt = prompt + "\n";
+  }
+  prompt = prompt + "MENSAJE ACTUAL DEL USUARIO:\n" + userPrompt;
+  return prompt;
 }
-
-String build_intent_prompt(String userPrompt, List history, String catalogText)
+map chat_intent.chat_intent(string userPrompt, list history)
 {
-    prompt = "CONTRATO DE SALIDA: Devuelve SOLO JSON válido con UNO de estos tres formatos:\n";
-    prompt = prompt + "1) {\"tool\": \"<nombre_tool>\", \"params\": {<parámetros>}} cuando necesites datos de la app.\n";
-    prompt = prompt + "2) {\"answer\": \"<texto>\"} cuando puedas responder sin consultar datos.\n";
-    prompt = prompt + "3) {\"clarify\": \"<pregunta>\"} cuando falte información para elegir una herramienta.\n\n";
-
-    prompt = prompt + "HERRAMIENTAS DISPONIBLES:\n" + catalogText + "\n\n";
-
-    if (history != null && history.size() > 0) {
-        prompt = prompt + "HISTORIAL RECIENTE:\n";
-        for each m in history {
-            prompt = prompt + m.get("role") + ": " + m.get("content") + "\n";
-        }
-        prompt = prompt + "\n";
+  /**
+  * chat_intent.dg
+  *
+  * Router de intención: llama a la tarea Zia de Deluge y normaliza la salida
+  * a UNO de estos contratos:
+  *
+  *   {"tool": "<nombre>", "params": {...}}   → necesita datos de la app
+  *   {"answer": "<texto>"}                    → respuesta directa sin tools
+  *   {"clarify": "<pregunta>"}                → falta información
+  *
+  * La salida de Zia es TEXTO; se pide JSON estricto con temperature 0 y se
+  * valida con parse_json_strict (chat_common.dg).
+  */
+  config = thisapp.chat_config.chat_config();
+  catalogText = config.get("toolsText");
+  context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Ayudas a clientes y agentes a consultar " + "datos de la aplicación. Debes responder ÚNICAMENTE con JSON válido, " + "sin texto adicional ni markdown.";
+  message = thisapp.chat_intent.build_intent_prompt(userPrompt,history,catalogText);
+  response = zia
+  [
+  message:message
+  context:context
+  parameters:{"temperature":0.0}
+  ];
+  // Zia puede devolver null o un Map sin "status" al fallar (p. ej. IA no
+  // habilitada en la organización). Nunca evaluar !null en Deluge: el
+  // fallo debe derivar a la rama de error, no romper el turno.
+  if(response == null)
+  {
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  }
+  // La respuesta de Zia task es un objeto con atributos accedidos por punto:
+  //   response.status → boolean (éxito de la tarea)
+  //   response.data   → String (texto del LLM, contiene JSON)
+  //   response.error  → String/null (mensaje si falló)
+  if(response.status == true && response.data != null)
+  {
+    // Zia puede devolver data como Map (ya parseado) o como String (crudo).
+    // Si es Map, toMap() produce formato Deluge (sin comillas) → parse_error.
+    // Solución: intentar usar directamente; si no es Map, parsear como String.
+    dataValue = response.data;
+    dataFormatted = dataValue.toMap();
+    parsed = null;
+    try
+    {
+      // Si es Map, containsKey funciona directamente
+      if(dataFormatted.containKey("tool") || dataFormatted.containKey("answer") || dataFormatted.containKey("clarify"))
+      {
+        parsed = dataFormatted;
+      }
+    }		catch (e)
+    {
+      // No es Map — tratar como String
     }
-
-    prompt = prompt + "MENSAJE ACTUAL DEL USUARIO:\n" + userPrompt;
-    return prompt;
+    if(parsed == null)
+    {
+      parsed = thisapp.chat_common.parse_json_strict(dataValue);
+    }
+  }
+  else
+  {
+    errorMsg = if(response.error != null,response.error,"Error desconocido");
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. " + errorMsg};
+  }
+  // 	info "parsed: "+ parsed;
+  // Normalización del contrato (con try/catch por si el JSON no es un objeto)
+  try
+  {
+    if(parsed.containKey("parse_error"))
+    {
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    }
+    if(parsed.containKey("tool"))
+    {
+      params = parsed.get("params");
+      if(params == null)
+      {
+        params = Map();
+      }
+      return {"status":"ok","kind":"tool","tool":parsed.get("tool"),"params":params};
+    }
+    if(parsed.containKey("answer"))
+    {
+      return {"status":"ok","kind":"answer","text":parsed.get("answer")};
+    }
+    if(parsed.containKey("clarify"))
+    {
+      return {"status":"ok","kind":"clarify","text":parsed.get("clarify")};
+    }
+  }	catch (e)
+  {
+    // JSON válido pero con otra forma: pedir reformulación
+  }
+  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
 }

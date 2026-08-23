@@ -1,218 +1,351 @@
 /**
- * chat_invoke.deluge
- *
- * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
- * por el widget o en pruebas) y ejecuta el ciclo completo:
- *
- *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
- *
- * Todo el acceso a datos es NATIVO (data_access.deluge) con helpers TIPADOS
- * (igualdad inline: campo literal, valor variable): 0 llamadas de API de
- * Creator y 0 llamadas externas por turno. La tarea Zia usa la sintaxis
- * oficial SIN comas (cada parámetro nombrado en su propia línea).
- *
- * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
- *            get_or_create_session, create_message, get_recent_history,
- *            update_session
- */
+* chat_invoke.deluge
+*
+* Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
+* por el widget o en pruebas) y ejecuta el ciclo completo:
+*
+*   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+*
+* Todo el acceso a datos es NATIVO (data_access.deluge) con helpers TIPADOS
+* (igualdad inline: campo literal, valor variable): 0 llamadas de API de
+* Creator y 0 llamadas externas por turno. La tarea Zia usa la sintaxis
+* oficial SIN comas (cada parámetro nombrado en su propia línea).
+*
+* Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
+*            get_or_create_session, create_message, get_recent_history,
+*            update_session
+*/
 
-Map chat_invoke(Number requestId)
+map chat_invoke.chat_invoke(int requestId)
 {
-    config = chat_config();
-
-    requestRecords = fetch_chat_requests_by_id(requestId);
-    if (requestRecords == null || requestRecords.size() == 0) {
-        return {"status": "failed", "message": "Solicitud no encontrada"};
-    }
-    request = requestRecords.get(0);
-
-    sessionId = request.get("Session_ID");
-    prompt = request.get("Prompt");
-
-    // 1. Sesión (crear si no existe)
-    session = get_or_create_session(sessionId);
-
-    // 2. Persistir mensaje del usuario
-    create_message(session.get("ID"), "user", prompt);
-
-    // 3. Historial para contexto (últimos 10 mensajes, más reciente primero)
-    history = get_recent_history(session.get("ID"));
-
-    // 4. Intención vía Zia
-    intent = chat_intent(prompt, history);
-
-    // 5. Dispatch + respuesta
-    reply = resolve_reply(intent);
-
-    // 6. Persistir respuesta AI
-    create_message(session.get("ID"), "ai", reply);
-
-    // 7. Actualizar sesión (título + actividad) mutando el registro enlazado
-    update_session(session, prompt);
-
-    // 8. Marcar la solicitud como respondida (mutación del registro enlazado)
-    request.Status = "answered";
-    request.Reply = reply;
-
-    return {"status": "answered", "reply": reply, "sessionId": sessionId};
+  /**
+  * chat_invoke.deluge
+  *
+  * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
+  * por el widget o en pruebas) y ejecuta el ciclo completo:
+  *
+  *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+  *
+  * Todo el acceso a datos es NATIVO (data_access.deluge): 0 llamadas de API de
+  * Creator y 0 llamadas externas por turno.
+  *
+  * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
+  *            get_or_create_session, create_message, get_recent_history,
+  *            update_session
+  */
+  config = thisapp.chat_config.chat_config();
+  requestRecords = thisapp.chat_data_access.fetch_chat_requests_by_id(requestId);
+  info requestRecords;
+  if(requestRecords == null || requestRecords.size() == 0)
+  {
+    return {"status":"failed","message":"Solicitud no encontrada"};
+  }
+  request = requestRecords.get(0);
+  sessionId = request.get("Session_ID");
+  prompt = request.get("Prompt");
+  // 1. Sesión (crear si no existe)
+  session = thisapp.chat_invoke.get_or_create_session(sessionId);
+  // 2. Persistir mensaje del usuario
+  if(session != null)
+  {
+    thisapp.chat_invoke.create_message(session.get("ID"),"user",prompt);
+  }
+  // 3. Historial para contexto (últimos 10 mensajes, más reciente primero)
+  history = thisapp.chat_invoke.get_recent_history(session.get("ID"));
+  // 4. Intención vía Zia
+  intent = thisapp.chat_intent.chat_intent(prompt,history);
+  // 5. Dispatch + respuesta
+  reply = thisapp.chat_invoke.resolve_reply(intent);
+  // 6. Persistir respuesta AI
+  thisapp.chat_invoke.create_message(session.get("ID"),"ai",reply);
+  // 7. Actualizar sesión (título + actividad) mutando el registro enlazado
+  thisapp.chat_invoke.update_session(session,prompt);
+  // 8. Marcar la solicitud como respondida (mutación del registro enlazado)
+  chat_requests_record = ChatRequests[ID == requestId];
+  chat_requests_record.Status="answered";
+  chat_requests_record.Reply=reply;
+  return {"status":"answered","reply":reply,"sessionId":sessionId};
 }
-
-String resolve_reply(Map intent)
+string chat_invoke.compose_with_ai(string toolName, map toolResult, map intent)
 {
-    if (intent.get("status") != "ok") {
-        return "Lo siento, no pude procesar tu solicitud. Por favor intenta de nuevo.";
+  /**
+  * chat_invoke.deluge
+  *
+  * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
+  * por el widget o en pruebas) y ejecuta el ciclo completo:
+  *
+  *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+  *
+  * Todo el acceso a datos es NATIVO (data_access.deluge): 0 llamadas de API de
+  * Creator y 0 llamadas externas por turno.
+  *
+  * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
+  *            get_or_create_session, create_message, get_recent_history,
+  *            update_session
+  */
+  // Composición con segunda llamada Zia (opcional, activada con composeWithAI)
+  // Retorna solo el texto; el envelope JSON (text + visualization) se arma en resolve_reply.
+  if(!toolResult.get("ok"))
+  {
+    return "No pude completar la búsqueda. " + toolResult.get("message");
+  }
+  dataText = thisapp.chat_common.compose_reply(toolResult,intent);
+  response = zia
+  [
+  message:"Responde al usuario de forma natural y breve usando estos datos: " + dataText
+  context:"Eres un asistente de atención al cliente de una agencia de paquetería, remesas y recargas telefónicas."
+  parameters:{"temperature":0.3}
+  ];
+  // Null-safe (mismo patrón que chat_intent): Zia puede devolver null o
+  // un Map sin "status" al fallar; nunca evaluar !null en Deluge.
+  if(response != null)
+  {
+    if(response.get("status") == true)
+    {
+      return response.get("data");
     }
-
-    kind = intent.get("kind");
-
-    if (kind == "answer" || kind == "clarify") {
-        return intent.get("text");
-    }
-
-    if (kind == "tool") {
-        toolResult = dispatch_tool(intent.get("tool"), intent.get("params"));
-        config = chat_config();
-        replyText = "";
-        viz = null;
-        if (config.get("composeWithAI")) {
-            replyText = compose_with_ai(intent.get("tool"), toolResult, intent);
-            viz = toolResult.get("visualization");
-        } else {
-            replyObj = compose_reply(toolResult, intent);
-            replyText = replyObj.get("text");
-            viz = replyObj.get("visualization");
-        }
-        // Serializar a JSON válido (Deluge Map.toString() NO es JSON)
-        return envelopeToJson(replyText, viz);
-    }
-
-    return "Lo siento, no pude procesar tu solicitud. Por favor intenta de nuevo.";
+  }
+  return thisapp.chat_common.compose_reply(toolResult,intent);
 }
-
-Map dispatch_tool(String toolName, Map params)
+void chat_invoke.create_message(string sessionRecordId, string role, string content)
 {
-    if (toolName == "track_package") {
-        return tool_track_package(params);
-    }
-    if (toolName == "search_services") {
-        return tool_services(params);
-    }
-    if (toolName == "find_offices") {
-        return tool_offices(params);
-    }
-    if (toolName == "check_coverage") {
-        return tool_coverage(params);
-    }
-    if (toolName == "find_contacts") {
-        return tool_contacts(params);
-    }
-    if (toolName == "report_top_customers") {
-        return tool_report_top_customers(params);
-    }
-    return {"ok": false, "message": "Herramienta desconocida: " + toolName};
+  /**
+  * chat_invoke.deluge
+  *
+  * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
+  * por el widget o en pruebas) y ejecuta el ciclo completo:
+  *
+  *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+  *
+  * Todo el acceso a datos es NATIVO (data_access.deluge): 0 llamadas de API de
+  * Creator y 0 llamadas externas por turno.
+  *
+  * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
+  *            get_or_create_session, create_message, get_recent_history,
+  *            update_session
+  */
+  // --------------------------------------------------------------------------
+  // Persistencia de sesión y mensajes (acceso nativo)
+  // --------------------------------------------------------------------------
+  config = thisapp.chat_config.chat_config();
+  // Almacenar el envelope completo (text + visualization) para que el widget
+  // pueda reconstruir la visualización al cargar mensajes históricos.
+  // El widget hace JSON.parse(content) y extrae text/visualization.
+  data = Map();
+  data.put("Session",sessionRecordId);
+  data.put("Role",role);
+  data.put("Content",content);
+  thisapp.chat_data_access.insert_chat_message(data);
 }
-
-// Composición con segunda llamada Zia (opcional, activada con composeWithAI)
-// Retorna solo el texto; el envelope JSON (text + visualization) se arma en resolve_reply.
-String compose_with_ai(String toolName, Map toolResult, Map intent)
+map chat_invoke.dispatch_tool(string toolName, map params)
 {
-    if (!toolResult.get("ok")) {
-        return "No pude completar la búsqueda. " + toolResult.get("message");
-    }
-    // compose_reply ahora retorna Map{text, visualization}; extraer el texto
-    replyObj = compose_reply(toolResult, intent);
-    dataText = replyObj.get("text");
-    // Sintaxis oficial de la tarea Zia: parámetros SIN comas, uno por línea
-    response = Zia[
-        message : "Responde al usuario de forma natural y breve usando estos datos: " + dataText
-        context : "Eres un asistente de atención al cliente de una agencia de paquetería, remesas y recargas telefónicas."
-        parameters : {"temperature": 0.3}
-    ];
-    // Null-safe (mismo patrón que chat_intent): Zia puede devolver null o
-    // un Map sin "status" al fallar; nunca evaluar !null en Deluge.
-    if (response != null) {
-        if (response.get("status") == true) {
-            return response.get("data");
-        }
-    }
-    return dataText;
+  /**
+  * chat_invoke.deluge
+  *
+  * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
+  * por el widget o en pruebas) y ejecuta el ciclo completo:
+  *
+  *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+  *
+  * Todo el acceso a datos es NATIVO (data_access.deluge): 0 llamadas de API de
+  * Creator y 0 llamadas externas por turno.
+  *
+  * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
+  *            get_or_create_session, create_message, get_recent_history,
+  *            update_session
+  */
+  if(toolName == "track_package")
+  {
+    return thisapp.chat_tools.track_package(params);
+  }
+  if(toolName == "search_services")
+  {
+    return thisapp.chat_tools.search_services(params);
+  }
+  if(toolName == "find_offices")
+  {
+    return thisapp.chat_tools.find_offices(params);
+  }
+  if(toolName == "check_coverage")
+  {
+    return thisapp.chat_tools.check_coverage(params);
+  }
+  if(toolName == "find_contacts")
+  {
+    return thisapp.chat_tools.find_contacts(params);
+  }
+  if(toolName == "report_top_customers")
+  {
+    return thisapp.chat_tools.report_top_customers(params);
+  }
+  return {"ok":false,"message":"Herramienta desconocida: " + toolName};
 }
-
-// --------------------------------------------------------------------------
-// Persistencia de sesión y mensajes (acceso nativo)
-// --------------------------------------------------------------------------
-Map get_or_create_session(String sessionId)
+map chat_invoke.get_or_create_session(string sessionId)
 {
-    config = chat_config();
-
-    // Sesión existente: registro ENLAZADO (mutable) vía fetch nativo
-    records = fetch_chat_sessions_by_session_id(sessionId);
-    if (records != null && records.size() > 0) {
-        return records.get(0);
-    }
-
-    // Sesión nueva: insert -> devuelve solo el ID numérico -> refetch para
-    // obtener un registro ENLAZADO que update_session pueda mutar.
-    data = Map();
-    data.put("Session_ID", sessionId);
-    data.put("Title", "Nueva conversación");
-    data.put("User", zoho.loginuser.get("Id"));
-    data.put("Last_Activity", zoho.currentdatetime);
-    newId = insert_chat_session(data);
-
-    newRecords = fetch_chat_sessions_by_id(newId);
-    if (newRecords != null && newRecords.size() > 0) {
-        return newRecords.get(0);
-    }
-    return null;
+  /**
+  * chat_invoke.deluge
+  *
+  * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
+  * por el widget o en pruebas) y ejecuta el ciclo completo:
+  *
+  *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+  *
+  * Todo el acceso a datos es NATIVO (data_access.deluge): 0 llamadas de API de
+  * Creator y 0 llamadas externas por turno.
+  *
+  * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
+  *            get_or_create_session, create_message, get_recent_history,
+  *            update_session
+  */
+  // --------------------------------------------------------------------------
+  // Persistencia de sesión y mensajes (acceso nativo)
+  // --------------------------------------------------------------------------
+  config = thisapp.chat_config.chat_config();
+  // Sesión existente: registro ENLAZADO (mutable) vía fetch nativo
+  records = thisapp.chat_data_access.fetch_chat_sessions_by_session_id(sessionId);
+  if(records != null && records.size() > 0)
+  {
+    return records.get(0);
+  }
+  // Sesión nueva: insert -> devuelve solo el ID numérico -> refetch para
+  // obtener un registro ENLAZADO que update_session pueda mutar.
+  data = Map();
+  data.put("Session_ID",sessionId);
+  data.put("Title","Nueva conversación");
+  data.put("User",getPrefix(zoho.loginuserid,"@"));
+  data.put("Last_Activity",zoho.currenttime);
+  newId = thisapp.chat_data_access.insert_chat_session(data);
+  newRecords = thisapp.chat_data_access.fetch_chat_sessions_by_id(newId);
+  if(newRecords != null && newRecords.size() > 0)
+  {
+    return newRecords.get(0);
+  }
+  return Map();
 }
-
-void create_message(String sessionRecordId, String role, Object content)
+list chat_invoke.get_recent_history(string sessionRecordId)
 {
-    config = chat_config();
-    // Almacenar el envelope completo (text + visualization) para que el widget
-    // pueda reconstruir la visualización al cargar mensajes históricos.
-    // El widget hace JSON.parse(content) y extrae text/visualization.
-    data = Map();
-    data.put("Session", sessionRecordId);
-    data.put("Role", role);
-    data.put("Content", content);
-    insert_chat_message(data);
-}
-
-List get_recent_history(String sessionRecordId)
-{
-    config = chat_config();
-    // Últimos 10, más reciente primero (desc, range 0-9, SIN reverse)
-    records = fetch_chat_messages_by_session(sessionRecordId);
-    history = List();
-    if (records == null || records.size() == 0) {
-        return history;
-    }
-
-    for each m in records {
-        item = Map();
-        item.put("role", m.get("Role"));
-        item.put("content", m.get("Content"));
-        history.add(item);
-    }
+  /**
+  * chat_invoke.deluge
+  *
+  * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
+  * por el widget o en pruebas) y ejecuta el ciclo completo:
+  *
+  *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+  *
+  * Todo el acceso a datos es NATIVO (data_access.deluge): 0 llamadas de API de
+  * Creator y 0 llamadas externas por turno.
+  *
+  * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
+  *            get_or_create_session, create_message, get_recent_history,
+  *            update_session
+  */
+  // --------------------------------------------------------------------------
+  // Persistencia de sesión y mensajes (acceso nativo)
+  // --------------------------------------------------------------------------
+  config = thisapp.chat_config.chat_config();
+  // Últimos 10, más reciente primero (desc, range 0-9, SIN reverse)
+  records = thisapp.chat_data_access.fetch_chat_messages_by_session(sessionRecordId.toNumber());
+  history = List();
+  if(records == null || records.size() == 0)
+  {
     return history;
+  }
+  for each  m in records
+  {
+    item = Map();
+    item.put("role",m.get("Role"));
+    item.put("content",m.get("Content"));
+    history.add(item);
+  }
+  return history;
 }
-
-void update_session(Map session, String firstPrompt)
+string chat_invoke.resolve_reply(map intent)
 {
-    config = chat_config();
-    title = session.get("Title");
-
-    // Mutación directa del registro ENLAZADO: persiste sin llamada de API
-    if (title == null || title == "" || title == "Nueva conversación") {
-        newTitle = firstPrompt;
-        if (newTitle.length() > 50) {
-            newTitle = newTitle.substring(0, 50);
-        }
-        session.Title = newTitle;
-        session.Last_Activity = zoho.currentdatetime;
-    } else {
-        session.Last_Activity = zoho.currentdatetime;
+  /**
+  * chat_invoke.deluge
+  *
+  * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
+  * por el widget o en pruebas) y ejecuta el ciclo completo:
+  *
+  *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+  *
+  * Todo el acceso a datos es NATIVO (data_access.deluge): 0 llamadas de API de
+  * Creator y 0 llamadas externas por turno.
+  *
+  * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
+  *            get_or_create_session, create_message, get_recent_history,
+  *            update_session
+  */
+  if(intent.get("status") != "ok")
+  {
+    return "Lo siento, no pude procesar tu solicitud. Por favor intenta de nuevo.";
+  }
+  kind = intent.get("kind");
+  if(kind == "answer" || kind == "clarify")
+  {
+    return intent.get("text");
+  }
+  if(kind == "tool")
+  {
+    toolResult = thisapp.chat_invoke.dispatch_tool(intent.get("tool"),intent.get("params"));
+    config = thisapp.chat_config.chat_config();
+    replyText = "";
+    viz = null;
+    if(config.get("composeWithAI"))
+    {
+      replyText = thisapp.chat_invoke.compose_with_ai(intent.get("tool"),toolResult,intent);
+      viz = toolResult.get("visualization");
     }
+    else
+    {
+      replyObj = thisapp.chat_common.compose_reply(toolResult,intent);
+      replyText = replyObj.get("text");
+      viz = replyObj.get("visualization");
+    }
+    // Serializar a JSON para que el widget pueda parsear text + visualization
+    // 		return replyObj.toString();
+    // Serializar a JSON válido (Deluge Map.toString() NO es JSON)
+    return thisapp.chat_common.envelope_to_json(replyText,viz);
+  }
+  return "Lo siento, no pude procesar tu solicitud. Por favor intenta de nuevo.";
+}
+void chat_invoke.update_session(map session, string firstPrompt)
+{
+  /**
+  * chat_invoke.deluge
+  *
+  * Orquestador del chatbot. Recibe el ID del registro en ChatRequests (creado
+  * por el widget o en pruebas) y ejecuta el ciclo completo:
+  *
+  *   sesión → mensaje user → intención (Zia) → dispatch tool → respuesta → persistencia
+  *
+  * Todo el acceso a datos es NATIVO (data_access.deluge): 0 llamadas de API de
+  * Creator y 0 llamadas externas por turno.
+  *
+  * Funciones: chat_invoke, resolve_reply, dispatch_tool, compose_with_ai,
+  *            get_or_create_session, create_message, get_recent_history,
+  *            update_session
+  */
+  // --------------------------------------------------------------------------
+  // Persistencia de sesión y mensajes (acceso nativo)
+  // --------------------------------------------------------------------------
+  config = thisapp.chat_config.chat_config();
+  title = session.get("Title");
+  sessionId = session.get("Session_ID");
+  session_record = ChatSessions[Session_ID == sessionId];
+  // Mutación directa del registro ENLAZADO: persiste sin llamada de API
+  if(title == null || title == "" || title == "Nueva conversación")
+  {
+    newTitle = firstPrompt;
+    if(newTitle.length() > 50)
+    {
+      newTitle = newTitle.substring(0,50);
+    }
+    session_record.Title=newTitle;
+    session_record.Last_Activity=zoho.currenttime;
+  }
+  else
+  {
+    session_record.Last_Activity=zoho.currenttime;
+  }
 }

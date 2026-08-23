@@ -1,334 +1,501 @@
 /**
- * data_access.deluge
- *
- * Capa única de acceso nativo a datos de Zoho Creator (fetch / insert / mutate).
- * Sustituye las llamadas de API de Creator por la sintaxis nativa:
- *
- *   <var> = <Form>[<criteria>] sort by <Field> [desc] range from <a> to <b>;
- *   <id>  = insert into <Form> [ <Field> = <value> ];
- *
- * Patrón de filtrado (tras gate 5.1: `Form[criteriaVar]` es INVÁLIDO en Creator
- * y el nombre de campo tampoco puede venir de una variable dentro de corchetes):
- * - 0 condiciones   -> Form[ID != 0]            (todos los registros)
- * - 1 condición     -> Form[Field == valorVar]   (igualdad inline: campo literal,
- *                      valor como variable)
- * - 2+ condiciones  -> IDs por condición (Form[Field == valor].ID.getAll()),
- *                      combinados en las tools con addAll / intersect, y fetch
- *                      final Form[ID in targetIDs] (con guard si la lista queda
- *                      vacía: el comportamiento de Form[ID in []] es desconocido).
- *
- * Convenciones:
- * - Form link name, campo, sort y rango son LITERALES; solo los VALORES se
- *   parametrizan. Los mapas *Fields de chat_config son SOLO lectura para mapear
- *   la respuesta (lectura con Map.get sobre el registro); NUNCA dentro de Form[...].
- * - Los registros obtenidos están ENLAZADOS: mutarlos (rec.Campo = valor)
- *   persiste el cambio sin ninguna llamada de API.
- * - `insert into` NO ejecuta los scripts On Validate / On Success del módulo:
- *   verificar en la UI de Creator antes de publicar.
- *
- * CAMPOS REALES DE LA APP (ver dump Logistic_Management_II (1).ds):
- * - Package:    Tracking_Number (text), Status (picklist), Sender_Address
- *               (address compuesto), City (text) — sin Current_Location /
- *               Estimated_Pickup / Origin / Destination.
- *   ACTUALIZACIÓN IMPORTANTE: el estado de seguimiento (Latest_Status,
- *   Last_Updated, Status_History) NO vive en Package sino en Pkg_Tracking
- *   (ver "Pkg_Tracking vs Package" abajo); track_package sigue leyendo
- *   Package.Status (existe) y el resto de campos accesibles.
- * - Service: Service_ID (text), Service_Type (picklist), Price (currency USD),
- *   City (text, destino). AUSENTES: Service_Name, Origin, Destination,
- *   Currency, Description, Estimated_Time -> eliminados del mapa.
- * - Commercial_Office: Office_Name (unique), Address (address compuesto:
- *   address_line_1, district_city, state_province, postal_Code, country).
- *   AUSENTES top-level: City, Country, Phone, Business_Hours -> ciudad/país
- *   se contestan desde el compuesto Address en la tool; no hay filtros de
- *   ciudad/país (no hay campo simple).
- * - Coverage_Location: Location_ID (text), Location_Name (text),
- *   Address_Information1 (address compuesto). AUSENTES: Country, Vendor,
- *   Service_Type, Details -> país se lee del compuesto; no hay filtros
- *   country/vendor/serviceType (no top-level). El puente a vendor/serviceType
- *   se hace en la tool vía el módulo Vendor (Vendor_Type).
- * - Vendor: Vendor_Name (text), Vendor_ID, Vendor_Type (list:
- *   Transporter, Freight Forwarder, Remittance, Recharge, Remittance & Recharge),
- *   Active. Vendor_Type cruza con Service.Service_Type (el app usa
- *   `Vendor[Vendor_Type == input.Service_Type && Active == true]`).
- * - Contacts: First_Name (name compuesto), Mobile (único), Email, DNI,
- *   Type_field (Sender|Receiver|Sender & Receiver). AUSENTES top-level:
- *   Full_Name, Phone, Document_Number, Role -> se leen subcampos (First_Name
- *   compuesto) y Mobil/DNI reemplazan Phone/Document_Number.
- *
- * Funciones (28): fetch_chat_requests_by_id, fetch_chat_sessions_by_session_id,
- *            fetch_chat_sessions_by_id, fetch_chat_sessions_by_user,
- *            insert_chat_session, fetch_chat_messages_by_session,
- *            insert_chat_message, fetch_packages_by_tracking,
- *            fetch_services_ids_by_type / _by_destination,
- *            fetch_services_by_ids, fetch_services_all,
- *            fetch_services_count_by_date_window / _ids_by_date_window / _by_date_window,
- *            fetch_offices_by_ids, fetch_offices_all,
- *            fetch_coverage_by_ids, fetch_coverage_all,
- *            fetch_vendors_ids_by_type / _by_name, fetch_vendors_by_ids,
- *            fetch_vendors_all,
- *            fetch_contacts_ids_by_full_name/phone/document,
- *            fetch_contacts_by_ids, fetch_contacts_all
- */
+* data_access.deluge
+*
+* Capa única de acceso nativo a datos de Zoho Creator (fetch / insert / mutate).
+* Sustituye las llamadas de API de Creator por la sintaxis nativa:
+*
+*   <var> = <Form>[<criteria>] sort by <Field> [desc] range from <a> to <b>;
+*   <id>  = insert into <Form> [ <Field> = <value> ];
+*
+* Patrón de filtrado (tras gate 5.1: `Form[criteriaVar]` es INVÁLIDO en Creator
+* y el nombre de campo tampoco puede venir de una variable dentro de corchetes):
+* - 0 condiciones   -> Form[ID != 0]            (todos los registros)
+* - 1 condición     -> Form[Field == valorVar]   (igualdad inline: campo literal,
+*                      valor como variable)
+* - 2+ condiciones  -> IDs por condición (Form[Field == valor].ID.getAll()),
+*                      combinados en las tools con addAll / intersect, y fetch
+*                      final Form[ID in targetIDs] (con guard si la lista queda
+*                      vacía: el comportamiento de Form[ID in []] es desconocido).
+*
+* Convenciones:
+* - Form link name, campo, sort y rango son LITERALES; solo los VALORES se
+*   parametrizan. Los mapas *Fields de chat_config son SOLO lectura para mapear
+*   la respuesta (lectura con Map.get sobre el registro); NUNCA dentro de Form[...].
+* - Los registros obtenidos están ENLAZADOS: mutarlos (rec.Campo = valor)
+*   persiste el cambio sin ninguna llamada de API.
+* - `insert into` NO ejecuta los scripts On Validate / On Success del módulo:
+*   verificar en la UI de Creator antes de publicar.
+*
+* CAMPOS REALES DE LA APP (ver dump Logistic_Management_II (1).ds):
+* - Package:    Tracking_Number (text), Status (picklist), Sender_Address
+*               (address compuesto), City (text) — sin Current_Location /
+*               Estimated_Pickup / Origin / Destination.
+*   ACTUALIZACIÓN IMPORTANTE: el estado de seguimiento (Latest_Status,
+*   Last_Updated, Status_History) NO vive en Package sino en Pkg_Tracking
+*   (ver "Pkg_Tracking vs Package" abajo); track_package sigue leyendo
+*   Package.Status (existe) y el resto de campos accesibles.
+* - Service: Service_ID (text), Service_Type (picklist), Price (currency USD),
+*   City (text, destino). AUSENTES: Service_Name, Origin, Destination,
+*   Currency, Description, Estimated_Time -> eliminados del mapa.
+* - Commercial_Office: Office_Name (unique), Address (address compuesto:
+*   address_line_1, district_city, state_province, postal_Code, country).
+*   AUSENTES top-level: City, Country, Phone, Business_Hours -> ciudad/país
+*   se contestan desde el compuesto Address en la tool; no hay filtros de
+*   ciudad/país (no hay campo simple).
+* - Coverage_Location: Location_ID (text), Location_Name (text),
+*   Address_Information1 (address compuesto). AUSENTES: Country, Vendor,
+*   Service_Type, Details -> país se lee del compuesto; no hay filtros
+*   country/vendor/serviceType (no top-level). El puente a vendor/serviceType
+*   se hace en la tool vía el módulo Vendor (Vendor_Type).
+* - Vendor: Vendor_Name (text), Vendor_ID, Vendor_Type (list:
+*   Transporter, Freight Forwarder, Remittance, Recharge, Remittance & Recharge),
+*   Active. Vendor_Type cruza con Service.Service_Type (el app usa
+*   `Vendor[Vendor_Type == input.Service_Type && Active == true]`).
+* - Contacts: First_Name (name compuesto), Mobile (único), Email, DNI,
+*   Type_field (Sender|Receiver|Sender & Receiver). AUSENTES top-level:
+*   Full_Name, Phone, Document_Number, Role -> se leen subcampos (First_Name
+*   compuesto) y Mobil/DNI reemplazan Phone/Document_Number.
+*
+* Funciones (28): fetch_chat_requests_by_id, fetch_chat_sessions_by_session_id,
+*            fetch_chat_sessions_by_id, fetch_chat_sessions_by_user,
+*            insert_chat_session, fetch_chat_messages_by_session,
+*            insert_chat_message, fetch_packages_by_tracking,
+*            fetch_services_ids_by_type / _by_destination,
+*            fetch_services_by_ids, fetch_services_all,
+*            fetch_services_count_by_date_window / _ids_by_date_window / _by_date_window,
+*            fetch_offices_by_ids, fetch_offices_all,
+*            fetch_coverage_by_ids, fetch_coverage_all,
+*            fetch_vendors_ids_by_type / _by_name, fetch_vendors_by_ids,
+*            fetch_vendors_all,
+*            fetch_contacts_ids_by_full_name/phone/document,
+*            fetch_contacts_by_ids, fetch_contacts_all
+*/
 
-// --------------------------------------------------------------------------
-// ChatRequests — búsqueda por ID (igualdad inline)
-// --------------------------------------------------------------------------
-List fetch_chat_requests_by_id(Number requestId)
+list chat_data_access.fetch_chat_messages_by_session(int sessionId)
 {
-    records = ChatRequests[ID == requestId];
-    return records;
+  session_record = ChatSessions[ID == sessionId];
+  sessionIdField = session_record.Session_ID;
+  records_selected = ChatMessages[Session == sessionId] sort by Created_Time desc range from 0 to 9;
+  records2 = Collection();
+  for each  r in records_selected
+  {
+    // Access real field values instead of references
+    recordData = {"ID":r.ID,"Role":r.Role,"Content":r.Content,"Created_Time":r.Created_Time,"Session":sessionIdField};
+    records2.insert(recordData);
+  }
+  return records2;
 }
-
-// --------------------------------------------------------------------------
-// ChatSessions
-// --------------------------------------------------------------------------
-List fetch_chat_sessions_by_session_id(String sessionId)
+list chat_data_access.fetch_chat_requests_by_id(int requestId)
 {
-    records = ChatSessions[Session_ID == sessionId];
-    return records;
+  records_selected = ChatRequests[ID == requestId] sort by ID;
+  records2 = Collection();
+  for each  r in records_selected
+  {
+    // Access real field values instead of references
+    recordData = {"ID":r.ID,"Status":r.Status,"Prompt":r.Prompt,"Reply":r.Reply,"Error":r.Error,"Session_ID":r.Session_ID};
+    records2.insert(recordData);
+  }
+  return records2;
 }
-
-List fetch_chat_sessions_by_id(Number id)
+list chat_data_access.fetch_chat_sessions_by_id(int id)
 {
-    records = ChatSessions[ID == id];
-    return records;
+  records_selected = ChatSessions[ID == id] sort by ID;
+  records2 = Collection();
+  for each  r in records_selected
+  {
+    employee_record = Employee[ID == r.User];
+    userField = employee_record.User;
+    recordData = {"ID":r.ID,"Session_ID":r.Session_ID,"Title":r.Title,"User":userField,"Last_Activity":r.Last_Activity};
+    records2.insert(recordData);
+  }
+  return records2;
 }
-
-List fetch_chat_sessions_by_user(Number userId, Number startIndex, Number endIndex)
+list chat_data_access.fetch_chat_sessions_by_session_id(string sessionId)
 {
-    records = ChatSessions[User == userId] sort by Last_Activity desc range from startIndex to endIndex;
-    return records;
+  records_selected = ChatSessions[Session_ID == sessionId];
+  records2 = Collection();
+  for each  r in records_selected
+  {
+    // Access real field values instead of references
+    employee_record = Employee[ID == r.User] sort by ID;
+    userField = employee_record.User;
+    recordData = {"ID":r.ID,"Session_ID":r.Session_ID,"Title":r.Title,"Last_Activity":r.Last_Activity,"User":userField};
+    records2.insert(recordData);
+  }
+  return records2;
 }
-
-Number insert_chat_session(Map data)
+list chat_data_access.fetch_chat_sessions_by_user(int userId, int startIndex, int endIndex)
 {
+  records_selected = ChatSessions[User == userId] sort by Last_Activity desc range from startIndex to endIndex;
+  records2 = Collection();
+  for each  r in records_selected
+  {
+    // Access real field values instead of references
+    employee_record = Employee[ID == userId] sort by ID;
+    userField = employee_record.User;
+    recordData = {"ID":r.ID,"Session_ID":r.Session_ID,"Title":r.Title,"Last_Activity":r.Last_Activity,"User":userField};
+    records2.insert(recordData);
+  }
+  return records2;
+}
+list chat_data_access.fetch_contacts_all()
+{
+  records = Contacts[Active == true] sort by Mobile range from 0 to 49;
+  if(records == null)
+  {
+    return List();
+  }
+  resultList = List();
+  for each  r in records
+  {
+    item = Map();
+    firstName = r.First_Name.first_name;
+    lastName = r.First_Name.last_name;
+    sndLastName = r.First_Name.suffix;
+    fullName = firstName;
+    if(lastName != null && lastName != "")
+    {
+      fullName = fullName + " " + lastName;
+    }
+    if(sndLastName != null && sndLastName != "")
+    {
+      fullName = fullName + " " + sndLastName;
+    }
+    item.put("fullName",fullName);
+    item.put("phone",r.Mobile);
+    item.put("city",r.Address.district_city);
+    item.put("country",r.Address.country);
+    item.put("email",r.Email);
+    item.put("document",r.DNI);
+    item.put("role",r.Type_field);
+    resultList.add(item);
+  }
+  return resultList;
+}
+list chat_data_access.fetch_contacts_by_ids(list ids)
+{
+  // --------------------------------------------------------------------------
+  // Módulos de negocio — límites y órdenes preservados (ver spec lookup-tools)
+  // --------------------------------------------------------------------------
+  records = Contacts[ID in ids] sort by ID range from 0 to 49;
+  // Guard: intersección vacía -> data:[] (Form[ID in []] es desconocido en Creator)
+  resultList = List();
+  if(records == null)
+  {
+    return resultList;
+  }
+  for each  r in records
+  {
+    item = Map();
+    // First_Name es un campo compuesto (name): leer nombres de subfields
+    item = Map();
+    firstName = r.First_Name.first_name;
+    lastName = r.First_Name.last_name;
+    sndLastName = r.First_Name.suffix;
+    fullName = firstName;
+    if(lastName != null && lastName != "")
+    {
+      fullName = fullName + " " + lastName;
+    }
+    if(sndLastName != null && sndLastName != "")
+    {
+      fullName = fullName + " " + sndLastName;
+    }
+    item.put("fullName",fullName);
+    item.put("phone",r.Mobile);
+    item.put("city",r.Address.district_city);
+    item.put("country",r.Address.country);
+    item.put("email",r.Email);
+    item.put("document",r.DNI);
+    item.put("role",r.Type_field);
+    item.put("id",r.ID);
+    resultList.add(item);
+  }
+  return resultList;
+}
+list chat_data_access.fetch_contacts_ids_by_document(string document)
+{
+  // --------------------------------------------------------------------------
+  // Contacts — IDs por condición + fetch final por IDs + sin filtro (límite 50)
+  // Full_Name -> First_Name (nombre?), Phone -> Mobile, Document_Number -> DNI
+  // --------------------------------------------------------------------------
+  ids = Contacts[DNI == document].ID.getAll();
+  return ids;
+}
+list chat_data_access.fetch_contacts_ids_by_full_name(string fullName)
+{
+  // --------------------------------------------------------------------------
+  // Contacts — IDs por condición + fetch final por IDs + sin filtro (límite 50)
+  // Full_Name -> First_Name (nombre?), Phone -> Mobile, Document_Number -> DNI
+  // --------------------------------------------------------------------------
+  ids = List();
+  nameParts = fullName.trim().toList(" ");
+  // check the full name matching
+  if(nameParts.size() < 1 || nameParts.size() > 3)
+  {
+    info "El nombre completo debe estar formado por al menos una parte y como máximo tres partes.";
+  }
+  // initialize vars
+  first_name = null;
+  last_name = null;
+  second_last_name = null;
+  if(nameParts.size() == 3)
+  {
+    first_name = nameParts.get(0);
+    last_name = nameParts.get(1);
+    second_last_name = nameParts.get(2);
+    ids = Contacts[First_Name.first_name == first_name && First_Name.last_name == last_name].ID.getAll();
+  }
+  else if(nameParts.size() == 2)
+  {
+    first_name = nameParts.get(0);
+    last_name = nameParts.get(1);
+    ids = Contacts[First_Name.first_name == first_name && First_Name.last_name == last_name].ID.getAll();
+  }
+  else
+  {
+    first_name = nameParts.get(0);
+    ids = Contacts[First_Name.first_name == first_name].ID.getAll();
+  }
+  return ids;
+}
+list chat_data_access.fetch_contacts_ids_by_phone(string phone)
+{
+  // --------------------------------------------------------------------------
+  // Contacts — IDs por condición + fetch final por IDs + sin filtro (límite 50)
+  // Full_Name -> First_Name (nombre?), Phone -> Mobile, Document_Number -> DNI
+  // --------------------------------------------------------------------------
+  ids = Contacts[Mobile == phone].ID.getAll();
+  return ids;
+}
+list chat_data_access.fetch_coverage_all()
+{
+  records = Coverage_Location[Active == true] sort by Location_Name range from 0 to 199;
+  if(records == null)
+  {
+    return List();
+  }
+  resultList = List();
+  for each  r in records
+  {
+    item = Map();
+    item.put("location",r.Location_Name);
+    item.put("city",r.Address_Information1.state_province);
+    item.put("country",r.Address_Information1.country);
+    resultList.add(item);
+  }
+  return resultList;
+}
+list chat_data_access.fetch_coverage_by_ids(list ids)
+{
+  records = Coverage_Location[ID in ids] sort by Location_Name range from 0 to 199;
+  return records;
+}
+collection chat_data_access.fetch_offices_all()
+{
+  records = Commercial_Office[Active == true] sort by Office_Name range from 0 to 199;
+  if(records == null)
+  {
+    return List();
+  }
+  resultList = List();
+  for each  r in records
+  {
+    officeFields = Map();
+    // text (único)
+    officeFields.put("name",r.Office_Name);
+    // campo compuesto (address)
+    officeFields.put("address",r.Address);
+    // subfield de Address
+    officeFields.put("city",r.Address.district_city);
+    // subfield de Address
+    officeFields.put("country",r.Address.country);
+    // list
+    resultList.add(officeFields);
+  }
+  return resultList;
+}
+list chat_data_access.fetch_offices_by_ids(list ids)
+{
+  records = Commercial_Office[Active == true && ID in ids] sort by Office_Name range from 0 to 199;
+  resultList = List();
+  if(records == null)
+  {
+    return resultList;
+  }
+  for each  r in records
+  {
+    officeFields = Map();
+    // text (único)
+    officeFields.put("name",r.Office_Name);
+    // campo compuesto (address)
+    officeFields.put("address",r.Address);
+    // subfield de Address
+    officeFields.put("city",r.Address.district_city);
+    // subfield de Address
+    officeFields.put("country",r.Address.country);
+    // list
+    resultList.add(officeFields);
+  }
+  return resultList;
+}
+list chat_data_access.fetch_office_ids_by_city(string city)
+{
+  ids = Commercial_Office[Address.district_city == city].ID.getAll();
+  if(ids == null)
+  {
+    return List();
+  }
+  return ids;
+}
+list chat_data_access.fetch_office_ids_by_country(string country)
+{
+  ids = Commercial_Office[Address.country == country].ID.getAll();
+  if(ids == null)
+  {
+    return {};
+  }
+  return ids;
+}
+list chat_data_access.fetch_packages_by_tracking(string trackingNumber)
+{
+  records = Package[Tracking_Number == trackingNumber] sort by Receipt_Date desc;
+  return records;
+}
+list chat_data_access.fetch_services_all()
+{
+  records = Service[Service_ID != null && Service_ID != ""] sort by Service_ID range from 0 to 199;
+  if(records == null)
+  {
+    return List();
+  }
+  resultList = List();
+  for each  r in records
+  {
+    item = Map();
+    item.put("serviceType",r.Service_Type);
+    item.put("id",r.ID);
+    item.put("serviceId",r.Service_ID);
+    item.put("customerId",r.Sender_field);
+    item.put("customerName",r.Sender_Full_Name.toUpperCase());
+    item.put("customerPhone",r.Sender_Mobile);
+    item.put("packageServicePrice",r.Price);
+    item.put("transactionServicePrice",r.Amount);
+    item.put("date",r.Date_field1);
+    item.put("vendorId",r.Vendor);
+    VendorRec = Vendor[ID == r.Vendor];
+    if(VendorRec != null)
+    {
+      item.put("vendorName",VendorRec.Vendor_Name);
+    }
+    item.put("officeId",r.Office);
+    OfficeRec = Commercial_Office[ID == r.Office];
+    if(OfficeRec != null)
+    {
+      item.put("officeName",OfficeRec.Office_Name);
+    }
+    item.put("serviceLocationId",r.Location);
+    LocationRec = Coverage_Location[ID == r.Location];
+    if(LocationRec != null)
+    {
+      item.put("serviceLocationCountry",LocationRec.Address_Information1.country);
+      item.put("serviceLocationState",LocationRec.Address_Information1.state_province);
+    }
+    resultList.add(item);
+  }
+  return resultList;
+}
+list chat_data_access.fetch_services_by_date_window(date startDate, date endDate)
+{
+  records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
+  return records;
+}
+list chat_data_access.fetch_services_by_ids(list ids)
+{
+  records = Service[ID in ids] sort by Service_ID range from 0 to 199;
+  return records;
+}
+int chat_data_access.fetch_services_count_by_date_window(date startDate, date endDate)
+{
+  count = Service[Date_field1 >= startDate && Date_field1 <= endDate].count(ID);
+  if(count == null)
+  {
+    return 0;
+  }
+  return count;
+}
+list chat_data_access.fetch_services_ids_by_date_window(date startDate, date endDate)
+{
+  ids = Service[Date_field1 >= startDate && Date_field1 <= endDate].ID.getAll();
+  return ids;
+}
+list chat_data_access.fetch_services_ids_by_destination(string destination)
+{
+  ids = Service[City == destination].ID.getAll();
+  return ids;
+}
+list chat_data_access.fetch_services_ids_by_type(string serviceType)
+{
+  ids = Service[Service_Type == serviceType].ID.getAll();
+  return ids;
+}
+list chat_data_access.fetch_vendors_all()
+{
+  records = Vendor[ID != 0] sort by Vendor_Name range from 0 to 199;
+  return records;
+}
+list chat_data_access.fetch_vendors_by_ids(list ids)
+{
+  records = Vendor[ID in ids] sort by Vendor_Name range from 0 to 199;
+  return records;
+}
+list chat_data_access.fetch_vendors_ids_by_name(string vendor)
+{
+  ids = Vendor[Vendor_Name == vendor && Active == true].ID.getAll();
+  return ids;
+}
+list chat_data_access.fetch_vendors_ids_by_type(string serviceType)
+{
+  ids = Vendor[Vendor_Type == serviceType && Active == true].ID.getAll();
+  return ids;
+}
+int chat_data_access.insert_chat_message(map data)
+{
+  // --------------------------------------------------------------------------
+  // Insert helpers — devuelven el ID numérico del registro creado
+  // --------------------------------------------------------------------------
+  config = thisapp.chat_config.chat_config();
+  newId = insert into ChatMessages
+  [
+  Session=data.get("Session")
+  Role=data.get("Role")
+  Content=data.get("Content")
+  Created_Time=zoho.currenttime
+  Added_User=zoho.loginuser
+  ];
+  return newId;
+}
+int chat_data_access.insert_chat_session(map data)
+{
+  // --------------------------------------------------------------------------
+  // Insert helpers — devuelven el ID numérico del registro creado
+  // --------------------------------------------------------------------------
+  employee_record = Employee[User == data.get("User")];
+  if(employee_record != null)
+  {
+    userId = employee_record.ID;
     newId = insert into ChatSessions
     [
-        Session_ID = data.get("Session_ID")
-        Title = data.get("Title")
-        User = data.get("User")
-        Last_Activity = data.get("Last_Activity")
+    Session_ID=data.get("Session_ID")
+    Title=data.get("Title")
+    User=userId
+    Last_Activity=data.get("Last_Activity")
+    Added_User=zoho.loginuser
     ];
     return newId;
-}
-
-// --------------------------------------------------------------------------
-// ChatMessages — últimos 10 (más recientes primero, sin reverse)
-// --------------------------------------------------------------------------
-List fetch_chat_messages_by_session(Number sessionId)
-{
-    records = ChatMessages[Session == sessionId] sort by Created_Time desc range from 0 to 9;
-    return records;
-}
-
-Number insert_chat_message(Map data)
-{
-    newId = insert into ChatMessages
-    [
-        Session = data.get("Session")
-        Role = data.get("Role")
-        Content = data.get("Content")
-    ];
-    return newId;
-}
-
-// --------------------------------------------------------------------------
-// Package — seguimiento (Tracking_Number real, sin Current_*)
-// --------------------------------------------------------------------------
-List fetch_packages_by_tracking(String trackingNumber)
-{
-    records = Package[Tracking_Number == trackingNumber] sort by Created_Time desc;
-    return records;
-}
-
-// --------------------------------------------------------------------------
-// Service — IDs por condición + fetch final por IDs + sin filtro
-// (solo filtros REALES: Service_Type y City/destino; Origin NO existe)
-// --------------------------------------------------------------------------
-List fetch_services_ids_by_type(String serviceType)
-{
-    ids = Service[Service_Type == serviceType].ID.getAll();
-    return ids;
-}
-
-List fetch_services_ids_by_destination(String destination)
-{
-    ids = Service[City == destination].ID.getAll();
-    return ids;
-}
-
-List fetch_services_by_ids(List ids)
-{
-    records = Service[ID in ids] sort by Service_ID range from 0 to 199;
-    return records;
-}
-
-List fetch_services_all()
-{
-    records = Service[ID != 0] sort by Service_ID range from 0 to 199;
-    return records;
-}
-
-// --------------------------------------------------------------------------
-// Service — ventana de fecha sobre Date_field1 (fecha de negocio).
-// Rango sobre UN campo (2 condiciones = rango): campo LITERAL, valores como
-// variables (gate 5.1). Count-first para el flag truncated de la tool de
-// reporte; el fetch acotado a 200 (range 0-199) devuelve la ventana ordenada
-// por Date_field1 asc.
-// --------------------------------------------------------------------------
-Number fetch_services_count_by_date_window(Date startDate, Date endDate)
-{
-    count = Service[Date_field1 >= startDate && Date_field1 <= endDate].count(ID);
-    if (count == null) {
-        return 0;
-    }
-    return count;
-}
-
-List fetch_services_ids_by_date_window(Date startDate, Date endDate)
-{
-    ids = Service[Date_field1 >= startDate && Date_field1 <= endDate].ID.getAll();
-    return ids;
-}
-
-List fetch_services_by_date_window(Date startDate, Date endDate)
-{
-    records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
-    return records;
-}
-
-// --------------------------------------------------------------------------
-// Commercial_Office — sin filtros (no hay City/Country top-level), solo
-// fetch final por IDs + sin filtro; ciudad/país se leen del compuesto Address
-// --------------------------------------------------------------------------
-List fetch_offices_by_ids(List ids)
-{
-    records = Commercial_Office[ID in ids] sort by Office_Name range from 0 to 199;
-    return records;
-}
-
-List fetch_offices_all()
-{
-    records = Commercial_Office[ID != 0] sort by Office_Name range from 0 to 199;
-    return records;
-}
-
-// --------------------------------------------------------------------------
-// Coverage_Location — sin filtros REALES (Country/Vendor/Service_Type NO
-// existen top-level), fetch_all + fetch_by_ids; país se lee del compuesto
-// Address_Information1 en la tool
-// --------------------------------------------------------------------------
-List fetch_coverage_by_ids(List ids)
-{
-    records = Coverage_Location[ID in ids] sort by Location_Name range from 0 to 199;
-    return records;
-}
-
-List fetch_coverage_all()
-{
-    records = Coverage_Location[ID != 0] sort by Location_Name range from 0 to 199;
-    return records;
-}
-
-// --------------------------------------------------------------------------
-// Vendor — IDs por condición + fetch final por IDs + sin filtro.
-// Vendor_Type es un campo LIST (multi-select): el == se evalúa como
-// "contiene" (mismo criterio que el picklist list‑name del propio app:
-// Vendor[Vendor_Type == input.Service_Type && Active == true]).
-// --------------------------------------------------------------------------
-List fetch_vendors_ids_by_type(String serviceType)
-{
-    ids = Vendor[Vendor_Type == serviceType && Active == true].ID.getAll();
-    return ids;
-}
-
-List fetch_vendors_ids_by_name(String vendor)
-{
-    ids = Vendor[Vendor_Name == vendor && Active == true].ID.getAll();
-    return ids;
-}
-
-List fetch_vendors_by_ids(List ids)
-{
-    records = Vendor[ID in ids] sort by Vendor_Name range from 0 to 199;
-    return records;
-}
-
-List fetch_vendors_all()
-{
-    records = Vendor[ID != 0] sort by Vendor_Name range from 0 to 199;
-    return records;
-}
-
-// --------------------------------------------------------------------------
-// Contacts — IDs por condición + fetch final por IDs + sin filtro (límite 50)
-// Full_Name -> First_Name (compuesto: full_name filtra en memoria sobre los
-// subcampos; no hay igualdad inline contra el composite), Phone -> Mobile,
-// Document_Number -> DNI
-// CONTRATO DE SALIDA: ≤50 registros, orden First_Name asc. La ventana de
-// ESCANEO de fetch_contacts_ids_by_full_name (0-999) es deliberadamente mayor
-// que ese límite (el filtro por nombre es en memoria; phone/document son
-// globales vía .ID.getAll()).
-// --------------------------------------------------------------------------
-List fetch_contacts_ids_by_full_name(String fullName)
-{
-    ids = List();
-    if (fullName == null || fullName == "") {
-        return ids;
-    }
-    // First_Name es un campo compuesto (name): NO se compara el composite
-    // completo contra un string plano (regla del proyecto). Se filtra en
-    // memoria sobre los subcampos first_name/last_name (case-insensitive),
-    // mismo enfoque determinista que offices/coverage para country.
-    // La ventana de escaneo (scanCap = 999) es MAYOR que el límite de salida
-    // (50): un range 0-49 solo alcanzaría los primeros 50 alfabéticos y los
-    // contactos fuera de esa ventana jamás matchearían por nombre. El cap
-    // superior lo garantiza el fetch final fetch_contacts_by_ids (0-49).
-    scanCap = 999;
-    query = toLowerCase("" + fullName).trim();
-    records = Contacts[ID != 0] sort by First_Name range from 0 to scanCap;
-    if (records == null) {
-        return ids;
-    }
-    for each c in records {
-        nameRec = c.get("First_Name");
-        if (nameRec == null) {
-            continue;
-        }
-        fn = nameRec.get("first_name");
-        ln = nameRec.get("last_name");
-        candidate = "";
-        if (fn != null) { candidate = candidate + fn; }
-        if (ln != null) { candidate = candidate + " " + ln; }
-        candidate = toLowerCase(candidate).trim();
-        if (candidate.indexOf(query) >= 0) {
-            ids.add(c.get("ID"));
-        }
-    }
-    return ids;
-}
-
-List fetch_contacts_ids_by_phone(String phone)
-{
-    ids = Contacts[Mobile == phone].ID.getAll();
-    return ids;
-}
-
-List fetch_contacts_ids_by_document(String document)
-{
-    ids = Contacts[DNI == document].ID.getAll();
-    return ids;
-}
-
-List fetch_contacts_by_ids(List ids)
-{
-    records = Contacts[ID in ids] sort by First_Name range from 0 to 49;
-    return records;
-}
-
-List fetch_contacts_all()
-{
-    records = Contacts[ID != 0] sort by First_Name range from 0 to 49;
-    return records;
+  }
+  else
+  {
+    return 1;
+  }
 }

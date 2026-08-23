@@ -1,101 +1,117 @@
 /**
- * tool_coverage.deluge
- *
- * Consulta zonas cubiertas (Coverage_Location) y proveedores activos (Vendor)
- * para un tipo de servicio / proveedor.
- * Recibe (todos opcionales): {"country", "serviceType", "vendor"}
- *   - country: filtra Coverage_Location en MEMORIA sobre el subfield `country`
- *     de Address_Information1 (Coverage_Location NO tiene campo top-level Country).
- *   - serviceType: lista proveedores (Vendor) cuyo Vendor_Type coincide con el
- *     tipo de servicio (Vendor[Vendor_Type == serviceType && Active == true]).
- *     Vendor_Type cruza con Service.Service_Type (mismo criterio que usa el app).
- *   - vendor: filtra proveedores por nombre exacto (Vendor_Name).
- * Devuelve: {"ok": true, "data": [locations:{name, locationId, country, state}],
- *           "vendors": [vendors:{name, vendorId, type}]}
- *
- * Acceso nativo vía data_access (0 llamadas de API). CAMPOS REALES (dump):
- * - Coverage_Location: Location_ID, Location_Name, Address_Information1 (address
- *   compuesto: address_line_1, district_city, state_province, postal_Code, country).
- *   NO existen Country/Vendor/Service_Type/Details top-level.
- * - Vendor: Vendor_Name, Vendor_ID, Vendor_Type (list), Active.
- * Límite 200 (range 0-199), orden Location_Name / Vendor_Name asc.
- */
+* tool_coverage.deluge
+*
+* Consulta zonas cubiertas (Coverage_Location) y proveedores activos (Vendor)
+* para un tipo de servicio / proveedor.
+* Recibe (todos opcionales): {"country", "serviceType", "vendor"}
+*   - country: filtra Coverage_Location en MEMORIA sobre el subfield `country`
+*     de Address_Information1 (Coverage_Location NO tiene campo top-level Country).
+*   - serviceType: lista proveedores (Vendor) cuyo Vendor_Type coincide con el
+*     tipo de servicio (Vendor[Vendor_Type == serviceType && Active == true]).
+*     Vendor_Type cruza con Service.Service_Type (mismo criterio que usa el app).
+*   - vendor: filtra proveedores por nombre exacto (Vendor_Name).
+* Devuelve: {"ok": true, "data": [locations:{name, locationId, country, state}],
+*           "vendors": [vendors:{name, vendorId, type}]}
+*
+* Acceso nativo vía data_access (0 llamadas de API). CAMPOS REALES (dump):
+* - Coverage_Location: Location_ID, Location_Name, Address_Information1 (address
+*   compuesto: address_line_1, district_city, state_province, postal_Code, country).
+*   NO existen Country/Vendor/Service_Type/Details top-level.
+* - Vendor: Vendor_Name, Vendor_ID, Vendor_Type (list), Active.
+* Límite 200 (range 0-199), orden Location_Name / Vendor_Name asc.
+*/
 
-Map tool_coverage(Map params)
+map chat_tools.check_coverage(map params)
 {
-    config = chat_config();
-    locFields = config.get("coverageFields");
-    vFields = config.get("vendorFields");
-
-    // --- ubicaciones (Coverage_Location): TODO el el catálogo y filtro country en memoria ---
-    records = fetch_coverage_all();
-    if (records == null) {
-        records = List();
+  config = thisapp.chat_config.chat_config();
+  locFields = config.get("coverageFields");
+  vFields = config.get("vendorFields");
+  // --- ubicaciones (Coverage_Location): TODO el el catálogo y filtro country en memoria ---
+  records = thisapp.chat_data_access.fetch_coverage_all();
+  if(records == null)
+  {
+    records = List();
+  }
+  country = params.get("country");
+  locList = List();
+  for each  c in records
+  {
+    addr = c.get(locFields.get("address"));
+    countryValue = "";
+    stateValue = "";
+    if(addr != null)
+    {
+      co = addr.get(locFields.get("country"));
+      if(co != null)
+      {
+        countryValue = "" + co;
+      }
+      st = addr.get(locFields.get("state"));
+      if(st != null)
+      {
+        stateValue = "" + st;
+      }
     }
-    country = params.get("country");
-
-    locList = List();
-    for each c in records {
-        addr = c.get(locFields.get("address"));
-        countryValue = "";
-        stateValue = "";
-        if (addr != null) {
-            co = addr.get(locFields.get("country"));
-            if (co != null) { countryValue = "" + co; }
-            st = addr.get(locFields.get("state"));
-            if (st != null) { stateValue = "" + st; }
-        }
-        if (country != null && country != "") {
-            if (toLowerCase("" + country).trim() != toLowerCase(countryValue).trim()) {
-                continue;
-            }
-        }
-        item = Map();
-        item.put("name", c.get(locFields.get("name")));
-        item.put("locationId", c.get(locFields.get("locationId")));
-        item.put("country", countryValue);
-        item.put("state", stateValue);
-        locList.add(item);
+    if(country != null && country != "")
+    {
+      if(("" + country).trim().lower() != countryValue.trim().lower())
+      {
+        continue;
+      }
     }
-
-    // --- proveedores (Vendor): ID-list por Service_Type / nombre, con guard de lista vacía ---
-    serviceType = params.get("serviceType");
-    vendor = params.get("vendor");
-    targetIDs = List();
-    hasFilter = false;
-
-    if (serviceType != null && serviceType != "") {
-        targetIDs.addAll(fetch_vendors_ids_by_type(serviceType));
-        hasFilter = true;
+    item = Map();
+    item.put("name",c.get(locFields.get("name")));
+    item.put("locationId",c.get(locFields.get("locationId")));
+    item.put("country",countryValue);
+    item.put("state",stateValue);
+    locList.add(item);
+  }
+  // --- proveedores (Vendor): ID-list por Service_Type / nombre, con guard de lista vacía ---
+  serviceType = params.get("serviceType");
+  vendor = params.get("vendor");
+  targetIDs = List();
+  hasFilter = false;
+  if(serviceType != null && serviceType != "")
+  {
+    targetIDs.addAll(thisapp.chat_data_access.fetch_vendors_ids_by_type(serviceType));
+    hasFilter = true;
+  }
+  if(vendor != null && vendor != "")
+  {
+    ids = thisapp.chat_data_access.fetch_vendors_ids_by_name(vendor);
+    if(hasFilter)
+    {
+      targetIDs = targetIDs.intersect(ids);
     }
-    if (vendor != null && vendor != "") {
-        ids = fetch_vendors_ids_by_name(vendor);
-        if (hasFilter) {
-            targetIDs = targetIDs.intersect(ids);
-        } else {
-            targetIDs.addAll(ids);
-            hasFilter = true;
-        }
+    else
+    {
+      targetIDs.addAll(ids);
+      hasFilter = true;
     }
-
-    if (!hasFilter) {
-        vendorRecords = fetch_vendors_all();
-    } else if (targetIDs.size() == 0) {
-        vendorRecords = List();
-    } else {
-        vendorRecords = fetch_vendors_by_ids(targetIDs);
+  }
+  if(!hasFilter)
+  {
+    vendorRecords = thisapp.chat_data_access.fetch_vendors_all();
+  }
+  else if(targetIDs.size() == 0)
+  {
+    vendorRecords = List();
+  }
+  else
+  {
+    vendorRecords = thisapp.chat_data_access.fetch_vendors_by_ids(targetIDs);
+  }
+  vendorList = List();
+  if(vendorRecords != null)
+  {
+    for each  v in vendorRecords
+    {
+      vitem = Map();
+      vitem.put("name",v.get(vFields.get("name")));
+      vitem.put("vendorId",v.get(vFields.get("vendorId")));
+      vitem.put("type",v.get(vFields.get("type")));
+      vendorList.add(vitem);
     }
-
-    vendorList = List();
-    if (vendorRecords != null) {
-        for each v in vendorRecords {
-            vitem = Map();
-            vitem.put("name", v.get(vFields.get("name")));
-            vitem.put("vendorId", v.get(vFields.get("vendorId")));
-            vitem.put("type", v.get(vFields.get("type")));
-            vendorList.add(vitem);
-        }
-    }
-
-    return {"ok": true, "data": locList, "vendors": vendorList};
+  }
+  return {"ok":true,"data":locList,"vendors":vendorList};
 }

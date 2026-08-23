@@ -1,69 +1,61 @@
 /**
- * tool_offices.deluge
- *
- * Busca oficinas comerciales en Commercial_Office.
- * Recibe (todos opcionales): {"city", "country"}
- *   NOTA DE ESQUEMA: Commercial_Office no tiene campos top-level City/Country
- *   (ni Phone/Business_Hours). Existen como SUBCAMPOS del campo compuesto
- *   `Address` (address_line_1, district_city, state_province, postal_Code,
- *   country). Por tanto NO hay fetch por ID con condición; se trae todo con
- *   fetch_offices_all() y se filtra EN MEMORIA sobre Address.<subfield>.
- * Devuelve: {"ok": true, "data": [{name, address, city, country}]}
- *
- * Acceso nativo vía data_access (0 llamadas de API).
- * Límite 200 (range 0-199), orden Office_Name asc.
- */
+* tool_offices.deluge
+*
+* Busca oficinas comerciales en Commercial_Office.
+* Recibe (todos opcionales): {"city", "country"}
+*   NOTA DE ESQUEMA: Commercial_Office no tiene campos top-level City/Country
+*   (ni Phone/Business_Hours). Existen como SUBCAMPOS del campo compuesto
+*   `Address` (address_line_1, district_city, state_province, postal_Code,
+*   country). Por tanto NO hay fetch por ID con condición; se trae todo con
+*   fetch_offices_all() y se filtra EN MEMORIA sobre Address.<subfield>.
+* Devuelve: {"ok": true, "data": [{name, address, city, country}]}
+*
+* Acceso nativo vía data_access (0 llamadas de API).
+* Límite 200 (range 0-199), orden Office_Name asc.
+*/
 
-Map tool_offices(Map params)
+map chat_tools.find_offices(map params)
 {
-    config = chat_config();
-    fields = config.get("officeFields");
-
-    records = fetch_offices_all();
-    if (records == null) {
-        records = List();
+  targetIDs = List();
+  hasFilter = false;
+  city = params.get("city");
+  if(city != null && city != "")
+  {
+    ids = thisapp.chat_data_access.fetch_office_ids_by_city(city);
+    targetIDs.addAll(ids);
+    hasFilter = true;
+  }
+  country = params.get("country");
+  if(country != null && country != "")
+  {
+    ids = thisapp.chat_data_access.fetch_office_ids_by_country(country);
+    if(hasFilter)
+    {
+      targetIDs = targetIDs.intersect(ids);
     }
-
-    city = params.get("city");
-    country = params.get("country");
-
-    resultList = List();
-    for each o in records {
-        // leer el compuesto Address (field name literal desde el mapa)
-        addr = o.get(fields.get("address"));
-        cityValue = "";
-        countryValue = "";
-        if (addr != null) {
-            c = addr.get(fields.get("city"));
-            co = addr.get(fields.get("country"));
-            if (c != null) { cityValue = "" + c; }
-            if (co != null) { countryValue = "" + co; }
-        }
-
-        // filtrado en memoria (AND entre city y country, insensible a mayúsculas)
-        match = true;
-        if (city != null && city != "") {
-            match = (toLowerCase("" + city).trim() == toLowerCase(cityValue).trim());
-        }
-        if (match && country != null && country != "") {
-            match = (toLowerCase("" + country).trim() == toLowerCase(countryValue).trim());
-        }
-        if (!match) {
-            continue;
-        }
-
-        item = Map();
-        item.put("name", o.get(fields.get("name")));
-        addrLine1 = "";
-        if (addr != null) {
-            a1 = addr.get("address_line_1");
-            if (a1 != null) { addrLine1 = "" + a1; }
-        }
-        item.put("address", addrLine1);
-        item.put("city", cityValue);
-        item.put("country", countryValue);
-        resultList.add(item);
+    else
+    {
+      targetIDs.addAll(ids);
+      hasFilter = true;
     }
-
-    return {"ok": true, "data": resultList};
+  }
+  // Guard: intersección vacía -> data:[] (Form[ID in []] es desconocido en Creator)
+  if(!hasFilter)
+  {
+    records = thisapp.chat_data_access.fetch_offices_all();
+  }
+  else if(targetIDs.size() == 0)
+  {
+    records = List();
+  }
+  else
+  {
+    records = thisapp.chat_data_access.fetch_offices_by_ids(targetIDs);
+  }
+  // Prepare the result
+  if(records == null)
+  {
+    return {"ok":true,"data":{}};
+  }
+  return {"ok":true,"data":records};
 }

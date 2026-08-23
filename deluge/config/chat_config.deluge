@@ -1,178 +1,80 @@
 /**
- * chat_config()
- *
- * Configuración central del backend del chatbot (paquetería internacional,
- * remesas y recargas telefónicas).
- *
- * IMPORTANTE:
- * 1. Reemplaza los link names por los reales de tu app de Creator.
- * 2. Deluge no comparte estado global entre funciones: cada función DEBE
- *    empezar con:   config = chat_config();
- * 3. Los link names se obtienen de la URL de cada módulo dentro de Creator.
- */
+* chat_config()
+*
+* Configuración central del backend del chatbot (paquetería internacional,
+* remesas y recargas telefónicas).
+*
+* IMPORTANTE:
+* 1. Reemplaza los link names por los reales de tu app de Creator.
+* 2. Deluge no comparte estado global entre funciones: cada función DEBE
+*    empezar con:   config = chat_config();
+* 3. Los link names se obtienen de la URL de cada módulo dentro de Creator.
+*/
 
-Map chat_config()
+map chat_config.chat_config()
 {
-    config = Map();
-
-    // --- Módulos de persistencia del chat ---
-    config.put("chatSessions", "ChatSessions");
-    config.put("chatMessages", "ChatMessages");
-    config.put("chatRequests", "ChatRequests");
-
-    // --- Módulos de negocio ---
-    config.put("contacts", "Contacts");
-    config.put("commercialOffice", "Commercial_Office");
-    config.put("service", "Service");
-    config.put("package", "Package");
-    config.put("coverageLocation", "Coverage_Location");
-    config.put("vendor", "Vendor");
-
-    // --- Campos de negocio por módulo (link names REALES del dump de la app) ---
-    // SOLO LECTURA para mapear la respuesta (leer el atributo del registro con
-    // Map.get, p. ej. pkg.get(fields.get("trackingNumber"))).
-    // Los nombres de campo de las CONSULTAS son LITERALES en data_access.deluge
-    // (Form[Field == valor]) — NUNCA usar fields.get(...) dentro de Form[...]
-    // (un nombre de campo desde variable es inválido en Creator).
-    // Campos de tipo compuesto (name/address): el valor del mapa es el campo
-    // TOP-LEVEL y la tool lee los subcampos en memoria (p. ej.
-    // rec.get("First_Name").get("first_name")). Campos sin equivalente real
-    // (Current_Location, Estimated_Delivery, Currency, Phone, Business_Hours,
-    // Vendor/Service_Type/Details en Coverage_Location) se ELIMINARON — ver reporte.
-
-    packageFields = Map();
-    packageFields.put("trackingNumber", "Tracking_Number");
-    packageFields.put("status", "Status");
-    packageFields.put("origin", "Sender_Address");   // compuesto: country se lee en la tool
-    packageFields.put("destination", "City");        // ciudad del receptor (Package.City)
-    config.put("packageFields", packageFields);
-
-    serviceFields = Map();
-    serviceFields.put("name", "Service_ID");          // identificador del servicio (no existe Service_Name)
-    serviceFields.put("type", "Service_Type");        // Package Receipt | Locker | Store | Remittance | Recharge | ...
-    serviceFields.put("sender", "Sender_field");      // remitente del servicio (reporte top customers)
-    serviceFields.put("date", "Date_field1");         // fecha de negocio del servicio (ventana de 30 días)
-    // Price existe (Total Price, USD) pero se omitió del mapeo por decisión de
-    // producto; se muestra Service_ID + Service_Type.
-    config.put("serviceFields", serviceFields);
-
-    officeFields = Map();
-    officeFields.put("name", "Office_Name");           // text (único)
-    officeFields.put("address", "Address");            // campo compuesto (address)
-    officeFields.put("city", "district_city");         // subfield de Address
-    officeFields.put("country", "country");             // subfield de Address
-    config.put("officeFields", officeFields);
-
-    coverageFields = Map();
-    coverageFields.put("name", "Location_Name");       // text
-    coverageFields.put("locationId", "Location_ID");   // text
-    coverageFields.put("address", "Address_Information1"); // compuesto (address)
-    coverageFields.put("country", "country");           // subfield de Address_Information1
-    coverageFields.put("state", "state_province");       // subfield (opcional)
-    config.put("coverageFields", coverageFields);
-
-    vendorFields = Map();
-    vendorFields.put("name", "Vendor_Name");              // text
-    vendorFields.put("vendorId", "Vendor_ID");            // text
-    vendorFields.put("type", "Vendor_Type");              // list (Transporter|Freight Forwarder|Remittance|Recharge|Remittance & Recharge); cruza con Service.Service_Type
-    config.put("vendorFields", vendorFields);
-
-    contactFields = Map();
-    contactFields.put("fullName", "First_Name");       // compuesto (name)
-    contactFields.put("firstName", "first_name");      // subfield de First_Name
-    contactFields.put("lastName", "last_name");        // subfield de First_Name
-    contactFields.put("phone", "Mobile");              // phonenumber (único)
-    contactFields.put("email", "Email");               // email
-    contactFields.put("document", "DNI");              // text
-    contactFields.put("role", "Type_field");           // picklist Sender | Receiver | Sender & Receiver
-    config.put("contactFields", contactFields);
-
-    // --- Scoping por usuario ---
-    // Si un módulo es privado por usuario, pon aquí el link name del campo
-    // lookup a Users (p. ej. "Owner"). Vacío = sin filtro por usuario.
-    ownerFields = Map();
-    ownerFields.put("package", "");
-    ownerFields.put("service", "");
-    ownerFields.put("commercialOffice", "");
-    ownerFields.put("coverageLocation", "");
-    ownerFields.put("contacts", "");
-    config.put("ownerFields", ownerFields);
-
-    // --- Composición de respuestas ---
-    // false = plantillas deterministas (barato, rápido, recomendado).
-    // true  = segunda llamada Zia para redactar respuestas naturales (más costo/latencia).
-    config.put("composeWithAI", false);
-
-    // --- Catálogo de herramientas para Zia ---
-    tools = List();
-
-    tool = Map();
-    tool.put("name", "track_package");
-    tool.put("description", "Busca el estado de un paquete por su número de seguimiento.");
-    tool.put("params", {"trackingNumber": "string: número de seguimiento del paquete"});
-    tools.add(tool);
-
-    tool = Map();
-    tool.put("name", "search_services");
-    tool.put("description", "Lista los servicios disponibles. Filtros opcionales: tipo de servicio (Package Receipt, Locker, Store, Remittance, Recharge, Online Store, Other Services), ciudad destino.");
-    tool.put("params", {
-        "serviceType": "string opcional",
-        "destination": "string opcional"
-    });
-    tools.add(tool);
-
-    tool = Map();
-    tool.put("name", "find_offices");
-    tool.put("description", "Busca oficinas comerciales. Filtros opcionales: ciudad, país.");
-    tool.put("params", {
-        "city": "string opcional",
-        "country": "string opcional"
-    });
-    tools.add(tool);
-
-    tool = Map();
-    tool.put("name", "check_coverage");
-    tool.put("description", "Consulta zonas cubiertas (Coverage_Location) por país y proveedores activos (Vendor) por tipo de servicio o nombre. Coverage_Location no modela vendor/service_type; los proveedores vienen del módulo Vendor (Vendor_Type coincide con Service.Service_Type).");
-    tool.put("params", {
-        "country": "string opcional",
-        "serviceType": "string opcional",
-        "vendor": "string opcional"
-    });
-    tools.add(tool);
-
-    tool = Map();
-    tool.put("name", "find_contacts");
-    tool.put("description", "Busca contactos (remitente o receptor) por nombre, teléfono o documento.");
-    tool.put("params", {
-        "name": "string opcional",
-        "phone": "string opcional",
-        "document": "string opcional"
-    });
-    tools.add(tool);
-
-    tool = Map();
-    tool.put("name", "report_top_customers");
-    tool.put("description", "Reporte de los clientes más frecuentes (top N) por cantidad de servicios en los últimos 30 días. Filtro opcional de tipo de servicio (valores exactos, sensibles a mayúsculas): Package Receipt, Locker, Store, Remittance, Recharge, Online Store, Other Services.");
-    tool.put("params", {
-        "serviceType": "string opcional",
-        "limit": "string opcional"
-    });
-    tools.add(tool);
-
-    config.put("tools", tools);
-
-    // --- Catálogo de herramientas en texto legible (para el prompt de Zia) ---
-    // Texto plano en vez de json.toJson (no reconocido por el editor de Creator).
-    toolsText = "";
-    for each t in tools {
-        toolsText = toolsText + "- " + t.get("name") + ": " + t.get("description");
-        p = t.get("params");
-        if (p != null && p.size() > 0) {
-            toolsText = toolsText + " Params: " + p.toString();
-        }
-        toolsText = toolsText + "\n";
+  /**
+  * chat_config()
+  *
+  * Configuración central del backend del chatbot (paquetería internacional,
+  * remesas y recargas telefónicas).
+  *
+  */
+  config = Map();
+  // --- Módulos de persistencia del chat ---
+  config.put("chatSessions","ChatSessions");
+  config.put("chatMessages","ChatMessages");
+  config.put("chatRequests","ChatRequests");
+  // --- Composición de respuestas ---
+  // false = plantillas deterministas (barato, rápido, recomendado).
+  // true  = segunda llamada Zia para redactar respuestas naturales (más costo/latencia).
+  config.put("composeWithAI",false);
+  // --- Catálogo de herramientas para Zia ---
+  tools = List();
+  tool = Map();
+  tool.put("name","track_package");
+  tool.put("description","Busca el estado de un paquete por su número de seguimiento.");
+  tool.put("params",{"trackingNumber":"string: número de seguimiento del paquete"});
+  tools.add(tool);
+  tool = Map();
+  tool.put("name","search_services");
+  tool.put("description","Lista los servicios disponibles. Filtros opcionales: tipo de servicio (Paquetería, Locker, Store, Remesa, Recarga, Online Store, Other Services), ciudad destino.  Si el usuario no especifica tipo, llama con params vacíos {} — NO pidas aclaración.");
+  tool.put("params",{"serviceType":"string opcional","destination":"string opcional"});
+  tools.add(tool);
+  tool = Map();
+  tool.put("name","find_offices");
+  tool.put("description","Busca oficinas comerciales. Filtros opcionales: ciudad, país.  Si el usuario no especifica tipo, llama con params vacíos {} — NO pidas aclaración.");
+  tool.put("params",{"city":"string opcional","country":"string opcional"});
+  tools.add(tool);
+  tool = Map();
+  tool.put("name","check_coverage");
+  tool.put("description","Consulta zonas cubiertas (Coverage_Location) por país y proveedores activos (Vendor) por tipo de servicio o nombre. Coverage_Location no modela vendor/service_type; los proveedores vienen del módulo Vendor (Vendor_Type coincide con Service.Service_Type).  Si el usuario no especifica tipo, llama con params vacíos {} — NO pidas aclaración.");
+  tool.put("params",{"country":"string opcional","serviceType":"string opcional","vendor":"string opcional"});
+  tools.add(tool);
+  tool = Map();
+  tool.put("name","find_contacts");
+  tool.put("description","Busca contactos (remitente o receptor) por nombre, teléfono o documento.  Si el usuario no especifica tipo, llama con params vacíos {} — NO pidas aclaración.");
+  tool.put("params",{"name":"string opcional","phone":"string opcional","document":"string opcional"});
+  tools.add(tool);
+  config.put("tools",tools);
+  tool = Map();
+  tool.put("name","report_top_customers");
+  tool.put("description","Reporte de los clientes más frecuentes (top N) por cantidad de servicios en los últimos 30 días. Filtro opcional de tipo de servicio (valores exactos, sensibles a mayúsculas): Package Receipt, Locker, Store, Remittance, Recharge, Online Store, Other Services. Si el usuario no especifica tipo, llama con params vacíos {} — NO pidas aclaración, rankea TODOS los tipos.");
+  tool.put("params",{"serviceType":"string opcional","limit":"string opcional"});
+  tools.add(tool);
+  // --- Catálogo de herramientas en texto legible (para el prompt de Zia) ---
+  // Texto plano en vez de json.toJson (no reconocido por el editor de Creator).
+  toolsText = "";
+  for each  t in tools
+  {
+    toolsText = toolsText + "- " + t.get("name") + ": " + t.get("description");
+    p = t.get("params");
+    if(p != null && p.size() > 0)
+    {
+      toolsText = toolsText + " Params: " + p.toString();
     }
-    config.put("toolsText", toolsText);
-
-    return config;
+    toolsText = toolsText + "\n";
+  }
+  config.put("toolsText",toolsText);
+  return config;
 }

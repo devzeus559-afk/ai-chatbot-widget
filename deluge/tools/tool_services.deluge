@@ -1,73 +1,71 @@
 /**
- * tool_services.deluge
- *
- * Lista servicios disponibles desde el módulo Service.
- * Recibe (todos opcionales): {"serviceType", "destination"}  (sin "origin")
- * Devuelve: {"ok": true, "data": [{name, type}]}
- *
- * Acceso nativo vía data_access (0 llamadas de API de Creator). Patrón ID-list
- * (gate 5.1: Form[criteriaVar] es inválido):
- * - Sin filtros            -> fetch_services_all()        (Form[ID != 0])
- * - 1+ filtros             -> IDs por condición (.ID.getAll()), addAll en el
- *                             primero e intersect en los siguientes, guard de
- *                             lista vacía y fetch final fetch_services_by_ids.
- * Límite 200 (range 0-199), orden Service_ID asc.
- *
- * CAMPOS REALES (dump): Service.Service_Type (picklist), Service.Service_ID,
- * Service.City (text, destino), Service.Price (Total Price, USD — EXISTE pero
- * se omitió del mapeo por decisión de producto). NO existen Service_Name,
- * Origin, Destination, Currency, Description ni Estimated_Time -> el filtro
- * "destination" consulta el campo REAL Service.City (ciudad destino) y el
- * filtro "origin" se ELIMINÓ (no hay campo de origen en Service). El listado
- * devuelve Service_ID (como "name") y Service_Type (como "type"); sin precio.
- */
+* tool_services.deluge
+*
+* Lista servicios disponibles desde el módulo Service.
+* Recibe (todos opcionales): {"serviceType", "destination"}  (sin "origin")
+* Devuelve: {"ok": true, "data": [{name, type}]}
+*
+* Acceso nativo vía data_access (0 llamadas de API de Creator). Patrón ID-list
+* (gate 5.1: Form[criteriaVar] es inválido):
+* - Sin filtros            -> fetch_services_all()        (Form[ID != 0])
+* - 1+ filtros             -> IDs por condición (.ID.getAll()), addAll en el
+*                             primero e intersect en los siguientes, guard de
+*                             lista vacía y fetch final fetch_services_by_ids.
+* Límite 200 (range 0-199), orden Service_ID asc.
+*
+* CAMPOS REALES (dump): Service.Service_Type (picklist), Service.Service_ID,
+* Service.City (text, destino), Service.Price (Total Price, USD — EXISTE pero
+* se omitió del mapeo por decisión de producto). NO existen Service_Name,
+* Origin, Destination, Currency, Description ni Estimated_Time -> el filtro
+* "destination" consulta el campo REAL Service.City (ciudad destino) y el
+* filtro "origin" se ELIMINÓ (no hay campo de origen en Service). El listado
+* devuelve Service_ID (como "name") y Service_Type (como "type"); sin precio.
+*/
 
-Map tool_services(Map params)
+map chat_tools.search_services(map params)
 {
-    config = chat_config();
-    fields = config.get("serviceFields");
-
-    targetIDs = List();
-    hasFilter = false;
-
-    serviceType = params.get("serviceType");
-    if (serviceType != null && serviceType != "") {
-        ids = fetch_services_ids_by_type(serviceType);
-        targetIDs.addAll(ids);
-        hasFilter = true;
+  config = thisapp.chat_config.chat_config();
+  fields = config.get("serviceFields");
+  targetIDs = List();
+  hasFilter = false;
+  serviceType = params.get("serviceType");
+  if(serviceType != null && serviceType != "")
+  {
+    ids = thisapp.chat_data_access.fetch_services_ids_by_type(serviceType);
+    targetIDs.addAll(ids);
+    hasFilter = true;
+  }
+  destination = params.get("destination");
+  if(destination != null && destination != "")
+  {
+    ids = thisapp.chat_data_access.fetch_services_ids_by_destination(destination);
+    if(hasFilter)
+    {
+      targetIDs = targetIDs.intersect(ids);
     }
-
-    destination = params.get("destination");
-    if (destination != null && destination != "") {
-        ids = fetch_services_ids_by_destination(destination);
-        if (hasFilter) {
-            targetIDs = targetIDs.intersect(ids);
-        } else {
-            targetIDs.addAll(ids);
-            hasFilter = true;
-        }
+    else
+    {
+      targetIDs.addAll(ids);
+      hasFilter = true;
     }
-
-    // Guard: intersección vacía -> data:[] (Form[ID in []] es desconocido en Creator)
-    if (!hasFilter) {
-        records = fetch_services_all();
-    } else if (targetIDs.size() == 0) {
-        records = List();
-    } else {
-        records = fetch_services_by_ids(targetIDs);
-    }
-
-    resultList = List();
-    if (records == null) {
-        return {"ok": true, "data": resultList};
-    }
-
-    for each s in records {
-        item = Map();
-        item.put("name", s.get(fields.get("name")));
-        item.put("type", s.get(fields.get("type")));
-        resultList.add(item);
-    }
-
-    return {"ok": true, "data": resultList};
+  }
+  // Guard: intersección vacía -> data:[] (Form[ID in []] es desconocido en Creator)
+  if(!hasFilter)
+  {
+    records = thisapp.chat_data_access.fetch_services_all();
+  }
+  else if(targetIDs.size() == 0)
+  {
+    records = List();
+  }
+  else
+  {
+    records = thisapp.chat_data_access.fetch_services_by_ids(targetIDs);
+  }
+  resultList = List();
+  if(records == null)
+  {
+    return {"ok":true,"data":{}};
+  }
+  return {"ok":true,"data":records};
 }

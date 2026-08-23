@@ -1,51 +1,48 @@
 /**
- * tool_track_package.deluge
- *
- * Busca el estado de un paquete por número de seguimiento en el módulo Package.
- * Recibe: {"trackingNumber": "..."}
- * Devuelve: {"ok": true, "data": {...}} | {"ok": false, "message": "..."}
- *
- * Acceso nativo vía data_access.fetch_packages_by_tracking (0 llamadas de API
- * de Creator): igualdad inline con campo LITERAL (Tracking_Number) y valor como
- * variable; orden Created_Time desc; .get(0) = paquete más reciente.
- *
- * CAMPOS REALES (dump): Package.Tracking_Number, Package.Status (picklist
- * Received|Dispatched|Delivered|Returned|Invoiced|Labeled), Package.Sender_Address
- * (address compuesto: pais del remitente), Package.City (ciudad del receptor).
- * NO existen Current_Location ni Estimated_Delivery; el historial de tracking
- * en vivo (Latest_Status/Last_Updated) vive en Pkg_Tracking (ver reporte).
- */
+* tool_track_package.deluge
+*
+* Busca el estado de un paquete por número de seguimiento en el módulo Package.
+* Recibe: {"trackingNumber": "..."}
+* Devuelve: {"ok": true, "data": {...}} | {"ok": false, "message": "..."}
+*
+* Acceso nativo vía data_access.fetch_packages_by_tracking (0 llamadas de API
+* de Creator): igualdad inline con campo LITERAL (Tracking_Number) y valor como
+* variable; orden Created_Time desc; .get(0) = paquete más reciente.
+*
+* CAMPOS REALES (dump): Package.Tracking_Number, Package.Status (picklist
+* Received|Dispatched|Delivered|Returned|Invoiced|Labeled), Package.Sender_Address
+* (address compuesto: pais del remitente), Package.City (ciudad del receptor).
+* NO existen Current_Location ni Estimated_Delivery; el historial de tracking
+* en vivo (Latest_Status/Last_Updated) vive en Pkg_Tracking (ver reporte).
+*/
 
-Map tool_track_package(Map params)
+map chat_tools.track_package(map params)
 {
-    config = chat_config();
-    fields = config.get("packageFields");
-
-    trackingNumber = params.get("trackingNumber");
-    if (trackingNumber == null || trackingNumber == "") {
-        return {"ok": false, "message": "Falta el número de seguimiento."};
-    }
-
-    records = fetch_packages_by_tracking(trackingNumber);
-    if (records == null || records.size() == 0) {
-        return {"ok": false, "message": "No se encontró un paquete con ese número de seguimiento."};
-    }
-
-    // .get(0) = más reciente (fetch_packages_by_tracking ordena por Created_Time desc)
-    pkg = records.get(0);
-    data = Map();
-    data.put("trackingNumber", pkg.get(fields.get("trackingNumber")));
-    data.put("status", pkg.get(fields.get("status")));
-
-    // Origen: Package.Sender_Address (address compuesto) -> leer subcampo country
-    senderAddr = pkg.get(fields.get("origin"));
-    originValue = "";
-    if (senderAddr != null) {
-        originValue = senderAddr.get("country");
-    }
-    data.put("origin", originValue);
-
-    data.put("destination", pkg.get(fields.get("destination")));
-
-    return {"ok": true, "data": data};
+  config = thisapp.chat_config.chat_config();
+  fields = config.get("packageFields");
+  trackingNumber = params.get("trackingNumber");
+  if(trackingNumber == null || trackingNumber == "")
+  {
+    return {"ok":false,"message":"Falta el número de seguimiento."};
+  }
+  records = thisapp.chat_data_access.fetch_packages_by_tracking(trackingNumber);
+  if(records == null || records.size() == 0)
+  {
+    return {"ok":false,"message":"No se encontró un paquete con ese número de seguimiento."};
+  }
+  // .get(0) = más reciente (fetch_packages_by_tracking ordena por Created_Time desc)
+  pkg = records.get(0);
+  data = Map();
+  data.put("trackingNumber",pkg.get(fields.get("trackingNumber")));
+  data.put("status",pkg.get(fields.get("status")));
+  // Origen: Package.Sender_Address (address compuesto) -> leer subcampo country
+  senderAddr = pkg.get(fields.get("origin"));
+  originValue = "";
+  if(senderAddr != null)
+  {
+    originValue = senderAddr.get("country");
+  }
+  data.put("origin",originValue);
+  data.put("destination",pkg.get(fields.get("destination")));
+  return {"ok":true,"data":data};
 }
