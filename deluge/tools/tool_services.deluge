@@ -13,13 +13,15 @@
 *                             lista vacía y fetch final fetch_services_by_ids.
 * Límite 200 (range 0-199), orden Service_ID asc.
 *
-* CAMPOS REALES (dump): Service.Service_Type (picklist), Service.Service_ID,
-* Service.City (text, destino), Service.Price (Total Price, USD — EXISTE pero
-* se omitió del mapeo por decisión de producto). NO existen Service_Name,
-* Origin, Destination, Currency, Description ni Estimated_Time -> el filtro
-* "destination" consulta el campo REAL Service.City (ciudad destino) y el
-* filtro "origin" se ELIMINÓ (no hay campo de origen en Service). El listado
-* devuelve Service_ID (como "name") y Service_Type (como "type"); sin precio.
+ * CAMPOS REALES (dump): Service.Service_Type (picklist), Service.Service_ID,
+ * Service.City (text, destino), Service.Price (Total Price, USD — EXISTE pero
+ * se omitió del mapeo por decisión de producto). NO existen Service_Name,
+ * Origin, Destination, Currency, Description ni Estimated_Time -> el filtro
+ * "destination" resuelve por cascada geográfica en fetch_services_ids_by_
+ * destination (país/provincia vía Coverage_Location, luego ciudad como unión
+ * de Service.City + Package.City vía Package.Service) y el filtro "origin"
+ * se ELIMINÓ (no hay campo de origen en Service). El listado devuelve
+ * Service_ID (como "name") y Service_Type (como "type"); sin precio.
 */
 
 map chat_tools.search_services(map params)

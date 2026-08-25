@@ -543,6 +543,9 @@ list chat_data_access.fetch_services_ids_by_date_window(date startDate, date end
 }
 list chat_data_access.fetch_services_ids_by_destination(string destination)
 {
+	// Cascada geográfica: país -> provincia -> ciudad (broad a specific).
+	// País/provincia viven en Service.Location -> Coverage_Location
+	// (Address_Information1), campo que SIEMPRE se llena en Service.
 	location_country_ids = Coverage_Location[Address_Information1.country == destination].distinct(ID);
 	location_province_ids = Coverage_Location[Address_Information1.state_province == destination].distinct(ID);
 	if(location_country_ids.size() > 0)
@@ -555,7 +558,21 @@ list chat_data_access.fetch_services_ids_by_destination(string destination)
 	}
 	else
 	{
-		ids = List();
+		// Ciudad destino: fuentes COMPLEMENTARIAS según tipo de servicio, unión
+		// de ambas. Service.City solo se llena cuando el tipo NO es Package
+		// Receipt; en Package Receipt la ciudad vive en el Package asociado
+		// (Package.Service picklist). Los duplicados de la unión los absorbe
+		// el operador IN del fetch final (Service[ID in ids]).
+		ids = Service[City == destination].distinct(ID);
+		package_service_ids = Package[City == destination].distinct(Service);
+		if(package_service_ids != null && package_service_ids.size() > 0)
+		{
+			ids.addAll(package_service_ids);
+		}
+	}
+	if(ids == null || ids.size() == 0)
+	{
+		return List();
 	}
 	return ids;
 }
