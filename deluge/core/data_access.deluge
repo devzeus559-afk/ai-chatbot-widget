@@ -384,15 +384,55 @@ list chat_data_access.fetch_packages_by_tracking(string trackingNumber)
 		item.put("trackingNumber",r.Package_ID);
 		item.put("packageName",r.Package_Name);
 		item.put("packageType",r.Package_Type);
-		item.put("origin",r.Sender_Address.district_city + "," + r.Sender_Address.country);
-		destination = "Unknown";
+		// Origin: subcampos del compuesto Sender_Address pueden venir vacíos;
+		// concatenar ciego renderiza "null"/",X". Mismo fallback que destination.
+		origin = "";
+		senderCity = r.Sender_Address.district_city;
+		senderCountry = r.Sender_Address.country;
+		if(senderCity != null && senderCity != "")
+		{
+			origin = "" + senderCity;
+		}
+		if(senderCountry != null && senderCountry != "")
+		{
+			if(origin != "")
+			{
+				origin = origin + ",";
+			}
+			origin = origin + senderCountry;
+		}
+		if(origin == "")
+		{
+			origin = "Unknown";
+		}
+		item.put("origin",origin);
+		// Destination: mismo patrón que origin — subcampos pueden venir vacíos;
+		// construir por partes con fallback "Unknown".
+		destination = "";
 		if(r.Location != null)
 		{
 			locationRec = Coverage_Location[ID == r.Location];
 			if(locationRec != null)
 			{
-				destination = r.City + "," + locationRec.Address_Information1.country;
+				receiverCity = r.City;
+				locationCountry = locationRec.Address_Information1.country;
+				if(receiverCity != null && receiverCity != "")
+				{
+					destination = "" + receiverCity;
+				}
+				if(locationCountry != null && locationCountry != "")
+				{
+					if(destination != "")
+					{
+						destination = destination + ",";
+					}
+					destination = destination + locationCountry;
+				}
 			}
+		}
+		if(destination == "")
+		{
+			destination = "Unknown";
 		}
 		item.put("destination",destination);
 		item.put("status",r.Latest_Solved_Status);
