@@ -10,8 +10,10 @@
 *     tipo de servicio (Vendor[Vendor_Type == serviceType && Active == true]).
 *     Vendor_Type cruza con Service.Service_Type (mismo criterio que usa el app).
 *   - vendor: filtra proveedores por nombre exacto (Vendor_Name).
-* Devuelve: {"ok": true, "data": [locations:{name, locationId, country, state}],
-*           "vendors": [vendors:{name, vendorId, type}]}
+ * Devuelve: {"ok": true, "data": [locations:{name, country, state}],
+ *           "vendors": [vendors:{name, vendorId, type}]}
+ *           Ambas listas se renderizan en compose_reply via format_coverage
+ *           (cobertura + sección "Proveedores:" cuando exista).
 *
 * Acceso nativo vía data_access (0 llamadas de API). CAMPOS REALES (dump):
 * - Coverage_Location: Location_ID, Location_Name, Address_Information1 (address

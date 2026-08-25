@@ -78,7 +78,7 @@ map chat_common.compose_reply(map toolResult, map intent)
   }
   if(toolName == "check_coverage")
   {
-    return {"text":thisapp.chat_common.format_coverage(data),"visualization":viz};
+    return {"text":thisapp.chat_common.format_coverage(data,toolResult.get("vendors")),"visualization":viz};
   }
   if(toolName == "find_contacts")
   {
@@ -160,29 +160,44 @@ string chat_common.format_contacts(list contacts)
   }
   return text;
 }
-string chat_common.format_coverage(list coverage)
+string chat_common.format_coverage(list coverage, list vendors)
 {
-  if(coverage == null || coverage.size() == 0)
+  hasLocations = coverage != null && coverage.size() > 0;
+  hasVendors = vendors != null && vendors.size() > 0;
+  if(!hasLocations && !hasVendors)
   {
     return "No encontré cobertura para esa búsqueda.";
   }
-  text = "Cobertura disponible:\n";
-  for each  c in coverage
+  text = "";
+  if(hasLocations)
   {
-    line = "- " + c.get("country");
-    if(c.get("serviceType") != null)
+    text = "Cobertura disponible:\n";
+    for each  c in coverage
     {
-      line = line + " (" + c.get("serviceType") + ")";
+      line = "- " + c.get("name");
+      if(c.get("state") != null && c.get("state") != "")
+      {
+        line = line + ", " + c.get("state");
+      }
+      if(c.get("country") != null && c.get("country") != "")
+      {
+        line = line + " (" + c.get("country") + ")";
+      }
+      text = text + line + "\n";
     }
-    if(c.get("vendor") != null)
+  }
+  if(hasVendors)
+  {
+    text = text + "Proveedores:\n";
+    for each  v in vendors
     {
-      line = line + " - proveedor: " + c.get("vendor");
+      line = "- " + v.get("name");
+      if(v.get("type") != null && v.get("type") != "")
+      {
+        line = line + " (" + v.get("type") + ")";
+      }
+      text = text + line + "\n";
     }
-    if(c.get("details") != null)
-    {
-      line = line + " - " + c.get("details");
-    }
-    text = text + line + "\n";
   }
   return text;
 }
