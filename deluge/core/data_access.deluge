@@ -280,7 +280,7 @@ list chat_data_access.fetch_coverage_all()
   {
     item = Map();
     item.put("location",r.Location_Name);
-    item.put("city",r.Address_Information1.state_province);
+    item.put("state",r.Address_Information1.state_province);
     item.put("country",r.Address_Information1.country);
     resultList.add(item);
   }
@@ -288,10 +288,23 @@ list chat_data_access.fetch_coverage_all()
 }
 list chat_data_access.fetch_coverage_by_ids(list ids)
 {
-  records = Coverage_Location[ID in ids] sort by Location_Name range from 0 to 199;
-  return records;
+	records = Coverage_Location[Active == true && ID in ids] sort by Location_Name range from 0 to 199;
+	if(records == null)
+	{
+		return List();
+	}
+	resultList = List();
+	for each  r in records
+	{
+		item = Map();
+		item.put("location",r.Location_Name);
+		item.put("state",r.Address_Information1.state_province);
+		item.put("country",r.Address_Information1.country);
+		resultList.add(item);
+	}
+	return resultList;
 }
-collection chat_data_access.fetch_offices_all()
+list chat_data_access.fetch_offices_all()
 {
   records = Commercial_Office[Active == true] sort by Office_Name range from 0 to 199;
   if(records == null)
@@ -359,61 +372,160 @@ list chat_data_access.fetch_office_ids_by_country(string country)
 }
 list chat_data_access.fetch_packages_by_tracking(string trackingNumber)
 {
-  records = Package[Tracking_Number == trackingNumber] sort by Receipt_Date desc;
-  return records;
+	records = Package[Package_ID == trackingNumber && Latest_Solved_Status != ""] sort by Receipt_Date desc;
+	if(records == null)
+	{
+		return List();
+	}
+	resultList = List();
+	for each  r in records
+	{
+		item = Map();
+		item.put("trackingNumber",r.Package_ID);
+		item.put("packageName",r.Package_Name);
+		item.put("packageType",r.Package_Type);
+		item.put("origin",r.Sender_Address.district_city + "," + r.Sender_Address.country);
+		destination = "Unknown";
+		if(r.Location != null)
+		{
+			locationRec = Coverage_Location[ID == r.Location];
+			if(locationRec != null)
+			{
+				destination = r.City + "," + locationRec.Address_Information1.country;
+			}
+		}
+		item.put("destination",destination);
+		item.put("status",r.Latest_Solved_Status);
+		item.put("lastUpdate",r.Last_Solved_Update);
+		resultList.add(item);
+	}
+	return resultList;
 }
 list chat_data_access.fetch_services_all()
 {
-  records = Service[Service_ID != null && Service_ID != ""] sort by Service_ID range from 0 to 199;
-  if(records == null)
-  {
-    return List();
-  }
-  resultList = List();
-  for each  r in records
-  {
-    item = Map();
-    item.put("serviceType",r.Service_Type);
-    item.put("id",r.ID);
-    item.put("serviceId",r.Service_ID);
-    item.put("customerId",r.Sender_field);
-    item.put("customerName",r.Sender_Full_Name.toUpperCase());
-    item.put("customerPhone",r.Sender_Mobile);
-    item.put("packageServicePrice",r.Price);
-    item.put("transactionServicePrice",r.Amount);
-    item.put("date",r.Date_field1);
-    item.put("vendorId",r.Vendor);
-    VendorRec = Vendor[ID == r.Vendor];
-    if(VendorRec != null)
-    {
-      item.put("vendorName",VendorRec.Vendor_Name);
-    }
-    item.put("officeId",r.Office);
-    OfficeRec = Commercial_Office[ID == r.Office];
-    if(OfficeRec != null)
-    {
-      item.put("officeName",OfficeRec.Office_Name);
-    }
-    item.put("serviceLocationId",r.Location);
-    LocationRec = Coverage_Location[ID == r.Location];
-    if(LocationRec != null)
-    {
-      item.put("serviceLocationCountry",LocationRec.Address_Information1.country);
-      item.put("serviceLocationState",LocationRec.Address_Information1.state_province);
-    }
-    resultList.add(item);
-  }
-  return resultList;
+	records = Service[Service_ID != null && Service_ID != ""] sort by Service_ID range from 0 to 199;
+	if(records == null)
+	{
+		return List();
+	}
+	resultList = List();
+	for each  r in records
+	{
+		item = Map();
+		item.put("serviceType",r.Service_Type);
+		item.put("zid",r.ID);
+		item.put("serviceId",r.Service_ID);
+		item.put("customerId",r.Sender_field);
+		item.put("customerName",r.Sender_Full_Name.toUpperCase());
+		item.put("customerPhone",r.Sender_Mobile);
+		price = if(r.Amount > 0,r.Amount,r.Price);
+		item.put("price",price);
+		item.put("date",r.Date_field1);
+		item.put("vendorZid",r.Vendor);
+		VendorRec = Vendor[ID == r.Vendor];
+		if(VendorRec != null)
+		{
+			item.put("vendorName",VendorRec.Vendor_Name);
+		}
+		item.put("officeZid",r.Office);
+		OfficeRec = Commercial_Office[ID == r.Office];
+		if(OfficeRec != null)
+		{
+			item.put("officeName",OfficeRec.Office_Name);
+		}
+		item.put("locationZid",r.Location);
+		LocationRec = Coverage_Location[ID == r.Location];
+		if(LocationRec != null)
+		{
+			item.put("serviceCountry",LocationRec.Address_Information1.country);
+		}
+		resultList.add(item);
+	}
+	return resultList;
 }
 list chat_data_access.fetch_services_by_date_window(date startDate, date endDate)
 {
-  records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
-  return records;
+	records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
+	if(records == null)
+	{
+		return List();
+	}
+	resultList = List();
+	for each  r in records
+	{
+		item = Map();
+		item.put("serviceType",r.Service_Type);
+		item.put("zid",r.ID);
+		item.put("serviceId",r.Service_ID);
+		item.put("customerId",r.Sender_field);
+		item.put("customerName",r.Sender_Full_Name.toUpperCase());
+		item.put("customerPhone",r.Sender_Mobile);
+		price = if(r.Amount > 0,r.Amount,r.Price);
+		item.put("price",price);
+		item.put("date",r.Date_field1);
+		item.put("vendorZid",r.Vendor);
+		VendorRec = Vendor[ID == r.Vendor];
+		if(VendorRec != null)
+		{
+			item.put("vendorName",VendorRec.Vendor_Name);
+		}
+		item.put("officeZid",r.Office);
+		OfficeRec = Commercial_Office[ID == r.Office];
+		if(OfficeRec != null)
+		{
+			item.put("officeName",OfficeRec.Office_Name);
+		}
+		item.put("locationZid",r.Location);
+		LocationRec = Coverage_Location[ID == r.Location];
+		if(LocationRec != null)
+		{
+			item.put("serviceCountry",LocationRec.Address_Information1.country);
+		}
+		resultList.add(item);
+	}
+	return resultList;
 }
 list chat_data_access.fetch_services_by_ids(list ids)
 {
-  records = Service[ID in ids] sort by Service_ID range from 0 to 199;
-  return records;
+	records = Service[ID in ids] sort by Service_ID range from 0 to 199;
+	if(records == null)
+	{
+		return List();
+	}
+	resultList = List();
+	for each  r in records
+	{
+		item = Map();
+		item.put("serviceType",r.Service_Type);
+		item.put("zid",r.ID);
+		item.put("serviceId",r.Service_ID);
+		item.put("customerId",r.Sender_field);
+		item.put("customerName",r.Sender_Full_Name.toUpperCase());
+		item.put("customerPhone",r.Sender_Mobile);
+		price = if(r.Amount > 0,r.Amount,r.Price);
+		item.put("price",price);
+		item.put("date",r.Date_field1);
+		item.put("vendorZid",r.Vendor);
+		VendorRec = Vendor[ID == r.Vendor];
+		if(VendorRec != null)
+		{
+			item.put("vendorName",VendorRec.Vendor_Name);
+		}
+		item.put("officeZid",r.Office);
+		OfficeRec = Commercial_Office[ID == r.Office];
+		if(OfficeRec != null)
+		{
+			item.put("officeName",OfficeRec.Office_Name);
+		}
+		item.put("locationZid",r.Location);
+		LocationRec = Coverage_Location[ID == r.Location];
+		if(LocationRec != null)
+		{
+			item.put("serviceCountry",LocationRec.Address_Information1.country);
+		}
+		resultList.add(item);
+	}
+	return resultList;
 }
 int chat_data_access.fetch_services_count_by_date_window(date startDate, date endDate)
 {
@@ -431,8 +543,21 @@ list chat_data_access.fetch_services_ids_by_date_window(date startDate, date end
 }
 list chat_data_access.fetch_services_ids_by_destination(string destination)
 {
-  ids = Service[City == destination].ID.getAll();
-  return ids;
+	location_country_ids = Coverage_Location[Address_Information1.country == destination].distinct(ID);
+	location_province_ids = Coverage_Location[Address_Information1.state_province == destination].distinct(ID);
+	if(location_country_ids.size() > 0)
+	{
+		ids = Service[Location in location_country_ids].distinct(ID);
+	}
+	else if(location_province_ids.size() > 0)
+	{
+		ids = Service[Location in location_province_ids].distinct(ID);
+	}
+	else
+	{
+		ids = List();
+	}
+	return ids;
 }
 list chat_data_access.fetch_services_ids_by_type(string serviceType)
 {
@@ -441,13 +566,43 @@ list chat_data_access.fetch_services_ids_by_type(string serviceType)
 }
 list chat_data_access.fetch_vendors_all()
 {
-  records = Vendor[ID != 0] sort by Vendor_Name range from 0 to 199;
-  return records;
+	records = Vendor[Active == true] sort by Vendor_Name range from 0 to 199;
+	if(records == null)
+	{
+		return List();
+	}
+	resultList = List();
+	for each  r in records
+	{
+		item = Map();
+		item.put("vendorType",r.Vendor_Type);
+		item.put("vendorId",r.Vendor_ID);
+		item.put("vendorName",r.Vendor_Name);
+		item.put("vendorPhone",r.Phone);
+		item.put("zid",r.ID);
+		resultList.add(item);
+	}
+	return resultList;
 }
 list chat_data_access.fetch_vendors_by_ids(list ids)
 {
-  records = Vendor[ID in ids] sort by Vendor_Name range from 0 to 199;
-  return records;
+	records = Vendor[ID in ids] sort by Vendor_Name range from 0 to 199;
+	if(records == null)
+	{
+		return List();
+	}
+	resultList = List();
+	for each  r in records
+	{
+		item = Map();
+		item.put("vendorType",r.Vendor_Type);
+		item.put("vendorId",r.Vendor_ID);
+		item.put("vendorName",r.Vendor_Name);
+		item.put("vendorPhone",r.Phone);
+		item.put("zid",r.ID);
+		resultList.add(item);
+	}
+	return resultList;
 }
 list chat_data_access.fetch_vendors_ids_by_name(string vendor)
 {

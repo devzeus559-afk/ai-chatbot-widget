@@ -18,31 +18,23 @@
 
 map chat_tools.track_package(map params)
 {
-  config = thisapp.chat_config.chat_config();
-  fields = config.get("packageFields");
-  trackingNumber = params.get("trackingNumber");
-  if(trackingNumber == null || trackingNumber == "")
-  {
-    return {"ok":false,"message":"Falta el número de seguimiento."};
-  }
-  records = thisapp.chat_data_access.fetch_packages_by_tracking(trackingNumber);
-  if(records == null || records.size() == 0)
-  {
-    return {"ok":false,"message":"No se encontró un paquete con ese número de seguimiento."};
-  }
-  // .get(0) = más reciente (fetch_packages_by_tracking ordena por Created_Time desc)
-  pkg = records.get(0);
-  data = Map();
-  data.put("trackingNumber",pkg.get(fields.get("trackingNumber")));
-  data.put("status",pkg.get(fields.get("status")));
-  // Origen: Package.Sender_Address (address compuesto) -> leer subcampo country
-  senderAddr = pkg.get(fields.get("origin"));
-  originValue = "";
-  if(senderAddr != null)
-  {
-    originValue = senderAddr.get("country");
-  }
-  data.put("origin",originValue);
-  data.put("destination",pkg.get(fields.get("destination")));
-  return {"ok":true,"data":data};
+	trackingNumber = params.get("trackingNumber");
+	if(trackingNumber == null || trackingNumber == "")
+	{
+		return {"ok":false,"message":"Falta el número de seguimiento."};
+	}
+	records = thisapp.chat_data_access.fetch_packages_by_tracking(trackingNumber);
+	if(records == null || records.size() == 0)
+	{
+		return {"ok":false,"message":"No se encontró un paquete con ese número de seguimiento."};
+	}
+	// .get(0) = más reciente (fetch_packages_by_tracking ordena por Created_Time desc)
+	pkg = records.get(0);
+	data = Map();
+	data.put("trackingNumber",pkg.get("trackingNumber"));
+	data.put("status",pkg.get("status"));
+	data.put("lastUpdate",pkg.get("lastUpdate"));
+	data.put("origin",pkg.get("origin"));
+	data.put("destination",pkg.get("destination"));
+	return {"ok":true,"data":data};
 }

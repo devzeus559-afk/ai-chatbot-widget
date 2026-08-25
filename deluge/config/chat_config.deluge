@@ -29,6 +29,8 @@ map chat_config.chat_config()
   // false = plantillas deterministas (barato, rápido, recomendado).
   // true  = segunda llamada Zia para redactar respuestas naturales (más costo/latencia).
   config.put("composeWithAI",false);
+  // -- currency var
+	config.put("currency","USD");
   // --- Catálogo de herramientas para Zia ---
   tools = List();
   tool = Map();

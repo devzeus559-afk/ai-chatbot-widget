@@ -222,27 +222,28 @@ string chat_common.format_offices(list offices)
 }
 string chat_common.format_services(list services)
 {
-  if(services == null || services.size() == 0)
-  {
-    return "No encontré servicios que coincidan con la búsqueda.";
-  }
-  text = "Servicios disponibles:\n";
-  index = 1;
-  for each  s in services
-  {
-    line = index + ". " + s.get("name") + " (" + s.get("type") + ")";
-    if(s.get("price") != null && s.get("currency") != null)
-    {
-      line = line + " - " + s.get("price") + " " + s.get("currency");
-    }
-    if(s.get("estimatedTime") != null && s.get("estimatedTime") != "")
-    {
-      line = line + " - " + s.get("estimatedTime");
-    }
-    text = text + line + "\n";
-    index = index + 1;
-  }
-  return text;
+	currency = thisapp.chat_config.chat_config().get("currency");
+	if(services == null || services.size() == 0)
+	{
+		return "No encontré servicios que coincidan con la búsqueda.";
+	}
+	text = "Servicios disponibles:\n";
+	index = 1;
+	for each  s in services
+	{
+		line = index + ". " + s.get("serviceId") + " (" + s.get("serviceType") + ")";
+		if(s.get("price") != null)
+		{
+			line = line + " - " + s.get("price") + " " + currency;
+		}
+		if(s.get("estimatedTime") != null && s.get("estimatedTime") != "")
+		{
+			line = line + " - " + s.get("estimatedTime");
+		}
+		text = text + line + "\n";
+		index = index + 1;
+	}
+	return text;
 }
 string chat_common.format_top_customers(map data)
 {
@@ -286,6 +287,10 @@ string chat_common.format_tracking(map pkg)
   }
   text = "Paquete " + pkg.get("trackingNumber") + "\n";
   text = text + "Estado: " + pkg.get("status") + "\n";
+  if(pkg.get("lastUpdate") != null && pkg.get("lastUpdate") != "")
+  {
+    text = text + "Fecha actualización: " + pkg.get("lastUpdate") + "\n";
+  }
   if(pkg.get("currentLocation") != null && pkg.get("currentLocation") != "")
   {
     text = text + "Ubicación actual: " + pkg.get("currentLocation") + "\n";

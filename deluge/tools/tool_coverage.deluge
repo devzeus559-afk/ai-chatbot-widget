@@ -23,95 +23,87 @@
 
 map chat_tools.check_coverage(map params)
 {
-  config = thisapp.chat_config.chat_config();
-  locFields = config.get("coverageFields");
-  vFields = config.get("vendorFields");
-  // --- ubicaciones (Coverage_Location): TODO el el catálogo y filtro country en memoria ---
-  records = thisapp.chat_data_access.fetch_coverage_all();
-  if(records == null)
-  {
-    records = List();
-  }
-  country = params.get("country");
-  locList = List();
-  for each  c in records
-  {
-    addr = c.get(locFields.get("address"));
-    countryValue = "";
-    stateValue = "";
-    if(addr != null)
-    {
-      co = addr.get(locFields.get("country"));
-      if(co != null)
-      {
-        countryValue = "" + co;
-      }
-      st = addr.get(locFields.get("state"));
-      if(st != null)
-      {
-        stateValue = "" + st;
-      }
-    }
-    if(country != null && country != "")
-    {
-      if(("" + country).trim().lower() != countryValue.trim().lower())
-      {
-        continue;
-      }
-    }
-    item = Map();
-    item.put("name",c.get(locFields.get("name")));
-    item.put("locationId",c.get(locFields.get("locationId")));
-    item.put("country",countryValue);
-    item.put("state",stateValue);
-    locList.add(item);
-  }
-  // --- proveedores (Vendor): ID-list por Service_Type / nombre, con guard de lista vacía ---
-  serviceType = params.get("serviceType");
-  vendor = params.get("vendor");
-  targetIDs = List();
-  hasFilter = false;
-  if(serviceType != null && serviceType != "")
-  {
-    targetIDs.addAll(thisapp.chat_data_access.fetch_vendors_ids_by_type(serviceType));
-    hasFilter = true;
-  }
-  if(vendor != null && vendor != "")
-  {
-    ids = thisapp.chat_data_access.fetch_vendors_ids_by_name(vendor);
-    if(hasFilter)
-    {
-      targetIDs = targetIDs.intersect(ids);
-    }
-    else
-    {
-      targetIDs.addAll(ids);
-      hasFilter = true;
-    }
-  }
-  if(!hasFilter)
-  {
-    vendorRecords = thisapp.chat_data_access.fetch_vendors_all();
-  }
-  else if(targetIDs.size() == 0)
-  {
-    vendorRecords = List();
-  }
-  else
-  {
-    vendorRecords = thisapp.chat_data_access.fetch_vendors_by_ids(targetIDs);
-  }
-  vendorList = List();
-  if(vendorRecords != null)
-  {
-    for each  v in vendorRecords
-    {
-      vitem = Map();
-      vitem.put("name",v.get(vFields.get("name")));
-      vitem.put("vendorId",v.get(vFields.get("vendorId")));
-      vitem.put("type",v.get(vFields.get("type")));
-      vendorList.add(vitem);
-    }
-  }
-  return {"ok":true,"data":locList,"vendors":vendorList};
+	records = thisapp.chat_data_access.fetch_coverage_all();
+	if(records == null)
+	{
+		records = List();
+	}
+	country = params.get("country");
+	locList = List();
+	for each  c in records
+	{
+		countryValue = "";
+		stateValue = "";
+		co = c.get("country");
+		if(co != null)
+		{
+			countryValue = "" + co;
+		}
+		st = c.get("state");
+		if(st != null)
+		{
+			stateValue = "" + st;
+		}
+
+		if(country != null && country != "")
+		{
+			if(("" + country).trim().lower() != countryValue.trim().lower())
+			{
+				continue;
+			}
+		}
+		item = Map();
+		item.put("name",c.get("location"));
+		item.put("country",countryValue);
+		item.put("state",stateValue);
+		locList.add(item);
+	}
+	// --- proveedores (Vendor): ID-list por Service_Type / nombre, con guard de lista vacía ---
+	serviceType = params.get("serviceType");
+	vendor = params.get("vendor");
+	targetIDs = List();
+	hasFilter = false;
+	if(serviceType != null && serviceType != "")
+	{
+		targetIDs.addAll(thisapp.chat_data_access.fetch_vendors_ids_by_type(serviceType));
+		hasFilter = true;
+	}
+	if(vendor != null && vendor != "")
+	{
+		ids = thisapp.chat_data_access.fetch_vendors_ids_by_name(vendor);
+		if(hasFilter)
+		{
+			targetIDs = targetIDs.intersect(ids);
+		}
+		else
+		{
+			targetIDs.addAll(ids);
+			hasFilter = true;
+		}
+	}
+	if(!hasFilter)
+	{
+		vendorRecords = thisapp.chat_data_access.fetch_vendors_all();
+	}
+	else if(targetIDs.size() == 0)
+	{
+		vendorRecords = List();
+	}
+	else
+	{
+		vendorRecords = thisapp.chat_data_access.fetch_vendors_by_ids(targetIDs);
+	}
+	vendorList = List();
+	if(vendorRecords != null)
+	{
+		for each  v in vendorRecords
+		{
+			vitem = Map();
+			vitem.put("name",v.get("vendorName"));
+			vitem.put("vendorId",v.get("vendorId"));
+			vitem.put("type",v.get("vendorType"));
+			vendorList.add(vitem);
+		}
+	}
+	return {"ok":true,"data":locList,"vendors":vendorList};
 }

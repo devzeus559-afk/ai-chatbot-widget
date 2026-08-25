@@ -82,7 +82,6 @@
       truncated = total > 200;
       records = thisapp.chat_data_access.fetch_services_by_ids(targetIDs);
     }
-    // 	info "records: "+ records;
     // Agregación por remitente (Map clave = "" + senderId normalizado)
     senderMap = Map();
     if(records == null)
@@ -91,9 +90,9 @@
     }
     for each  s in records
     {
-      service_record = Service[ID == s];
-      // 		senderVal = s.get(fields.get("sender"));
-      senderVal = service_record.Sender_field;
+      // 		service_record = Service[ID == s];
+      senderVal = s.get("customerId");
+      // 		senderVal = service_record.Sender_field;
       if(senderVal == null)
       {
         continue;
@@ -109,10 +108,8 @@
         continue;
       }
       key = "" + senderId;
-      // 		serviceDate = s.get(fields.get("date"));
-      serviceDate = service_record.Date_field1;
-      // 		st = s.get(fields.get("type"));
-      st = service_record.Service_Type;
+      serviceDate = s.get("date");
+      st = s.get("serviceType");
       if(st == null || st == "")
       {
         st = "Other";
