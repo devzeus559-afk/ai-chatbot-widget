@@ -339,6 +339,19 @@ map tests_chat_intent.run_live_first_turn(map counters)
   r13 = thisapp.chat_intent.chat_intent("Cuéntame un chiste",List());
   info "LIVE-13 result: " + r13.toString();
   counters = thisapp.tests_chat_intent.assert_equals("LIVE-13: kind clarify para off-topic chiste",r13.get("kind"),"clarify",counters);
+  // 14 — regression: parece off-topic pero es in-domain (Argentina → check_coverage)
+  info "LIVE-14 regression in-domain prompt: ¿Tienen servicio en Argentina?";
+  r14 = thisapp.chat_intent.chat_intent("¿Tienen servicio en Argentina?",List());
+  info "LIVE-14 result: " + r14.toString();
+  counters = thisapp.tests_chat_intent.assert_equals("LIVE-14: tool check_coverage para Argentina",r14.get("tool"),"check_coverage",counters);
+  counters = thisapp.tests_chat_intent.assert_equals("LIVE-14: kind tool (Argentina es in-domain)",r14.get("kind"),"tool",counters);
+  // 15 — regression: fuera de dominio real (Bitcoin no está en tools)
+  info "LIVE-15 regression off-topic prompt: ¿Aceptan Bitcoin?";
+  r15 = thisapp.chat_intent.chat_intent("¿Aceptan Bitcoin?",List());
+  info "LIVE-15 result: " + r15.toString();
+  kind15 = r15.get("kind");
+  isClarify15 = kind15 == "clarify" || kind15 == "answer";
+  counters = thisapp.tests_chat_intent.assert_true("LIVE-15: clarify/answer para Bitcoin (no es tool)",isClarify15 == true,counters,"kind=" + kind15);
   return counters;
 }
 
