@@ -324,21 +324,36 @@ map tests_chat_intent.run_live_first_turn(map counters)
   kind10 = r10.get("kind");
   isClarify10 = kind10 == "clarify" || kind10 == "answer" || r10.get("status") == "error";
   counters = thisapp.tests_chat_intent.assert_true("LIVE-10: clarify/answer/error para ABC",isClarify10 == true,counters,"kind=" + kind10);
-  // 11 — off-topic clima
+  // 11 — off-topic clima (Zia puede devolver clarify o answer; el texto debe mencionar dominio)
   info "LIVE-11 off-topic prompt: ¿Cuál es el clima en Madrid?";
   r11 = thisapp.chat_intent.chat_intent("¿Cuál es el clima en Madrid?",List());
   info "LIVE-11 result: " + r11.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-11: kind clarify para off-topic clima",r11.get("kind"),"clarify",counters);
+  kind11 = r11.get("kind");
+  isRelevant11 = kind11 == "clarify" || kind11 == "answer";
+  counters = thisapp.tests_chat_intent.assert_true("LIVE-11: clarify/answer para off-topic clima",isRelevant11 == true,counters,"kind=" + kind11);
+  text11 = r11.get("text");
+  if(text11 == null) { text11 = ""; }
+  counters = thisapp.tests_chat_intent.assert_contains("LIVE-11: respuesta menciona dominio",text11,"paquetería",counters);
   // 12 — off-topic fútbol
   info "LIVE-12 off-topic prompt: ¿Quién ganó el mundial?";
   r12 = thisapp.chat_intent.chat_intent("¿Quién ganó el mundial?",List());
   info "LIVE-12 result: " + r12.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-12: kind clarify para off-topic fútbol",r12.get("kind"),"clarify",counters);
+  kind12 = r12.get("kind");
+  isRelevant12 = kind12 == "clarify" || kind12 == "answer";
+  counters = thisapp.tests_chat_intent.assert_true("LIVE-12: clarify/answer para off-topic fútbol",isRelevant12 == true,counters,"kind=" + kind12);
+  text12 = r12.get("text");
+  if(text12 == null) { text12 = ""; }
+  counters = thisapp.tests_chat_intent.assert_contains("LIVE-12: respuesta menciona dominio",text12,"paquetería",counters);
   // 13 — off-topic chiste
   info "LIVE-13 off-topic prompt: Cuéntame un chiste";
   r13 = thisapp.chat_intent.chat_intent("Cuéntame un chiste",List());
   info "LIVE-13 result: " + r13.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-13: kind clarify para off-topic chiste",r13.get("kind"),"clarify",counters);
+  kind13 = r13.get("kind");
+  isRelevant13 = kind13 == "clarify" || kind13 == "answer";
+  counters = thisapp.tests_chat_intent.assert_true("LIVE-13: clarify/answer para off-topic chiste",isRelevant13 == true,counters,"kind=" + kind13);
+  text13 = r13.get("text");
+  if(text13 == null) { text13 = ""; }
+  counters = thisapp.tests_chat_intent.assert_contains("LIVE-13: respuesta menciona dominio",text13,"paquetería",counters);
   // 14 — regression: parece off-topic pero es in-domain (Argentina → check_coverage)
   info "LIVE-14 regression in-domain prompt: ¿Tienen servicio en Argentina?";
   r14 = thisapp.chat_intent.chat_intent("¿Tienen servicio en Argentina?",List());
