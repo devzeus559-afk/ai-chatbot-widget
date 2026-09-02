@@ -360,13 +360,16 @@ map tests_chat_intent.run_live_first_turn(map counters)
   info "LIVE-14 result: " + r14.toString();
   counters = thisapp.tests_chat_intent.assert_equals("LIVE-14: tool check_coverage para Argentina",r14.get("tool"),"check_coverage",counters);
   counters = thisapp.tests_chat_intent.assert_equals("LIVE-14: kind tool (Argentina es in-domain)",r14.get("kind"),"tool",counters);
-  // 15 — regression: fuera de dominio real (Bitcoin no está en tools)
+  // 15 — regression: Bitcoin no aceptado, respuesta debe mencionar métodos reales
   info "LIVE-15 regression off-topic prompt: ¿Aceptan Bitcoin?";
   r15 = thisapp.chat_intent.chat_intent("¿Aceptan Bitcoin?",List());
   info "LIVE-15 result: " + r15.toString();
   kind15 = r15.get("kind");
   isClarify15 = kind15 == "clarify" || kind15 == "answer";
   counters = thisapp.tests_chat_intent.assert_true("LIVE-15: clarify/answer para Bitcoin (no es tool)",isClarify15 == true,counters,"kind=" + kind15);
+  text15 = r15.get("text");
+  if(text15 == null) { text15 = ""; }
+  counters = thisapp.tests_chat_intent.assert_contains("LIVE-15: respuesta menciona transferencia",text15,"transferencia",counters);
   return counters;
 }
 
