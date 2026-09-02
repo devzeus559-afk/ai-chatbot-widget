@@ -33,60 +33,29 @@ string chat_intent.build_intent_prompt(string userPrompt, list history, string c
   prompt = prompt + "MENSAJE ACTUAL DEL USUARIO:\n" + userPrompt;
   return prompt;
 }
-map chat_intent.chat_intent(string userPrompt, list history)
+map chat_intent.normalize_zia_response(map response)
 {
-  /**
-  * chat_intent.dg
-  *
-  * Router de intención: llama a la tarea Zia de Deluge y normaliza la salida
-  * a UNO de estos contratos:
-  *
-  *   {"tool": "<nombre>", "params": {...}}   → necesita datos de la app
-  *   {"answer": "<texto>"}                    → respuesta directa sin tools
-  *   {"clarify": "<pregunta>"}                → falta información
-  *
-  * La salida de Zia es TEXTO; se pide JSON estricto con temperature 0 y se
-  * valida con parse_json_strict (chat_common.dg).
-  */
-  config = thisapp.chat_config.chat_config();
-  catalogText = config.get("toolsText");
-  context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Ayudas a clientes y agentes a consultar " + "datos de la aplicación. Debes responder ÚNICAMENTE con JSON válido, " + "sin texto adicional ni markdown.";
-  message = thisapp.chat_intent.build_intent_prompt(userPrompt,history,catalogText);
-  response = zia
-  [
-  message:message
-  context:context
-  parameters:{"temperature":0.0}
-  ];
-  // Zia puede devolver null o un Map sin "status" al fallar (p. ej. IA no
-  // habilitada en la organización). Nunca evaluar !null en Deluge: el
-  // fallo debe derivar a la rama de error, no romper el turno.
+  // Normaliza la respuesta cruda de Zia al contrato {status,kind,tool/params/text}.
+  // Extraído para testeo unitario sin llamar a Zia (ver tests_chat_intent.deluge).
+  // Zia puede devolver null o un Map sin "status" al fallar (p. ej. IA no habilitada).
   if(response == null)
   {
     return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
   }
-  // La respuesta de Zia task es un objeto con atributos accedidos por punto:
-  //   response.status → boolean (éxito de la tarea)
-  //   response.data   → String (texto del LLM, contiene JSON)
-  //   response.error  → String/null (mensaje si falló)
-  if(response.status == true && response.data != null)
+  if(response.get("status") == true && response.get("data") != null)
   {
-    // Zia puede devolver data como Map (ya parseado) o como String (crudo).
-    // Si es Map, toMap() produce formato Deluge (sin comillas) → parse_error.
-    // Solución: intentar usar directamente; si no es Map, parsear como String.
-    dataValue = response.data;
-    dataFormatted = dataValue.toMap();
+    dataValue = response.get("data");
     parsed = null;
     try
     {
-      // Si es Map, containsKey funciona directamente
+      dataFormatted = dataValue.toMap();
       if(dataFormatted.containKey("tool") || dataFormatted.containKey("answer") || dataFormatted.containKey("clarify"))
       {
         parsed = dataFormatted;
       }
-    }		catch (e)
+    } catch (e)
     {
-      // No es Map — tratar como String
+      // toMap lanzó (fences/ruido) — cae a parse_json_strict
     }
     if(parsed == null)
     {
@@ -95,10 +64,9 @@ map chat_intent.chat_intent(string userPrompt, list history)
   }
   else
   {
-    errorMsg = if(response.error != null,response.error,"Error desconocido");
+    errorMsg = if(response.get("error") != null,response.get("error"),"Error desconocido");
     return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. " + errorMsg};
   }
-  // 	info "parsed: "+ parsed;
   // Normalización del contrato (con try/catch por si el JSON no es un objeto)
   try
   {
@@ -123,9 +91,48 @@ map chat_intent.chat_intent(string userPrompt, list history)
     {
       return {"status":"ok","kind":"clarify","text":parsed.get("clarify")};
     }
-  }	catch (e)
+  } catch (e)
   {
     // JSON válido pero con otra forma: pedir reformulación
   }
   return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+}
+map chat_intent.chat_intent(string userPrompt, list history)
+{
+  /**
+   * chat_intent.dg
+   *
+   * Router de intención: llama a la tarea Zia de Deluge y normaliza la salida
+   * a UNO de estos contratos:
+   *
+   *   {"tool": "<nombre>", "params": {...}}   → necesita datos de la app
+   *   {"answer": "<texto>"}                    → respuesta directa sin tools
+   *   {"clarify": "<pregunta>"}                → falta información
+   *
+   * La salida de Zia es TEXTO; se pide JSON estricto con temperature 0 y se
+   * valida con parse_json_strict (chat_common.dg).
+   */
+  config = thisapp.chat_config.chat_config();
+  catalogText = config.get("toolsText");
+  context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Ayudas a clientes y agentes a consultar " + "datos de la aplicación. Debes responder ÚNICAMENTE con JSON válido, " + "sin texto adicional ni markdown.";
+  message = thisapp.chat_intent.build_intent_prompt(userPrompt,history,catalogText);
+  zia_response = zia
+  [
+  message:message
+  context:context
+  parameters:{"temperature":0.0}
+  ];
+  if(zia_response == null)
+  {
+    return thisapp.chat_intent.normalize_zia_response(null);
+  }
+  // La respuesta de Zia task es un objeto con atributos accedidos por punto:
+	//   response.status → boolean (éxito de la tarea)
+	//   response.data   → String (texto del LLM, contiene JSON) o Map ya parseado
+	//   response.error  → String/null (mensaje si falló)	
+  response = Map();
+	response.put("status",zia_response.status);
+	response.put("data",zia_response.data);
+	response.put("error",zia_response.error);
+  return thisapp.chat_intent.normalize_zia_response(response);
 }
