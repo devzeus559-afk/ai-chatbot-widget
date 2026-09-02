@@ -324,6 +324,21 @@ map tests_chat_intent.run_live_first_turn(map counters)
   kind10 = r10.get("kind");
   isClarify10 = kind10 == "clarify" || kind10 == "answer" || r10.get("status") == "error";
   counters = thisapp.tests_chat_intent.assert_true("LIVE-10: clarify/answer/error para ABC",isClarify10 == true,counters,"kind=" + kind10);
+  // 11 — off-topic clima
+  info "LIVE-11 off-topic prompt: ¿Cuál es el clima en Madrid?";
+  r11 = thisapp.chat_intent.chat_intent("¿Cuál es el clima en Madrid?",List());
+  info "LIVE-11 result: " + r11.toString();
+  counters = thisapp.tests_chat_intent.assert_equals("LIVE-11: kind clarify para off-topic clima",r11.get("kind"),"clarify",counters);
+  // 12 — off-topic fútbol
+  info "LIVE-12 off-topic prompt: ¿Quién ganó el mundial?";
+  r12 = thisapp.chat_intent.chat_intent("¿Quién ganó el mundial?",List());
+  info "LIVE-12 result: " + r12.toString();
+  counters = thisapp.tests_chat_intent.assert_equals("LIVE-12: kind clarify para off-topic fútbol",r12.get("kind"),"clarify",counters);
+  // 13 — off-topic chiste
+  info "LIVE-13 off-topic prompt: Cuéntame un chiste";
+  r13 = thisapp.chat_intent.chat_intent("Cuéntame un chiste",List());
+  info "LIVE-13 result: " + r13.toString();
+  counters = thisapp.tests_chat_intent.assert_equals("LIVE-13: kind clarify para off-topic chiste",r13.get("kind"),"clarify",counters);
   return counters;
 }
 

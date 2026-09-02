@@ -115,6 +115,7 @@ map chat_intent.chat_intent(string userPrompt, list history)
   config = thisapp.chat_config.chat_config();
   catalogText = config.get("toolsText");
   context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Ayudas a clientes y agentes a consultar " + "datos de la aplicación. Debes responder ÚNICAMENTE con JSON válido, " + "sin texto adicional ni markdown.";
+  context = context + " Si el usuario pregunta sobre algo NO relacionado con " + "paquetería, rastreo de envíos, remesas, recargas telefónicas, cobertura, " + "oficinas o contactos de la empresa, responde SOLO con: " + "{\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, " + "remesas y recargas. ¿En qué puedo asistirte?\"}";
   message = thisapp.chat_intent.build_intent_prompt(userPrompt,history,catalogText);
   zia_response = zia
   [
