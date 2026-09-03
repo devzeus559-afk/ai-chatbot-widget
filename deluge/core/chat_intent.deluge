@@ -118,6 +118,7 @@ map chat_intent.chat_intent(string userPrompt, list history)
   context = context + " Si el usuario pregunta sobre algo NO relacionado con " + "paquetería, rastreo de envíos, remesas, recargas telefónicas, cobertura, " + "oficinas o contactos de la empresa, responde SOLO con: " + "{\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, " + "remesas y recargas. ¿En qué puedo asistirte?\"}";
   context = context + " Cuando el usuario pregunte por servicios, cobertura, oficinas " + "o contactos, DEBES usar la herramienta correspondiente. Nunca respondas " + "directamente.";
   context = context + " INFORMACIÓN COMERCIAL:\n" + "- Métodos de pago aceptados: transferencia bancaria, efectivo, tarjeta de crédito/débito\n" + "- Servicios: paquetería internacional, remesas, recargas telefónicas\n" + "- Cobertura: Latinoamérica, España, Estados Unidos";
+  context = context + " Para consultas sobre métodos de pago, responde directamente " + "con la información comercial proporcionada. Ejemplo: si preguntan por Bitcoin, " + "responde que los métodos aceptados son transferencia bancaria, efectivo y tarjeta.";
   message = thisapp.chat_intent.build_intent_prompt(userPrompt,history,catalogText);
   zia_response = zia
   [
