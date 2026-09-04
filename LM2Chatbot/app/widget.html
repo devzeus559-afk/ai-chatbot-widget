@@ -855,36 +855,7 @@
           </h1>
           <p class="welcome-subtitle">Begin exploring with these examples</p>
 
-          <div class="suggestions">
-            <div
-              class="suggestion-chip"
-              onclick="useSuggestion('Calculate remaining days in this month')"
-            >
-              <span class="suggestion-icon">💡</span>
-              <span>Calculate top N clients in this month</span>
-            </div>
-            <div
-              class="suggestion-chip"
-              onclick="useSuggestion('Send notification mail to logged-in user')"
-            >
-              <span class="suggestion-icon">✉️</span>
-              <span>Send notification mail to logged-in user</span>
-            </div>
-            <div
-              class="suggestion-chip"
-              onclick="useSuggestion('List the available offices')"
-            >
-              <span class="suggestion-icon">🏢</span>
-              <span>List available offices</span>
-            </div>
-            <div
-              class="suggestion-chip"
-              onclick="useSuggestion('Track my package')"
-            >
-              <span class="suggestion-icon">📦</span>
-              <span>Track my package</span>
-            </div>
-          </div>
+          <div id="suggestionsContainer" class="suggestions"></div>
         </div>
 
         <!-- 2.4  Lista de mensajes -->
@@ -2247,13 +2218,60 @@
 
       sendBtn.addEventListener("click", sendMessage);
 
-      function useSuggestion(text) {
-        chatInput.value = text;
-        chatInput.dispatchEvent(new Event("input"));
-        sendMessage();
-      }
+        // -------------------------------------------------------------------
+        // 1. Helper para cargar las sugerencias desde Creator (fetch_suggestions)
+        // -------------------------------------------------------------------
+        function loadSuggestions() {
+            var data = {
+                "method_name": "fetch_suggestions",
+                "arguments": {}
+            };
+            ZOHO.CREATOR.API.invoke(data).then(function (response) {
+                var suggestions = response.data || [];
+                renderSuggestionButtons(suggestions);
+            }).catch(function (err) {
+                console.error("Error loading suggestions:", err);
+            });
+        }
 
-      // Sidebar
+        // -------------------------------------------------------------------
+        // 2. Renderizado de los botones en la UI
+        // -------------------------------------------------------------------
+        function renderSuggestionButtons(suggestions) {
+            // ordenar por campo `order`
+            suggestions.sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+            var container = document.getElementById('suggestionsContainer');
+            if (!container) return;
+            container.innerHTML = '';
+            suggestions.forEach(function (s) {
+                if (s.enabled === false) return; // saltar desactivadas
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = s.label;
+                btn.style.padding = '6px 12px';
+                btn.style.border = '1px solid var(--primary-blue)';
+                btn.style.background = 'var(--primary-blue)';
+                btn.style.color = '#fff';
+                btn.style.borderRadius = '4px';
+                btn.style.cursor = 'pointer';
+                btn.onclick = function () {
+                    // `payload` ya contiene la estructura {tool:..., params:{}}
+                    sendQuery(s.payload);
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        // -------------------------------------------------------------------
+        // 3. Inicializar al cargar la página
+        // -------------------------------------------------------------------
+        window.addEventListener('load', function () {
+            loadSuggestions();
+        });
+        // -------------------------------------------------------------------
+        // Fin de inserción de sugerencias dinámicas
+        // -------------------------------------------------------------------
+
       toggleSidebarBtn.addEventListener("click", () => {
         if (mq.matches) {
           const open = sidebar.classList.toggle("open");
