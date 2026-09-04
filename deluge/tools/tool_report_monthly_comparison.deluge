@@ -1,0 +1,160 @@
+/**
+ * tool_report_monthly_comparison.deluge
+ *
+ * Reporte métrico: comparación de promedios mensuales de libras (Package.
+ * Total_Weight) a lo largo de los últimos N meses (default 3), con variación
+ * (% delta) vs el mes anterior.
+ *
+ * Recibe: {"months"?: string|number (default 3),
+ *          "startDate"?: date, "endDate"?: date,
+ *          "office"?: string}
+ * Devuelve: {"ok": true, "data": {
+ *   reportType: "monthly_comparison", office,
+ *   months: [{monthLabel, totalPounds, daysInMonth, monthlyAverage,
+ *             monthlyAverageLabel, deltaPct}],
+ *   trend: [{monthLabel, value}]}}
+ *
+ * Viz: line sobre los meses (esSerieTiempo=true).
+ */
+
+map chat_tools.report_monthly_comparison(map params)
+{
+  config = thisapp.chat_config.chat_config();
+  monthNum = 3;
+  monthsParam = params.get("months");
+  if(monthsParam != null && monthsParam != "")
+  {
+    monthNum = toNumber("" + monthsParam);
+    if(monthNum == null || monthNum <= 0)
+    {
+      monthNum = 3;
+    }
+  }
+  endDate = zoho.currentdate;
+  startDate = thisapp.chat_common.first_of_month(endDate).subMonth(monthNum - 1);
+  sd = params.get("startDate");
+  if(sd != null && sd != "")
+  {
+    startDate = toDate("" + sd);
+  }
+  ed = params.get("endDate");
+  if(ed != null && ed != "")
+  {
+    endDate = toDate("" + ed);
+  }
+  officeName = params.get("office");
+  officeZid = 0;
+  reportedOffice = null;
+  if(officeName != null && officeName != "")
+  {
+    officeZid = thisapp.chat_data_access.fetch_office_id_by_name(officeName);
+    if(officeZid == null || officeZid <= 0)
+    {
+      return {"ok":true,"data":{"reportType":"monthly_comparison","empty":true,"message":"Oficina no encontrada."}};
+    }
+    reportedOffice = officeName;
+  }
+  records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+  if(records == null)
+  {
+    records = List();
+  }
+  // Bucket por mes (clave YYYY-MM)
+  monthMap = Map();
+  for each  p in records
+  {
+    rd = p.get("receiptDate");
+    if(rd == null)
+    {
+      continue;
+    }
+    mKey = "" + rd.getYear() + "-" + (rd.getMonth() + 1);
+    w = p.get("totalWeight");
+    if(w == null || w == "")
+    {
+      w = 0;
+    }
+    e = monthMap.get(mKey);
+    if(e == null)
+    {
+      e = Map();
+      e.put("key",mKey);
+      e.put("year",rd.getYear());
+      e.put("month",rd.getMonth() + 1);
+      e.put("pounds",w);
+      monthMap.put(mKey,e);
+    }
+    else
+    {
+      e.put("pounds",e.get("pounds") + w);
+    }
+  }
+  // Construir la secuencia de meses de startDate a endDate
+  monthList = List();
+  cursor = thisapp.chat_common.first_of_month(startDate);
+  while(cursor <= endDate)
+  {
+    label = "" + cursor.getYear() + "-" + (cursor.getMonth() + 1);
+    monthList.add(label);
+    cursor = cursor.addMonth(1);
+  }
+  monthsOut = List();
+  prevAvg = null;
+  // cursor recorre de nuevo el rango para tener año/mes en cada iteración
+  cursor2 = thisapp.chat_common.first_of_month(startDate);
+  for each  label in monthList
+  {
+    me = monthMap.get(label);
+    pounds = 0;
+    if(me != null && me.get("pounds") != null)
+    {
+      pounds = me.get("pounds");
+    }
+    daysInMonth = thisapp.chat_common.days_in_month_range(cursor2.getYear(),cursor2.getMonth() + 1,startDate,endDate);
+    if(daysInMonth == null || daysInMonth < 1)
+    {
+      daysInMonth = 1;
+    }
+    monthlyAvg = round(pounds / daysInMonth,1);
+    out = Map();
+    out.put("monthLabel",label);
+    out.put("totalPounds",pounds);
+    out.put("daysInMonth",daysInMonth);
+    out.put("monthlyAverage",monthlyAvg);
+    delta = null;
+    if(prevAvg != null && prevAvg > 0)
+    {
+      delta = round(((monthlyAvg - prevAvg) / prevAvg) * 100,1);
+    }
+    out.put("deltaPct",delta);
+    out.put("monthlyAverageLabel","" + monthlyAvg + " lbs/día");
+    monthsOut.add(out);
+    prevAvg = monthlyAvg;
+    cursor2 = cursor2.addMonth(1);
+  }
+  data = Map();
+  data.put("reportType","monthly_comparison");
+  data.put("office",reportedOffice);
+  data.put("months",monthsOut);
+  // trend para viz
+  tl = List();
+  tv = List();
+  for each  m in monthsOut
+  {
+    tl.add(m.get("monthLabel"));
+    tv.add(m.get("monthlyAverage"));
+  }
+  data.put("trend",{"labels":tl,"values":tv});
+  if(monthsOut.size() == 0)
+  {
+    return {"ok":true,"data":data,"visualization":null};
+  }
+  vizType = thisapp.chat_common.decidirVisualizacion(tl,true);
+  series = List();
+  ss = Map();
+  ss.put("name","Promedio diario (lbs)");
+  ss.put("values",tv);
+  series.add(ss);
+  viz = thisapp.chat_common.build_viz(vizType,"Comparación mensual de libras",tl,series);
+  return {"ok":true,"data":data,"visualization":viz};
+}

@@ -4,7 +4,16 @@
 * Helpers compartidos por el backend del chatbot.
 * Funciones: parse_json_strict, compose_reply, format_tracking,
 *            format_services, format_offices, format_coverage,
-*            format_contacts, format_top_customers
+*            format_contacts, format_top_customers,
+*            format_top_package_customers, format_top_remittance_customers,
+*            format_shipping_type_frequency, format_merchandise_type,
+*            format_pounds_shipped, format_daily_average,
+*            format_monthly_comparison, format_delayed_packages,
+*            format_unscanned_packages,
+*            build_empty_report, build_empty_package_customers_report,
+*            build_empty_remittance_report, build_empty_shipping_report,
+*            build_empty_merchandise_report, build_breakdown_list,
+*            first_of_month, days_in_month_range
 *
 * Nota: el filtrado nativo NO usa builders de criterios (Form[criteriaVar]
 * es inválido en Creator, gate 5.1). La combinación AND se hace en las tools
@@ -87,6 +96,42 @@ map chat_common.compose_reply(map toolResult, map intent)
   if(toolName == "report_top_customers")
   {
     return {"text":thisapp.chat_common.format_top_customers(data),"visualization":viz};
+  }
+  if(toolName == "report_top_package_customers")
+  {
+    return {"text":thisapp.chat_common.format_top_package_customers(data),"visualization":viz};
+  }
+  if(toolName == "report_top_remittance_customers")
+  {
+    return {"text":thisapp.chat_common.format_top_remittance_customers(data),"visualization":viz};
+  }
+  if(toolName == "report_shipping_type_frequency")
+  {
+    return {"text":thisapp.chat_common.format_shipping_type_frequency(data),"visualization":viz};
+  }
+  if(toolName == "report_merchandise_type")
+  {
+    return {"text":thisapp.chat_common.format_merchandise_type(data),"visualization":viz};
+  }
+  if(toolName == "report_pounds_shipped")
+  {
+    return {"text":thisapp.chat_common.format_pounds_shipped(data),"visualization":viz};
+  }
+  if(toolName == "report_daily_average")
+  {
+    return {"text":thisapp.chat_common.format_daily_average(data),"visualization":viz};
+  }
+  if(toolName == "report_monthly_comparison")
+  {
+    return {"text":thisapp.chat_common.format_monthly_comparison(data),"visualization":viz};
+  }
+  if(toolName == "report_delayed_packages")
+  {
+    return {"text":thisapp.chat_common.format_delayed_packages(data),"visualization":viz};
+  }
+  if(toolName == "report_unscanned_packages")
+  {
+    return {"text":thisapp.chat_common.format_unscanned_packages(data),"visualization":viz};
   }
   return {"text":"Datos obtenidos: " + data.toString(),"visualization":viz};
 }
@@ -294,6 +339,219 @@ string chat_common.format_top_customers(map data)
   }
   return text;
 }
+string chat_common.format_top_package_customers(map data)
+{
+  if(data == null)
+  {
+    return "No encontré servicios de paquetería en los últimos 30 días.";
+  }
+  customers = data.get("customers");
+  if(customers == null || customers.size() == 0)
+  {
+    return "No encontré servicios de paquetería en los últimos 30 días.";
+  }
+  measure = data.get("measure");
+  unitLabel = "paquetes";
+  if(measure == "pounds")
+  {
+    unitLabel = "libras";
+  }
+  text = "Clientes más frecuentes de paquetería (últimos 30 días):\n";
+  for each  c in customers
+  {
+    line = c.get("rank") + ". " + c.get("customerName") + " — ";
+    if(measure == "pounds")
+    {
+      line = line + c.get("totalPounds") + " libras";
+    }
+    else
+    {
+      line = line + c.get("totalPackages") + " paquetes";
+    }
+    text = text + line + "\n";
+  }
+  if(data.get("truncated") == true)
+  {
+    text = text + "Nota: el ranking es aproximado (se analizaron los primeros 200 servicios).\n";
+  }
+  return text;
+}
+string chat_common.format_top_remittance_customers(map data)
+{
+  if(data == null)
+  {
+    return "No encontré remesas en los últimos 30 días.";
+  }
+  customers = data.get("customers");
+  if(customers == null || customers.size() == 0)
+  {
+    return "No encontré remesas en los últimos 30 días.";
+  }
+  text = "Clientes que más remesas envían (últimos 30 días):\n";
+  for each  c in customers
+  {
+    text = text + c.get("rank") + ". " + c.get("customerName") + " — " + c.get("totalAmount") + " USD\n";
+  }
+  if(data.get("truncated") == true)
+  {
+    text = text + "Nota: el ranking es aproximado (se analizaron los primeros 200 servicios).\n";
+  }
+  return text;
+}
+string chat_common.format_shipping_type_frequency(map data)
+{
+  if(data == null || data.get("totalPackages") == 0)
+  {
+    return "No encontré paquetes en los últimos 30 días.";
+  }
+  text = "Frecuencia por tipo de envío (últimos 30 días):\n";
+  text = text + "Total de paquetes: " + data.get("totalPackages") + "\n";
+  text = text + "Aéreas: " + data.get("airCount") + " | Marítimas: " + data.get("seaCount") + "\n";
+  shipments = data.get("shipments");
+  if(shipments != null)
+  {
+    for each  s in shipments
+    {
+      text = text + "- " + s.get("className") + " " + s.get("name") + ": " + s.get("packageCount") + " paquetes (" + s.get("sharePct") + "%)\n";
+    }
+  }
+  return text;
+}
+string chat_common.format_merchandise_type(map data)
+{
+  if(data == null || data.get("totalPackages") == 0)
+  {
+    return "No encontré paquetes en los últimos 30 días.";
+  }
+  text = "Paquetes por tipo de mercancía (últimos 30 días):\n";
+  merch = data.get("merchandise");
+  if(merch != null)
+  {
+    for each  m in merch
+    {
+      text = text + "- " + m.get("name") + ": " + m.get("packageCount") + " paquetes (" + m.get("sharePct") + "%)\n";
+    }
+  }
+  return text;
+}
+string chat_common.format_pounds_shipped(map data)
+{
+  if(data == null || data.get("totalPackages") == 0)
+  {
+    return "No encontré paquetes en el período indicado.";
+  }
+  text = "Libras enviadas en el período: " + data.get("totalPounds") + " lbs\n";
+  text = text + "Por oficina:\n";
+  byOffice = data.get("byOffice");
+  if(byOffice != null)
+  {
+    for each  b in byOffice
+    {
+      text = text + "- " + b.get("name") + ": " + b.get("pounds") + " lbs (" + b.get("count") + " paquetes)\n";
+    }
+  }
+  text = text + "Por tipo de carga:\n";
+  byType = data.get("byPackageType");
+  if(byType != null)
+  {
+    for each  t in byType
+    {
+      text = text + "- " + t.get("name") + ": " + t.get("pounds") + " lbs\n";
+    }
+  }
+  text = text + "Por clase de envío:\n";
+  byClass = data.get("byClass");
+  if(byClass != null)
+  {
+    for each  c in byClass
+    {
+      text = text + "- " + c.get("name") + ": " + c.get("pounds") + " lbs\n";
+    }
+  }
+  return text;
+}
+string chat_common.format_daily_average(map data)
+{
+  if(data == null || data.get("empty") == true)
+  {
+    return "No fue posible calcular el promedio diario.";
+  }
+  text = "Promedio diario de libras enviadas: " + data.get("dailyAverage") + " lbs/día (" + data.get("totalPounds") + " lbs en " + data.get("daysInPeriod") + " días).\n";
+  return text;
+}
+string chat_common.format_monthly_comparison(map data)
+{
+  if(data == null || data.get("empty") == true)
+  {
+    return "No fue posible generar la comparación mensual.";
+  }
+  months = data.get("months");
+  if(months == null || months.size() == 0)
+  {
+    return "No hay datos mensuales para comparar.";
+  }
+  text = "Comparación mensual de libras:\n";
+  for each  m in months
+  {
+    line = m.get("monthLabel") + ": " + m.get("monthlyAverage") + " lbs/día (" + m.get("totalPounds") + " lbs total)";
+    delta = m.get("deltaPct");
+    if(delta != null)
+    {
+      line = line + " — " + delta + "% vs mes anterior";
+    }
+    text = text + "- " + line + "\n";
+  }
+  return text;
+}
+string chat_common.format_delayed_packages(map data)
+{
+  if(data == null || data.get("totalDelayed") == 0)
+  {
+    return "No encontré cajas demoradas para el destino indicado.";
+  }
+  text = "Cajas demoradas: " + data.get("totalDelayed") + "\n";
+  byClass = data.get("byClass");
+  if(byClass != null)
+  {
+    text = text + "Aéreas: " + byClass.get("air") + " | Marítimas: " + byClass.get("maritime") + "\n";
+  }
+  delayed = data.get("delayed");
+  if(delayed != null)
+  {
+    for each  d in delayed
+    {
+      text = text + "- " + d.get("packageId") + " (" + d.get("shippingTypeName") + ", " + d.get("class") + "): " + d.get("daysSinceScan") + " días desde el scan (umbral " + d.get("threshold") + ")";
+      if(d.get("status") != null && d.get("status") != "")
+      {
+        text = text + " — estado: " + d.get("status");
+      }
+      text = text + "\n";
+    }
+  }
+  return text;
+}
+string chat_common.format_unscanned_packages(map data)
+{
+  if(data == null || data.get("totalUnscanned") == 0)
+  {
+    return "No encontré cajas sin escanear.";
+  }
+  text = "Cajas sin escanear: " + data.get("totalUnscanned") + "\n";
+  packages = data.get("packages");
+  if(packages != null)
+  {
+    for each  p in packages
+    {
+      text = text + "- " + p.get("packageId") + " (" + p.get("latestStatus") + ")";
+      if(p.get("officeName") != null && p.get("officeName") != "")
+      {
+        text = text + " — " + p.get("officeName");
+      }
+      text = text + "\n";
+    }
+  }
+  return text;
+}
 string chat_common.format_tracking(map pkg)
 {
   if(pkg == null)
@@ -346,6 +604,125 @@ list chat_common.insert_ranked_entry(list list_param, int index_param, map entry
     result.add(entry);
   }
   return result;
+}
+// --------------------------------------------------------------------------
+// Helpers de REPORTES (métricas 2-11): builders de reporte vacío y análisis
+// --------------------------------------------------------------------------
+map chat_common.build_empty_package_customers_report(date startDate, date endDate, string measure, string serviceType)
+{
+  data = Map();
+  data.put("reportType","top_package_customers");
+  data.put("measure",measure);
+  data.put("periodStart",startDate);
+  data.put("periodEnd",endDate);
+  data.put("serviceType",serviceType);
+  data.put("totalPackages",0);
+  data.put("totalPounds",0);
+  data.put("totalCustomers",0);
+  data.put("truncated",false);
+  data.put("customers",List());
+  return {"ok":true,"data":data};
+}
+map chat_common.build_empty_remittance_report(date startDate, date endDate)
+{
+  data = Map();
+  data.put("reportType","top_remittance_customers");
+  data.put("periodStart",startDate);
+  data.put("periodEnd",endDate);
+  data.put("totalServices",0);
+  data.put("totalAmount",0);
+  data.put("totalCustomers",0);
+  data.put("truncated",false);
+  data.put("customers",List());
+  return {"ok":true,"data":data};
+}
+map chat_common.build_empty_shipping_report(date startDate, date endDate, string office)
+{
+  data = Map();
+  data.put("reportType","shipping_type_frequency");
+  data.put("periodStart",startDate);
+  data.put("periodEnd",endDate);
+  data.put("office",office);
+  data.put("totalPackages",0);
+  data.put("airCount",0);
+  data.put("seaCount",0);
+  data.put("truncated",false);
+  data.put("shipments",List());
+  return {"ok":true,"data":data};
+}
+map chat_common.build_empty_merchandise_report(date startDate, date endDate, string office)
+{
+  data = Map();
+  data.put("reportType","merchandise_type");
+  data.put("periodStart",startDate);
+  data.put("periodEnd",endDate);
+  data.put("office",office);
+  data.put("totalPackages",0);
+  data.put("truncated",false);
+  data.put("merchandise",List());
+  return {"ok":true,"data":data};
+}
+list chat_common.build_breakdown_list(map aggMap)
+{
+  // Convierte un Map<clave, {name, pounds, count}> a una List<Map> ordenada
+  // desc por libras (operaciones garantizadas: size/get/add).
+  ranking = List();
+  if(aggMap == null)
+  {
+    return ranking;
+  }
+  for each  key in aggMap.keys()
+  {
+    entry = aggMap.get(key);
+    pos = ranking.size();
+    for each index i in ranking
+    {
+      cur = ranking.get(i);
+      if(entry.get("pounds") > cur.get("pounds"))
+      {
+        pos = i;
+        break;
+      }
+    }
+    ranking = thisapp.chat_common.insert_ranked_entry(ranking,pos,entry);
+  }
+  return ranking;
+}
+date chat_common.first_of_month(date d)
+{
+  if(d == null)
+  {
+    return zoho.currentdate;
+  }
+  y = d.getYear();
+  m = d.getMonth() + 1;
+  return date(y,m,1);
+}
+int chat_common.days_in_month_range(int year, int month, date rangeStart, date rangeEnd)
+{
+  // Días del mes (año/mes) que caen dentro de [rangeStart, rangeEnd], inclusive.
+  monthStart = date(year,month,1);
+  monthEnd = monthStart.addMonth(1).subDay(1);
+  oStart = monthStart;
+  if(rangeStart != null && rangeStart > monthStart)
+  {
+    oStart = rangeStart;
+  }
+  oEnd = monthEnd;
+  if(rangeEnd != null && rangeEnd < monthEnd)
+  {
+    oEnd = rangeEnd;
+  }
+  if(oEnd < oStart)
+  {
+    return 0;
+  }
+  days = oEnd.difference(oStart) + 1;
+  if(days == null || days < 1)
+  {
+    return 1;
+  }
+  return days;
 }
 string chat_common.join_list(List items, String sep)
 {

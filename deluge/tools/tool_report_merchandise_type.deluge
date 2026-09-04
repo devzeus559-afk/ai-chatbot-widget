@@ -1,0 +1,133 @@
+/**
+ * tool_report_merchandise_type.deluge
+ *
+ * Reporte métrico: distribución de paquetes por tipo de mercancía en una
+ * ventana de 30 días sobre Package.Receipt_Date. El tipo se lee de
+ * Shipment.Type_of_Merchandise vía el Package.Shipment_Type del paquete.
+ * Filtro opcional por oficina (metric 9).
+ *
+ * Recibe: {"limit"?: string|number (default todos),
+ *          "office"?: string (Office_Name de Commercial_Office)}
+ * Devuelve: {"ok": true, "data": {
+ *   reportType: "merchandise_type", periodStart, periodEnd, office,
+ *   totalPackages, truncated,
+ *   merchandise: [{name, packageCount, sharePct}]}}
+ *
+ * Viz: bar de paquetes por tipo de mercancía.
+ */
+
+map chat_tools.report_merchandise_type(map params)
+{
+  config = thisapp.chat_config.chat_config();
+  limitNum = 0;
+  limit = params.get("limit");
+  if(limit != null && limit != "")
+  {
+    limitNum = toNumber("" + limit);
+    if(limitNum == null || limitNum <= 0)
+    {
+      limitNum = 0;
+    }
+  }
+  officeName = params.get("office");
+  officeZid = 0;
+  reportedOffice = null;
+  if(officeName != null && officeName != "")
+  {
+    officeZid = thisapp.chat_data_access.fetch_office_id_by_name(officeName);
+    if(officeZid == null || officeZid <= 0)
+    {
+      return thisapp.chat_common.build_empty_merchandise_report(zoho.currentdate.subDay(30),zoho.currentdate,reportedOffice);
+    }
+    reportedOffice = officeName;
+  }
+  endDate = zoho.currentdate;
+  startDate = endDate.subDay(30);
+  records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+  if(records == null)
+  {
+    records = List();
+  }
+  total = records.size();
+  merchMap = Map();
+  for each  p in records
+  {
+    mt = p.get("merchType");
+    if(mt == null || mt == "")
+    {
+      mt = "Other";
+    }
+    key = "" + mt;
+    e = merchMap.get(key);
+    if(e == null)
+    {
+      e = Map();
+      e.put("name",mt);
+      e.put("count",1);
+      merchMap.put(key,e);
+    }
+    else
+    {
+      e.put("count",e.get("count") + 1);
+    }
+  }
+  ranking = List();
+  for each  key in merchMap.keys()
+  {
+    entry = merchMap.get(key);
+    pos = ranking.size();
+    for each index i in ranking
+    {
+      cur = ranking.get(i);
+      if(entry.get("count") > cur.get("count"))
+      {
+        pos = i;
+        break;
+      }
+    }
+    ranking = thisapp.chat_common.insert_ranked_entry(ranking,pos,entry);
+    if(limitNum > 0 && ranking.size() > limitNum)
+    {
+      ranking = ranking.subList(0,limitNum);
+    }
+  }
+  for each  e in ranking
+  {
+    share = 0;
+    if(total > 0)
+    {
+      share = e.get("count") * 100.0 / total;
+      share = round(share,1);
+    }
+    e.put("sharePct",share);
+    e.put("packageCount",e.get("count"));
+    e.remove("count");
+  }
+  data = Map();
+  data.put("reportType","merchandise_type");
+  data.put("periodStart",startDate);
+  data.put("periodEnd",endDate);
+  data.put("office",reportedOffice);
+  data.put("totalPackages",total);
+  data.put("truncated",false);
+  data.put("merchandise",ranking);
+  if(total == 0)
+  {
+    return thisapp.chat_common.build_empty_merchandise_report(startDate,endDate,reportedOffice);
+  }
+  vizLabels = List();
+  vizValues = List();
+  for each  m in ranking
+  {
+    vizLabels.add(m.get("name"));
+    vizValues.add(m.get("packageCount"));
+  }
+  vizType = thisapp.chat_common.decidirVisualizacion(vizLabels,false);
+  series = List();
+  ss = Map();
+  ss.put("name","Paquetes");
+  ss.put("values",vizValues);
+  series.add(ss);
+  viz = thisapp.chat_common.build_viz(vizType,"Paquetes por tipo de mercancía",vizLabels,series);
+  return {"ok":true,"data":data,"visualization":viz};
+}

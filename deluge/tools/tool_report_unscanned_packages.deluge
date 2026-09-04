@@ -1,0 +1,98 @@
+/**
+ * tool_report_unscanned_packages.deluge
+ *
+ * Informe de cajas que NO han sido escaneadas (Pkg_Tracking.Scanned == false),
+ * con su Latest_Status, Scan_Date (habitualmente vacío), Office y Package_ID.
+ * Filtro opcional por oficina (metric 9).
+ *
+ * Recibe: {"limit"?: string|number (default todos),
+ *          "office"?: string (Office_Name)}
+ * Devuelve: {"ok": true, "data": {
+ *   reportType: "unscanned_packages", office, totalUnscanned, truncated,
+ *   packages: [{packageId, latestStatus, scanDate, officeName}]}}
+ *
+ * Viz: table.
+ */
+
+map chat_tools.report_unscanned_packages(map params)
+{
+  config = thisapp.chat_config.chat_config();
+  limitNum = 0;
+  limit = params.get("limit");
+  if(limit != null && limit != "")
+  {
+    limitNum = toNumber("" + limit);
+    if(limitNum == null || limitNum <= 0)
+    {
+      limitNum = 0;
+    }
+  }
+  officeName = params.get("office");
+  officeZid = 0;
+  reportedOffice = null;
+  if(officeName != null && officeName != "")
+  {
+    officeZid = thisapp.chat_data_access.fetch_office_id_by_name(officeName);
+    if(officeZid == null || officeZid <= 0)
+    {
+      return {"ok":true,"data":{"reportType":"unscanned_packages","empty":true,"message":"Oficina no encontrada."}};
+    }
+    reportedOffice = officeName;
+  }
+  records = thisapp.chat_data_access.fetch_pkg_tracking_unscanned();
+  if(records == null)
+  {
+    records = List();
+  }
+  outList = List();
+  for each  r in records
+  {
+    // Filtro de oficina en memoria (la lista de no escaneados es acotada)
+    if(officeZid > 0)
+    {
+      oz = r.get("officeZid");
+      if(oz == null || ("" + oz) != ("" + officeZid))
+      {
+        continue;
+      }
+    }
+    item = Map();
+    item.put("packageId",r.get("packageId"));
+    item.put("latestStatus",r.get("latestStatus"));
+    item.put("scanDate",r.get("scanDate"));
+    item.put("officeName",r.get("officeName"));
+    outList.add(item);
+    if(limitNum > 0 && outList.size() >= limitNum)
+    {
+      break;
+    }
+  }
+  data = Map();
+  data.put("reportType","unscanned_packages");
+  data.put("office",reportedOffice);
+  data.put("totalUnscanned",outList.size());
+  data.put("truncated",false);
+  data.put("packages",outList);
+  if(outList.size() == 0)
+  {
+    return {"ok":true,"data":data,"visualization":null};
+  }
+  tl = List();
+  for each  p in outList
+  {
+    tl.add("" + p.get("packageId"));
+  }
+  vizType = thisapp.chat_common.decidirVisualizacion(tl,false);
+  series = List();
+  ss = Map();
+  ss.put("name","Cajas no escaneadas");
+  tv = List();
+  for each  p in outList
+  {
+    tv.add(1);
+  }
+  ss.put("values",tv);
+  series.add(ss);
+  viz = thisapp.chat_common.build_viz(vizType,"Cajas no escaneadas",tl,series);
+  return {"ok":true,"data":data,"visualization":viz};
+}

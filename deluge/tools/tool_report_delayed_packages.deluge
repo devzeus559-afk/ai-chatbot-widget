@@ -1,0 +1,120 @@
+/**
+ * tool_report_delayed_packages.deluge
+ *
+ * Informe de cajas demoradas (atrasadas) por tipo de envío. Fuente: Pkg_Tracking.
+ * Un paquete está DEMORADO cuando los días desde su Pkg_Tracking.Scan_Date
+ * superan el umbral:
+ *   - aéreo (Shipment.Short_Name.contains("Air")) -> > 20 días
+ *   - marítimo / caja (no air), incl. caja pronto  -> > 45 días
+ * Clasificación air/sea vía Pkg_Tracking.Shipping_Type -> Shipment.Short_Name.
+ * Destino (Cuba) vía Pkg_Tracking.Package_ID -> Package.Location ->
+ * Coverage_Location.Address_Information1.country.
+ *
+ * Recibe: {"destCountry"?: string (default "Cuba")}
+ * Devuelve: {"ok": true, "data": {
+ *   reportType: "delayed_packages", destCountry, totalDelayed, truncated,
+ *   byClass: {air, maritime},
+ *   delayed: [{packageId, shippingTypeName, class, destination, daysSinceScan,
+ *              threshold, status}]}}
+ *
+ * Viz: table (lista larga).
+ */
+
+map chat_tools.report_delayed_packages(map params)
+{
+  config = thisapp.chat_config.chat_config();
+  destCountry = params.get("destCountry");
+  if(destCountry == null || destCountry == "")
+  {
+    destCountry = "Cuba";
+  }
+  records = thisapp.chat_data_access.fetch_pkg_tracking_scanned_all();
+  if(records == null)
+  {
+    records = List();
+  }
+  today = zoho.currentdate;
+  delayed = List();
+  airCount = 0;
+  seaCount = 0;
+  totalDelayed = 0;
+  for each  r in records
+  {
+    scanDate = r.get("scanDate");
+    if(scanDate == null)
+    {
+      continue;
+    }
+    daysSinceScan = today.difference(scanDate);
+    if(daysSinceScan == null)
+    {
+      continue;
+    }
+    className = r.get("className");
+    shipName = r.get("shippingTypeName");
+    destination = r.get("destCountry");
+    // Decidir umbral: solo aéreo (20) vs marítimo/caja incl. caja pronto (45)
+    threshold = 45;
+    isAir = (className == "air");
+    if(isAir)
+    {
+      threshold = 20;
+    }
+    isDelayed = daysSinceScan > threshold;
+    if(!isDelayed)
+    {
+      continue;
+    }
+    totalDelayed = totalDelayed + 1;
+    if(isAir)
+    {
+      airCount = airCount + 1;
+    }
+    else
+    {
+      seaCount = seaCount + 1;
+    }
+    item = Map();
+    item.put("packageId",r.get("packageId"));
+    item.put("shippingTypeName",shipName);
+    item.put("class",className == "air" ? "air" : "maritime");
+    item.put("destination",destination);
+    item.put("daysSinceScan",daysSinceScan);
+    item.put("threshold",threshold);
+    item.put("status",r.get("packageStatus"));
+    delayed.add(item);
+  }
+  data = Map();
+  data.put("reportType","delayed_packages");
+  data.put("destCountry",destCountry);
+  data.put("totalDelayed",totalDelayed);
+  data.put("truncated",false);
+  byClass = Map();
+  byClass.put("air",airCount);
+  byClass.put("maritime",seaCount);
+  data.put("byClass",byClass);
+  data.put("delayed",delayed);
+  if(totalDelayed == 0)
+  {
+    return {"ok":true,"data":data,"visualization":null};
+  }
+  // Viz: table (lista larga de cajas)
+  tl = List();
+  for each  d in delayed
+  {
+    tl.add("" + d.get("packageId"));
+  }
+  vizType = thisapp.chat_common.decidirVisualizacion(tl,false);
+  series = List();
+  ss = Map();
+  ss.put("name","Días demorados");
+  tv = List();
+  for each  d in delayed
+  {
+    tv.add(d.get("daysSinceScan"));
+  }
+  ss.put("values",tv);
+  series.add(ss);
+  viz = thisapp.chat_common.build_viz(vizType,"Cajas demoradas",tl,series);
+  return {"ok":true,"data":data,"visualization":viz};
+}

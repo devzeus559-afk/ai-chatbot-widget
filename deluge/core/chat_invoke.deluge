@@ -56,6 +56,24 @@ map chat_invoke.chat_invoke(int requestId)
   intent = thisapp.chat_intent.chat_intent(prompt,history);
   // 5. Dispatch + respuesta
   reply = thisapp.chat_invoke.resolve_reply(intent);
+  // 5b. Metric 12: registrar consultas que Zia NO pudo responder con una tool
+  // (kind == "clarify", incluida la guardia fuera de tema). El try/catch
+  // garantiza que un fallo de logging NUNCA bloquee la respuesta normal.
+  if(intent.get("kind") == "clarify")
+  {
+    try
+    {
+      logData = Map();
+      logData.put("Prompt_Text",prompt);
+      logData.put("Session_ID",sessionId);
+      logData.put("Notes","Unanswered query");
+      thisapp.chat_data_access.insert_unanswered_query(logData);
+    }
+    catch(e)
+    {
+      // Logging no bloqueante
+    }
+  }
   // 6. Persistir respuesta AI
   thisapp.chat_invoke.create_message(session.get("ID"),"ai",reply);
   // 7. Actualizar sesión (título + actividad) mutando el registro enlazado
@@ -177,6 +195,42 @@ map chat_invoke.dispatch_tool(string toolName, map params)
   if(toolName == "report_top_customers")
   {
     return thisapp.chat_tools.report_top_customers(params);
+  }
+  if(toolName == "report_top_package_customers")
+  {
+    return thisapp.chat_tools.report_top_package_customers(params);
+  }
+  if(toolName == "report_top_remittance_customers")
+  {
+    return thisapp.chat_tools.report_top_remittance_customers(params);
+  }
+  if(toolName == "report_shipping_type_frequency")
+  {
+    return thisapp.chat_tools.report_shipping_type_frequency(params);
+  }
+  if(toolName == "report_merchandise_type")
+  {
+    return thisapp.chat_tools.report_merchandise_type(params);
+  }
+  if(toolName == "report_pounds_shipped")
+  {
+    return thisapp.chat_tools.report_pounds_shipped(params);
+  }
+  if(toolName == "report_daily_average")
+  {
+    return thisapp.chat_tools.report_daily_average(params);
+  }
+  if(toolName == "report_monthly_comparison")
+  {
+    return thisapp.chat_tools.report_monthly_comparison(params);
+  }
+  if(toolName == "report_delayed_packages")
+  {
+    return thisapp.chat_tools.report_delayed_packages(params);
+  }
+  if(toolName == "report_unscanned_packages")
+  {
+    return thisapp.chat_tools.report_unscanned_packages(params);
   }
   return {"ok":false,"message":"Herramienta desconocida: " + toolName};
 }

@@ -1,0 +1,162 @@
+/**
+ * tool_report_shipping_type_frequency.deluge
+ *
+ * Reporte métrico: distribución de paquetes por tipo de envío (aéreo vs
+ * marítimo) en una ventana de 30 días sobre Package.Receipt_Date.
+ * Clasificación por Shipment.Short_Name.contains("Air") (convención del app).
+ * Filtro opcional por oficina (metric 9).
+ *
+ * Recibe: {"limit"?: string|number (default todos),
+ *          "office"?: string (Office_Name de Commercial_Office)}
+ * Devuelve: {"ok": true, "data": {
+ *   reportType: "shipping_type_frequency", periodStart, periodEnd,
+ *   office (null sin filtro), totalPackages, truncated,
+ *   shipments: [{name, className (air|maritime), packageCount, sharePct}]}}
+ *
+ * Viz: bar de paquetes por clase/tipo de envío.
+ */
+
+map chat_tools.report_shipping_type_frequency(map params)
+{
+  config = thisapp.chat_config.chat_config();
+  limitNum = 0;
+  limit = params.get("limit");
+  if(limit != null && limit != "")
+  {
+    limitNum = toNumber("" + limit);
+    if(limitNum == null || limitNum <= 0)
+    {
+      limitNum = 0;
+    }
+  }
+  // Filtro de oficina (metric 9)
+  officeName = params.get("office");
+  officeZid = 0;
+  reportedOffice = null;
+  if(officeName != null && officeName != "")
+  {
+    officeZid = thisapp.chat_data_access.fetch_office_id_by_name(officeName);
+    if(officeZid == null || officeZid <= 0)
+    {
+      return thisapp.chat_common.build_empty_shipping_report(zoho.currentdate.subDay(30),zoho.currentdate,reportedOffice);
+    }
+    reportedOffice = officeName;
+  }
+  endDate = zoho.currentdate;
+  startDate = endDate.subDay(30);
+  records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+  if(records == null)
+  {
+    records = List();
+  }
+  total = records.size();
+  truncated = false;
+  // Agregación por clase (air/maritime) -> luego por tipo de envío
+  shipmentMap = Map();
+  airCount = 0;
+  seaCount = 0;
+  for each  p in records
+  {
+    className = p.get("className");
+    if(className == "air")
+    {
+      airCount = airCount + 1;
+    }
+    else
+    {
+      seaCount = seaCount + 1;
+    }
+    sName = p.get("shipmentName");
+    if(sName == null || sName == "")
+    {
+      sName = "Other";
+    }
+    key = className + "|" + sName;
+    e = shipmentMap.get(key);
+    if(e == null)
+    {
+      e = Map();
+      e.put("name",sName);
+      e.put("className",className);
+      e.put("count",1);
+      shipmentMap.put(key,e);
+    }
+    else
+    {
+      e.put("count",e.get("count") + 1);
+    }
+  }
+  // Top-N por inserción (count desc) si limitNum > 0
+  ranking = List();
+  for each  key in shipmentMap.keys()
+  {
+    entry = shipmentMap.get(key);
+    pos = ranking.size();
+    for each index i in ranking
+    {
+      cur = ranking.get(i);
+      if(entry.get("count") > cur.get("count"))
+      {
+        pos = i;
+        break;
+      }
+      if(entry.get("count") == cur.get("count"))
+      {
+        curName = cur.get("className");
+        entryName = entry.get("className");
+        if(entryName == "air" && curName != "air")
+        {
+          pos = i;
+          break;
+        }
+      }
+    }
+    ranking = thisapp.chat_common.insert_ranked_entry(ranking,pos,entry);
+    if(limitNum > 0 && ranking.size() > limitNum)
+    {
+      ranking = ranking.subList(0,limitNum);
+    }
+  }
+  // sharePct y packageCount por cada tipo
+  for each  e in ranking
+  {
+    share = 0;
+    if(total > 0)
+    {
+      share = e.get("count") * 100.0 / total;
+      share = round(share,1);
+    }
+    e.put("sharePct",share);
+    e.put("packageCount",e.get("count"));
+    e.remove("count");
+  }
+  data = Map();
+  data.put("reportType","shipping_type_frequency");
+  data.put("periodStart",startDate);
+  data.put("periodEnd",endDate);
+  data.put("office",reportedOffice);
+  data.put("totalPackages",total);
+  data.put("airCount",airCount);
+  data.put("seaCount",seaCount);
+  data.put("truncated",truncated);
+  data.put("shipments",ranking);
+  if(data.get("totalPackages") == 0)
+  {
+    return thisapp.chat_common.build_empty_shipping_report(startDate,endDate,reportedOffice);
+  }
+  vizLabels = List();
+  vizValues = List();
+  for each  s in ranking
+  {
+    vizLabels.add(s.get("className") + " " + s.get("name"));
+    vizValues.add(s.get("packageCount"));
+  }
+  vizType = thisapp.chat_common.decidirVisualizacion(vizLabels,false);
+  series = List();
+  ss = Map();
+  ss.put("name","Paquetes");
+  ss.put("values",vizValues);
+  series.add(ss);
+  viz = thisapp.chat_common.build_viz(vizType,"Frecuencia por tipo de envío",vizLabels,series);
+  return {"ok":true,"data":data,"visualization":viz};
+}

@@ -1,0 +1,311 @@
+/**
+ * tool_report_top_package_customers.deluge
+ *
+ * Reporte métrico: clientes top N por cantidad de servicios de paquetería
+ * (measure=packages) O por libras totales acumuladas (measure=pounds), en una
+ * ventana de 30 días sobre Date_field1 del Service (fecha de negocio).
+ *
+ * Recibe: {"measure"?: string (packages|pounds, default packages),
+ *          "limit"?: string|number (default 10),
+ *          "serviceType"?: string}
+ *   - serviceType: un tipo exacto (sensible a mayúsculas) filtra SOLO ese tipo.
+ *   - serviceType == "all"   -> sin filtro (cuenta TODOS los tipos).
+ *   - serviceType vacío      -> filtro por defecto de "paquetería":
+ *                               {Package Receipt}.
+ *
+ * Devuelve: {"ok": true, "data": {
+ *   reportType: "top_package_customers", measure, periodStart, periodEnd,
+ *   serviceType (null sin filtro), totalPackages, totalCustomers,
+ *   truncated,
+ *   customers: [{rank, customerId, customerName, totalPackages, totalPounds,
+ *                firstServiceDate}]}}
+ *
+ * Acceso nativo vía data_access (0 llamadas de API de Creator). Algoritmo:
+ * count-first → fetch acotado a 200 → agregación por remitente (Sender_field,
+ * IDs normalizados a Number) → top-N por inserción con desempate por fecha más
+ * antigua → resolución de nombres SOLO para el top-N. Si el conteo supera 200,
+ * truncated: true (ranking aproximado).
+ *
+ * GATE 5.1: criterios con campos LITERALES + valores variables; combinación de
+ * filtros por ID-list (intersect); List.add() solo appendea -> la inserción
+ * indexada usa insert_ranked_entry (size/get/add garantizados).
+ */
+
+map chat_tools.report_top_package_customers(map params)
+{
+  config = thisapp.chat_config.chat_config();
+  // measure (default packages)
+  measure = params.get("measure");
+  if(measure == null || measure == "")
+  {
+    measure = "packages";
+  }
+  // limit (default 10)
+  limitNum = 10;
+  limit = params.get("limit");
+  if(limit != null && limit != "")
+  {
+    limitNum = toNumber("" + limit);
+    if(limitNum == null || limitNum <= 0)
+    {
+      limitNum = 10;
+    }
+  }
+  // serviceType (vacío = filtro por defecto de paquetería; "all" = sin filtro)
+  serviceType = params.get("serviceType");
+  filterMode = "default";
+  if(serviceType != null && serviceType == "all")
+  {
+    filterMode = "none";
+  }
+  else if(serviceType != null && serviceType != "")
+  {
+    filterMode = "single";
+  }
+  reportedType = null;
+  if(filterMode == "single")
+  {
+    reportedType = serviceType;
+  }
+  // Ventana FIJA de 30 días
+  endDate = zoho.currentdate;
+  startDate = endDate.subDay(30);
+  windowIDs = thisapp.chat_data_access.fetch_services_ids_by_date_window(startDate,endDate);
+  if(windowIDs == null)
+  {
+    windowIDs = List();
+  }
+  // Aplicar filtro por tipo según el modo -> targetIDs
+  targetIDs = windowIDs;
+  // Guard (modo "none" = sin filtro): ventana vacía -> Form[ID in []] es
+  // desconocido en Creator, hay que cortar antes del fetch.
+  if(filterMode == "none" && (targetIDs == null || targetIDs.size() == 0))
+  {
+    return thisapp.chat_common.build_empty_package_customers_report(startDate,endDate,measure,reportedType);
+  }
+  if(filterMode == "single")
+  {
+    typeIDs = thisapp.chat_data_access.fetch_services_ids_by_type(serviceType);
+    if(typeIDs == null || typeIDs.size() == 0)
+    {
+      return thisapp.chat_common.build_empty_package_customers_report(startDate,endDate,measure,reportedType);
+    }
+    targetIDs = windowIDs.intersect(typeIDs);
+    if(targetIDs == null || targetIDs.size() == 0)
+    {
+      return thisapp.chat_common.build_empty_package_customers_report(startDate,endDate,measure,reportedType);
+    }
+  }
+  else if(filterMode == "default")
+  {
+    // Paquetería: solo {Package Receipt}
+    paqTypes = {"Package Receipt"};
+    paqIDs = List();
+    for each  t in paqTypes
+    {
+      tids = thisapp.chat_data_access.fetch_services_ids_by_type(t);
+      if(tids != null && tids.size() > 0)
+      {
+        paqIDs.addAll(tids);
+      }
+    }
+    if(paqIDs == null || paqIDs.size() == 0)
+    {
+      return thisapp.chat_common.build_empty_package_customers_report(startDate,endDate,measure,reportedType);
+    }
+    targetIDs = windowIDs.intersect(paqIDs);
+    if(targetIDs == null || targetIDs.size() == 0)
+    {
+      return thisapp.chat_common.build_empty_package_customers_report(startDate,endDate,measure,reportedType);
+    }
+  }
+  total = targetIDs.size();
+  truncated = total > 200;
+  records = thisapp.chat_data_access.fetch_services_report_by_ids(targetIDs);
+  // Agregación por remitente
+  senderMap = Map();
+  if(records == null)
+  {
+    records = List();
+  }
+  totalWeightSum = 0;
+  for each  s in records
+  {
+    senderVal = s.get("customerId");
+    if(senderVal == null)
+    {
+      continue;
+    }
+    senderStr = "" + senderVal;
+    if(senderStr == "")
+    {
+      continue;
+    }
+    senderId = toNumber(senderStr);
+    if(senderId == null)
+    {
+      continue;
+    }
+    key = "" + senderId;
+    w = s.get("totalWeight");
+    if(w == null)
+    {
+      w = 0;
+    }
+    if(w == "")
+    {
+      w = 0;
+    }
+    totalWeightSum = totalWeightSum + w;
+    serviceDate = s.get("date");
+    entry = senderMap.get(key);
+    if(entry == null)
+    {
+      entry = Map();
+      entry.put("customerId",senderId);
+      entry.put("count",1);
+      entry.put("weight",w);
+      entry.put("firstDate",serviceDate);
+      senderMap.put(key,entry);
+    }
+    else
+    {
+      entry.put("count",entry.get("count") + 1);
+      entry.put("weight",entry.get("weight") + w);
+      if(serviceDate != null)
+      {
+        currentDate = entry.get("firstDate");
+        if(currentDate == null || serviceDate < currentDate)
+        {
+          entry.put("firstDate",serviceDate);
+        }
+      }
+    }
+  }
+  // Top-N por inserción O(n·limit)
+  ranking = List();
+  for each  key in senderMap.keys()
+  {
+    entry = senderMap.get(key);
+    entryValue = entry.get("count");
+    if(measure == "pounds")
+    {
+      entryValue = entry.get("weight");
+    }
+    entryDate = entry.get("firstDate");
+    pos = ranking.size();
+    for each index i in ranking
+    {
+      cur = ranking.get(i);
+      curValue = cur.get("count");
+      if(measure == "pounds")
+      {
+        curValue = cur.get("weight");
+      }
+      if(entryValue > curValue)
+      {
+        pos = i;
+        break;
+      }
+      if(entryValue == curValue)
+      {
+        curDate = cur.get("firstDate");
+        if(entryDate != null && (curDate == null || entryDate < curDate))
+        {
+          pos = i;
+          break;
+        }
+      }
+    }
+    ranking = thisapp.chat_common.insert_ranked_entry(ranking,pos,entry);
+    if(ranking.size() > limitNum)
+    {
+      ranking = ranking.subList(0,limitNum);
+    }
+  }
+  // Nombres SOLO para el top-N
+  nameIDs = List();
+  for each  e in ranking
+  {
+    id = e.get("customerId");
+    if(nameIDs.indexOf(id) < 0)
+    {
+      nameIDs.add(id);
+    }
+  }
+  contactsMap = Map();
+  if(nameIDs.size() > 0)
+  {
+    contactRecords = thisapp.chat_data_access.fetch_contacts_by_ids(nameIDs);
+    if(contactRecords != null)
+    {
+      for each  c in contactRecords
+      {
+        contactsMap.put("" + c.get("id"),c);
+      }
+    }
+  }
+  // Completar shape final
+  for each index i in ranking
+  {
+    e = ranking.get(i);
+    e.put("rank",i + 1);
+    cid = e.get("customerId");
+    name = "Unknown";
+    cRec = contactsMap.get("" + cid);
+    if(cRec != null)
+    {
+      name = cRec.get("fullName").toUpperCase();
+    }
+    e.put("customerName",name);
+    e.put("totalPackages",e.get("count"));
+    e.put("totalPounds",e.get("weight"));
+    e.put("firstServiceDate",e.get("firstDate"));
+    e.remove("count");
+    e.remove("weight");
+    e.remove("firstDate");
+  }
+  data = Map();
+  data.put("reportType","top_package_customers");
+  data.put("measure",measure);
+  data.put("periodStart",startDate);
+  data.put("periodEnd",endDate);
+  data.put("serviceType",reportedType);
+  data.put("totalPackages",total);
+  data.put("totalPounds",totalWeightSum);
+  data.put("totalCustomers",ranking.size());
+  data.put("truncated",truncated);
+  data.put("customers",ranking);
+  // Visualización
+  vizLabels = List();
+  vizValues = List();
+  vizTitle = "Clientes más frecuentes de paquetería";
+  if(measure == "pounds")
+  {
+    vizTitle = vizTitle + " (libras)";
+  }
+  if(reportedType != null)
+  {
+    vizTitle = vizTitle + " (" + reportedType + ")";
+  }
+  for each  c in ranking
+  {
+    vizLabels.add(c.get("customerName"));
+    if(measure == "pounds")
+    {
+      vizValues.add(c.get("totalPounds"));
+    }
+    else
+    {
+      vizValues.add(c.get("totalPackages"));
+    }
+  }
+  vizType = thisapp.chat_common.decidirVisualizacion(vizLabels,false);
+  series = List();
+  s = Map();
+  s.put("name",(measure == "pounds") ? "Libras" : "Paquetes");
+  s.put("values",vizValues);
+  series.add(s);
+  viz = thisapp.chat_common.build_viz(vizType,vizTitle,vizLabels,series);
+  return {"ok":true,"data":data,"visualization":viz};
+}

@@ -1,0 +1,74 @@
+/**
+ * tool_report_daily_average.deluge
+ *
+ * Reporte métrico: promedio diario del indicador de libras (metric 6) en un
+ * período. Reutiliza la agregación de pounds (Package.Total_Weight).
+ *
+ * Recibe: {"startDate"?: date, "endDate"?: date (default últimos 30 días),
+ *          "office"?: string}
+ * Devuelve: {"ok": true, "data": {
+ *   reportType: "daily_average", periodStart, periodEnd, office,
+ *   totalPounds, totalPackages, daysInPeriod, dailyAverage}}
+ */
+
+map chat_tools.report_daily_average(map params)
+{
+  config = thisapp.chat_config.chat_config();
+  endDate = zoho.currentdate;
+  startDate = endDate.subDay(30);
+  sd = params.get("startDate");
+  if(sd != null && sd != "")
+  {
+    startDate = toDate("" + sd);
+  }
+  ed = params.get("endDate");
+  if(ed != null && ed != "")
+  {
+    endDate = toDate("" + ed);
+  }
+  officeName = params.get("office");
+  officeZid = 0;
+  reportedOffice = null;
+  if(officeName != null && officeName != "")
+  {
+    officeZid = thisapp.chat_data_access.fetch_office_id_by_name(officeName);
+    if(officeZid == null || officeZid <= 0)
+    {
+      return {"ok":true,"data":{"reportType":"daily_average","empty":true,"message":"Oficina no encontrada."}};
+    }
+    reportedOffice = officeName;
+  }
+  records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+  if(records == null)
+  {
+    records = List();
+  }
+  totalPounds = 0;
+  totalPackages = records.size();
+  for each  p in records
+  {
+    w = p.get("totalWeight");
+    if(w == null || w == "")
+    {
+      w = 0;
+    }
+    totalPounds = totalPounds + w;
+  }
+  // Días del período (inclusive)
+  daysInPeriod = endDate.difference(startDate) + 1;
+  if(daysInPeriod == null || daysInPeriod < 1)
+  {
+    daysInPeriod = 1;
+  }
+  dailyAverage = totalPounds / daysInPeriod;
+  data = Map();
+  data.put("reportType","daily_average");
+  data.put("periodStart",startDate);
+  data.put("periodEnd",endDate);
+  data.put("office",reportedOffice);
+  data.put("totalPounds",totalPounds);
+  data.put("totalPackages",totalPackages);
+  data.put("daysInPeriod",daysInPeriod);
+  data.put("dailyAverage",dailyAverage);
+  return {"ok":true,"data":data,"visualization":null};
+}

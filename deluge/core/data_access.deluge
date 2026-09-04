@@ -56,20 +56,27 @@
 *   Full_Name, Phone, Document_Number, Role -> se leen subcampos (First_Name
 *   compuesto) y Mobil/DNI reemplazan Phone/Document_Number.
 *
-* Funciones (28): fetch_chat_requests_by_id, fetch_chat_sessions_by_session_id,
-*            fetch_chat_sessions_by_id, fetch_chat_sessions_by_user,
-*            insert_chat_session, fetch_chat_messages_by_session,
-*            insert_chat_message, fetch_packages_by_tracking,
-*            fetch_services_ids_by_type / _by_destination,
-*            fetch_services_by_ids, fetch_services_all,
-*            fetch_services_count_by_date_window / _ids_by_date_window / _by_date_window,
-*            fetch_offices_by_ids, fetch_offices_all,
-*            fetch_coverage_by_ids, fetch_coverage_all,
-*            fetch_vendors_ids_by_type / _by_name, fetch_vendors_by_ids,
-*            fetch_vendors_all,
-*            fetch_contacts_ids_by_full_name/phone/document,
-*            fetch_contacts_by_ids, fetch_contacts_all
-*/
+ * Funciones (28 + reportes): fetch_chat_requests_by_id, fetch_chat_sessions_by_session_id,
+ *            fetch_chat_sessions_by_id, fetch_chat_sessions_by_user,
+ *            insert_chat_session, fetch_chat_messages_by_session,
+ *            insert_chat_message, fetch_packages_by_tracking,
+ *            fetch_services_ids_by_type / _by_destination,
+ *            fetch_services_by_ids, fetch_services_all,
+ *            fetch_services_count_by_date_window / _ids_by_date_window / _by_date_window,
+ *            fetch_offices_by_ids, fetch_offices_all,
+ *            fetch_coverage_by_ids, fetch_coverage_all,
+ *            fetch_vendors_ids_by_type / _by_name, fetch_vendors_by_ids,
+ *            fetch_vendors_all,
+ *            fetch_contacts_ids_by_full_name/phone/document,
+ *            fetch_contacts_by_ids, fetch_contacts_all
+ *
+ * Capa de REPORTES (métricas 2-11): fetch_office_id_by_name,
+ *            materialize_service_report, fetch_services_report_by_date_window,
+ *            fetch_services_report_by_ids, materialize_package_report,
+ *            fetch_packages_report_by_window_office,
+ *            materialize_pkg_tracking_report, fetch_pkg_tracking_scanned_all,
+ *            fetch_pkg_tracking_unscanned, insert_unanswered_query
+ */
 
 list chat_data_access.fetch_chat_messages_by_session(int sessionId)
 {
@@ -710,4 +717,259 @@ int chat_data_access.insert_chat_session(map data)
   {
     return 1;
   }
+}
+// --------------------------------------------------------------------------
+// Capa de REPORTES (métricas 2-11). Todas usan acceso nativo; las cohortes
+// se traen acotadas a 200 (range 0-199) con count-first y, si el conteo
+// supera 200, la tool marca truncated: true (ranking aproximado).
+// --------------------------------------------------------------------------
+int chat_data_access.fetch_office_id_by_name(string officeName)
+{
+  records = Commercial_Office[Office_Name == officeName] range from 0 to 199;
+  if(records == null || records.size() == 0)
+  {
+    return 0;
+  }
+  rec = records.get(0);
+  return rec.ID;
+}
+list chat_data_access.materialize_service_report(list records)
+{
+  resultList = List();
+  if(records == null)
+  {
+    return resultList;
+  }
+  for each  r in records
+  {
+    item = Map();
+    item.put("serviceType",r.Service_Type);
+    item.put("zid",r.ID);
+    item.put("customerId",r.Sender_field);
+    item.put("date",r.Date_field1);
+    amount = r.Amount;
+    if(amount == null)
+    {
+      amount = 0;
+    }
+    item.put("amount",amount);
+    weight = 0;
+    if(r.Total_Weight != null)
+    {
+      weight = r.Total_Weight;
+    }
+    item.put("totalWeight",weight);
+    officeName = "";
+    if(r.Office != null)
+    {
+      OfficeRec = Commercial_Office[ID == r.Office];
+      if(OfficeRec != null && OfficeRec.Office_Name != null)
+      {
+        officeName = OfficeRec.Office_Name;
+      }
+    }
+    item.put("officeName",officeName);
+    resultList.add(item);
+  }
+  return resultList;
+}
+list chat_data_access.fetch_services_report_by_date_window(date startDate, date endDate)
+{
+  records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
+  return thisapp.chat_data_access.materialize_service_report(records);
+}
+list chat_data_access.fetch_services_report_by_ids(list ids)
+{
+  records = Service[ID in ids] sort by Date_field1 range from 0 to 199;
+  return thisapp.chat_data_access.materialize_service_report(records);
+}
+list chat_data_access.materialize_package_report(list records)
+{
+  resultList = List();
+  if(records == null)
+  {
+    return resultList;
+  }
+  for each  r in records
+  {
+    item = Map();
+    item.put("zid",r.ID);
+    item.put("packageId",r.Package_ID);
+    item.put("packageType",r.Package_Type);
+    item.put("receiptDate",r.Receipt_Date);
+    weight = r.Total_Weight;
+    if(weight == null)
+    {
+      weight = 0;
+    }
+    item.put("totalWeight",weight);
+    officeName = "";
+    item.put("officeZid",r.Office);
+    if(r.Office != null)
+    {
+      OfficeRec = Commercial_Office[ID == r.Office];
+      if(OfficeRec != null && OfficeRec.Office_Name != null)
+      {
+        officeName = OfficeRec.Office_Name;
+      }
+    }
+    item.put("officeName",officeName);
+    // Shipment_Type -> Shipment (nombre Short_Name, clase air/maritime,
+    // tipo de mercancía). Clasificación aéreo por Short_Name.contains("Air"),
+    // convención del dashboard de la app.
+    shipmentZid = r.Shipment_Type;
+    item.put("shipmentZid",shipmentZid);
+    shipmentName = "";
+    className = "";
+    merchType = "";
+    if(shipmentZid != null)
+    {
+      ShipmentRec = Shipment[ID == shipmentZid];
+      if(ShipmentRec != null)
+      {
+        if(ShipmentRec.Short_Name != null)
+        {
+          shipmentName = "" + ShipmentRec.Short_Name;
+        }
+        if(shipmentName != null && shipmentName.contains("Air"))
+        {
+          className = "air";
+        }
+        else
+        {
+          className = "maritime";
+        }
+        merchType = ShipmentRec.Type_of_Merchandise;
+      }
+    }
+    item.put("shipmentName",shipmentName);
+    item.put("className",className);
+    item.put("merchType",merchType);
+    resultList.add(item);
+  }
+  return resultList;
+}
+list chat_data_access.fetch_packages_report_by_window_office(date startDate, date endDate, int officeZid)
+{
+  records = null;
+  if(officeZid == null || officeZid <= 0)
+  {
+    records = Package[Receipt_Date >= startDate && Receipt_Date <= endDate] sort by Receipt_Date desc range from 0 to 199;
+  }
+  else
+  {
+    records = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && Office == officeZid] sort by Receipt_Date desc range from 0 to 199;
+  }
+  return thisapp.chat_data_access.materialize_package_report(records);
+}
+list chat_data_access.materialize_pkg_tracking_report(list records)
+{
+  resultList = List();
+  if(records == null)
+  {
+    return resultList;
+  }
+  for each  r in records
+  {
+    item = Map();
+    item.put("zid",r.ID);
+    item.put("description",r.Description);
+    item.put("latestStatus",r.Latest_Status);
+    item.put("scanDate",r.Scan_Date);
+    item.put("lastUpdated",r.Last_Updated);
+    item.put("lastSync",r.Last_Sync);
+    item.put("scanned",r.Scanned);
+    // Package_ID picklist->Package: resolver el texto Package.Package_ID
+    packageIdText = "";
+    packageStatus = "";
+    if(r.Package_ID != null)
+    {
+      PackageRec = Package[ID == r.Package_ID];
+      if(PackageRec != null && PackageRec.Package_ID != null)
+      {
+        packageIdText = "" + PackageRec.Package_ID;
+      }
+      if(PackageRec != null && PackageRec.Status != null)
+      {
+        packageStatus = "" + PackageRec.Status;
+      }
+    }
+    item.put("packageId",packageIdText);
+    item.put("packageStatus",packageStatus);
+    // destino: Package.Location -> Coverage_Location.Address_Information1.country
+    destCountry = "";
+    if(r.Package_ID != null)
+    {
+      PackageRec = Package[ID == r.Package_ID];
+      if(PackageRec != null && PackageRec.Location != null)
+      {
+        LocationRec = Coverage_Location[ID == PackageRec.Location];
+        if(LocationRec != null && LocationRec.Address_Information1 != null)
+        {
+          destCountry = LocationRec.Address_Information1.country;
+        }
+      }
+    }
+    item.put("destCountry",destCountry);
+    // office
+    officeName = "";
+    item.put("officeZid",r.Office);
+    if(r.Office != null)
+    {
+      OfficeRec = Commercial_Office[ID == r.Office];
+      if(OfficeRec != null && OfficeRec.Office_Name != null)
+      {
+        officeName = OfficeRec.Office_Name;
+      }
+    }
+    item.put("officeName",officeName);
+    // Shipping_Type -> Shipment (nombre Short_Name, clase air/maritime)
+    shipZid = r.Shipping_Type;
+    item.put("shippingTypeZid",shipZid);
+    shipmentName = "";
+    className = "";
+    if(shipZid != null)
+    {
+      ShipmentRec = Shipment[ID == shipZid];
+      if(ShipmentRec != null && ShipmentRec.Short_Name != null)
+      {
+        shipmentName = "" + ShipmentRec.Short_Name;
+      }
+      if(shipmentName != null && shipmentName.contains("Air"))
+      {
+        className = "air";
+      }
+      else
+      {
+        className = "maritime";
+      }
+    }
+    item.put("shippingTypeName",shipmentName);
+    item.put("className",className);
+    resultList.add(item);
+  }
+  return resultList;
+}
+list chat_data_access.fetch_pkg_tracking_scanned_all()
+{
+  records = Pkg_Tracking[Scanned == true] sort by ID range from 0 to 999;
+  return thisapp.chat_data_access.materialize_pkg_tracking_report(records);
+}
+list chat_data_access.fetch_pkg_tracking_unscanned()
+{
+  records = Pkg_Tracking[Scanned == false] sort by ID range from 0 to 999;
+  return thisapp.chat_data_access.materialize_pkg_tracking_report(records);
+}
+int chat_data_access.insert_unanswered_query(map data)
+{
+  config = thisapp.chat_config.chat_config();
+  newId = insert into Unanswered_Queries
+  [
+  Prompt_Text=data.get("Prompt_Text")
+  Timestamp=zoho.currenttime
+  Session_ID=data.get("Session_ID")
+  Status="pending"
+  Notes=data.get("Notes")
+  ];
+  return newId;
 }

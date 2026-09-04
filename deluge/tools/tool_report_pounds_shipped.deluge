@@ -1,0 +1,163 @@
+/**
+ * tool_report_pounds_shipped.deluge
+ *
+ * Reporte métrico: libras totales enviadas en un período (Package.Total_Weight),
+ * desglosado por oficina (Commercial_Office), por tipo de carga
+ * (Package_Type: Box/Bag/Documents) y por clase de envío (air/maritime).
+ *
+ * Recibe: {"startDate"?: date, "endDate"?: date (default: últimos 30 días),
+ *          "office"?: string (Office_Name)}
+ * Devuelve: {"ok": true, "data": {
+ *   reportType: "pounds_shipped", periodStart, periodEnd, office (null sin),
+ *   totalPounds, totalPackages, truncated,
+ *   byOffice: [{name, pounds, packageCount}],
+ *   byPackageType: [{name, pounds, packageCount}],
+ *   byClass: [{name, pounds, packageCount}]}}
+ *
+ * Viz: bar de libras por categoría (oficina).
+ */
+
+map chat_tools.report_pounds_shipped(map params)
+{
+  config = thisapp.chat_config.chat_config();
+  // Período (default últimos 30 días)
+  endDate = zoho.currentdate;
+  startDate = endDate.subDay(30);
+  sd = params.get("startDate");
+  if(sd != null && sd != "")
+  {
+    startDate = toDate("" + sd);
+  }
+  ed = params.get("endDate");
+  if(ed != null && ed != "")
+  {
+    endDate = toDate("" + ed);
+  }
+  officeName = params.get("office");
+  officeZid = 0;
+  reportedOffice = null;
+  if(officeName != null && officeName != "")
+  {
+    officeZid = thisapp.chat_data_access.fetch_office_id_by_name(officeName);
+    if(officeZid == null || officeZid <= 0)
+    {
+      return {"ok":true,"data":{"reportType":"pounds_shipped","empty":true,"message":"Oficina no encontrada."}};
+    }
+    reportedOffice = officeName;
+  }
+  records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+  if(records == null)
+  {
+    records = List();
+  }
+  total = records.size();
+  truncated = total > 200;
+  // Agregaciones
+  officeMap = Map();
+  pkgTypeMap = Map();
+  classMap = Map();
+  totalPounds = 0;
+  for each  p in records
+  {
+    w = p.get("totalWeight");
+    if(w == null || w == "")
+    {
+      w = 0;
+    }
+    totalPounds = totalPounds + w;
+    // por oficina
+    offName = p.get("officeName");
+    if(offName == null || offName == "")
+    {
+      offName = "Unknown";
+    }
+    oe = officeMap.get(offName);
+    if(oe == null)
+    {
+      oe = Map();
+      oe.put("name",offName);
+      oe.put("pounds",w);
+      oe.put("count",1);
+      officeMap.put(offName,oe);
+    }
+    else
+    {
+      oe.put("pounds",oe.get("pounds") + w);
+      oe.put("count",oe.get("count") + 1);
+    }
+    // por tipo de carga
+    pt = p.get("packageType");
+    if(pt == null || pt == "")
+    {
+      pt = "Other";
+    }
+    te = pkgTypeMap.get(pt);
+    if(te == null)
+    {
+      te = Map();
+      te.put("name",pt);
+      te.put("pounds",w);
+      te.put("count",1);
+      pkgTypeMap.put(pt,te);
+    }
+    else
+    {
+      te.put("pounds",te.get("pounds") + w);
+      te.put("count",te.get("count") + 1);
+    }
+    // por clase
+    cl = p.get("className");
+    if(cl == null || cl == "")
+    {
+      cl = "maritime";
+    }
+    ce = classMap.get(cl);
+    if(ce == null)
+    {
+      ce = Map();
+      ce.put("name",cl);
+      ce.put("pounds",w);
+      ce.put("count",1);
+      classMap.put(cl,ce);
+    }
+    else
+    {
+      ce.put("pounds",ce.get("pounds") + w);
+      ce.put("count",ce.get("count") + 1);
+    }
+  }
+  // Construir listas (ordeno desc por libras para el formato)
+  byOffice = thisapp.chat_common.build_breakdown_list(officeMap);
+  byPackageType = thisapp.chat_common.build_breakdown_list(pkgTypeMap);
+  byClass = thisapp.chat_common.build_breakdown_list(classMap);
+  data = Map();
+  data.put("reportType","pounds_shipped");
+  data.put("periodStart",startDate);
+  data.put("periodEnd",endDate);
+  data.put("office",reportedOffice);
+  data.put("totalPounds",totalPounds);
+  data.put("totalPackages",total);
+  data.put("truncated",truncated);
+  data.put("byOffice",byOffice);
+  data.put("byPackageType",byPackageType);
+  data.put("byClass",byClass);
+  if(total == 0)
+  {
+    return {"ok":true,"data":data,"visualization":null};
+  }
+  vizLabels = List();
+  vizValues = List();
+  for each  b in byOffice
+  {
+    vizLabels.add(b.get("name"));
+    vizValues.add(b.get("pounds"));
+  }
+  vizType = thisapp.chat_common.decidirVisualizacion(vizLabels,false);
+  series = List();
+  ss = Map();
+  ss.put("name","Libras");
+  ss.put("values",vizValues);
+  series.add(ss);
+  viz = thisapp.chat_common.build_viz(vizType,"Libras enviadas por oficina",vizLabels,series);
+  return {"ok":true,"data":data,"visualization":viz};
+}
