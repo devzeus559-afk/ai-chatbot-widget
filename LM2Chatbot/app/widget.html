@@ -902,8 +902,8 @@
       // si la app de destino difiere, reemplázalo por el suyo. Mantener los nombres de
       // módulo en sincronía con deluge/config/chat_config.deluge
       // IMPORTANTE: 
-      // - reportNames: para getAllRecords (reportName param) → report link names
-      // - formNames: para addRecord/deleteRecord (formName param) → form link names
+      // - reportNames: para getAllRecords y deleteRecord (reportName/criteria) → report link names
+      // - formNames: para addRecord (formName param) → form link names
       // Ambos tal como aparecen en el dump de la app.
       const CONFIG = {
         appName: "copy-1-of-logistic-management-ii",
@@ -911,7 +911,7 @@
         chatSessionsReport: "ChatSessions_Report",
         chatMessagesReport: "ChatMessages_Report",
         chatRequestsReport: "ChatRequests_Report",
-        // Form link names (para addRecord, deleteRecord)
+        // Form link names (para addRecord; deleteRecord usa reportName+criteria)
         chatSessionsForm: "ChatSessions",
         chatMessagesForm: "ChatMessages",
         chatRequestsForm: "ChatRequests",
@@ -1271,6 +1271,21 @@
         };
       }
 
+      // El widget JS API (SDK v1) deleteRecord NO acepta formName+id: su contrato es
+      // reportName + criteria (obligatorio). El éxito llega en res.result[] con
+      // code 3000 por registro (o res.code 3000 a nivel superior).
+      function deleteRecordOk(res) {
+        if (!res || res.timedOut) return false;
+        if (Number(res.code) === 3000) return true;
+        if (Array.isArray(res.result)) {
+          return (
+            res.result.length > 0 &&
+            res.result.every((r) => Number(r && r.code) === 3000)
+          );
+        }
+        return false;
+      }
+
       // Borra TODAS las sesiones que comparten Session_ID (el backend puede
       // crear varias por mensaje — ver replyFallback). Devuelve:
       //   { deleted: n, ok: true }  si todos los deleteRecord confirmaron
@@ -1278,17 +1293,25 @@
       async function deleteSessionOnServer(convId) {
         // Sin criteria string (mismo motivo: 3330 en el live). Filtrado en JS.
         let ok = true;
-        async function deleteAll(formName, recs) {
+        async function deleteByIds(reportName, recs) {
           for (const rec of recs) {
             const res = await clientApi("deleteRecord", {
               appName: CONFIG.appName,
-              formName: formName,
-              id: rec.ID,
+              reportName: reportName,
+              criteria: "ID == " + rec.ID,
             });
-            // El widgets SDK puede ejecutar el borrado pero nunca responder
-            // (bug observado en addRecord) o devolver un error real; en ambos
-            // casos no podemos dar por borrado algo que el servidor aún tiene.
-            if (!res || Number(res.code) !== 3000 || res.timedOut) ok = false;
+            if (!deleteRecordOk(res)) {
+              // El widgets SDK puede ejecutar el borrado pero nunca responder
+              // (bug observado en addRecord) o devolver un error real; en ambos
+              // casos no podemos dar por borrado algo que el servidor aún tiene.
+              console.warn(
+                "[LM2Chatbot] deleteRecord failed",
+                reportName,
+                rec.ID,
+                res
+              );
+              ok = false;
+            }
           }
         }
 
@@ -1301,17 +1324,12 @@
             criteria: "Session == " + session.ID,
             limit: 200,
           });
-          await deleteAll(CONFIG.chatMessagesForm, msgs);
-          const res = await clientApi("deleteRecord", {
-            appName: CONFIG.appName,
-            formName: CONFIG.chatSessionsForm,
-            id: session.ID,
-          });
-          if (!res || Number(res.code) !== 3000 || res.timedOut) ok = false;
+          await deleteByIds(CONFIG.chatMessagesReport, msgs);
+          await deleteByIds(CONFIG.chatSessionsReport, [session]);
         }
         let reqs = await apiGetAll(CONFIG.chatRequestsReport, { limit: 200 });
         reqs = (reqs || []).filter((r) => r.Session_ID === convId);
-        await deleteAll(CONFIG.chatRequestsForm, reqs);
+        await deleteByIds(CONFIG.chatRequestsReport, reqs);
 
         return { deleted: sessions.length, ok: ok };
       }
