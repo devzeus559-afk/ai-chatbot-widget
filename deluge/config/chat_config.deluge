@@ -109,29 +109,15 @@ map chat_config.chat_config()
   tool.put("description","Informe de cajas que no han sido escaneadas (Pkg_Tracking.Scanned == false), con su último estado, fecha de escaneo y oficina. Params opcionales: limit, office (nombre de oficina).");
   tool.put("params",{"limit":"string opcional","office":"string opcional"});
   tools.add(tool);
-  // --- Catálogo de sugerencias UI ---
-  suggestions = [
-    {
-        "label"   : "Top clientes (paquetes)",
-        "payload" : {"tool":"report_top_customers","params":{}},
-        "order"   : 1,
-        "enabled" : true
-    },
-    {
-        "label"   : "Top clientes (libras)",
-        "payload" : {"tool":"report_top_package_customers","params":{"measure":"pounds"}},
-        "order"   : 2,
-        "enabled" : true
-    },
-    {
-        "label"   : "Paquetes demorados",
-        "payload" : {"tool":"report_delayed_packages","params":{}},
-        "order"   : 3,
-        "enabled" : true
-    }
-  ];
-  config.put("suggestions", suggestions);
-  // --- Catálogo de herramientas en texto legible (para el prompt de Zia) ---
+  /**
+  * SUGERENCIAS UI — NO viven en el backend.
+  * El Widget SDK v1 NO expone ZOHO.CREATOR.API.invoke, así que el widget no
+  * puede leer config.suggestions por API (la vía invoke da TypeError: ...invoke
+  * is not a function). La fuente ÚNICA de verdad para los botones de sugerencias
+  * es CONFIG.suggestions en LM2Chatbot/app/widget.html (array estático con
+  * label/prompt/payload/order/enabled). NO mantener una copia aquí: esto quedó
+  * como código muerto y las dos listas divergieron. Editar el widget, no esto.
+  */
   // Texto plano en vez de json.toJson (no reconocido por el editor de Creator).
   toolsText = "";
   for each  t in tools

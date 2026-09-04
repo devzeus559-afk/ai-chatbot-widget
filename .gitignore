@@ -16,3 +16,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Zoho widget deploy artifacts (generated manually with `zet pack`)
+LM2Chatbot/dist/

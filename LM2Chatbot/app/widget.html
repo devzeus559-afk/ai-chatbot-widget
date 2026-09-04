@@ -959,6 +959,34 @@
         },
         // CDN de SheetJS (lazy: se inyecta solo al pedir XLSX por primera vez)
         SHEETJS_CDN: "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
+        // Sugerencias UI — FUENTE ÚNICA de verdad (el backend NO las tiene).
+        // El Widget SDK v1 NO expone ZOHO.CREATOR.API.invoke, así que llamar a
+        // chat_config desde aquí es imposible; por eso la lista vive en el widget.
+        // Cada ítem: { label, prompt, payload, order, enabled }.
+        // prompt = frase natural que Zia enruta a la tool indicada en payload.
+        suggestions: [
+          {
+            label: "Top clientes (paquetes)",
+            prompt: "¿Cuáles son los clientes más frecuentes?",
+            payload: { tool: "report_top_customers", params: {} },
+            order: 1,
+            enabled: true,
+          },
+          {
+            label: "Top clientes (libras)",
+            prompt: "¿Cuáles son los clientes que más libras han enviado?",
+            payload: { tool: "report_top_package_customers", params: { measure: "pounds" } },
+            order: 2,
+            enabled: true,
+          },
+          {
+            label: "Paquetes demorados",
+            prompt: "Lista las cajas demoradas",
+            payload: { tool: "report_delayed_packages", params: {} },
+            order: 3,
+            enabled: true,
+          },
+        ],
       };
 
       // Plantilla genérica de respaldo para tools sin entrada en EXPORT_TEMPLATES.
@@ -2218,91 +2246,56 @@
 
       sendBtn.addEventListener("click", sendMessage);
 
-  const suggestionsApi = {
-    // -------------------------------------------------
-    // 1️⃣  Lectura de sugerencias estáticas (desde chat_config)
-    // -------------------------------------------------
-    fetchSuggestions: async function () {
-      const payload = {
-        method_name: "fetch_suggestions",
-        arguments: {}
-      };
-      try {
-        const response = await ZOHO.CREATOR.API.invoke(payload);
-        // response.data contiene el array de sugerencias
-        return response.data || [];
-      } catch (err) {
-        console.error("fetchSuggestions error:", err);
-        return [];
-      }
-    },
-    // -------------------------------------------------
-    // 2️⃣  Lectura genérica de cualquier reporte de Creator
-    // -------------------------------------------------
-    fetchReport: async function (reportName, params = {}) {
-      try {
-        const res = await ZOHO.CREATOR.API.getAllRecords({
-          Report_Name: reportName,
-          page: 0,
-          per_page: 200,
-          ...params
-        });
-        return res.data || [];
-      } catch (e) {
-        console.error(`fetchReport ${reportName} error:`, e);
-        return [];
-      }
-    }
-  };
-
   // -------------------------------------------------------------------
-  // 1. Helper para cargar las sugerencias desde Creator (fetch_suggestions)
+  // Sugerencias UI — desde CONFIG.suggestions (fuente única, ver CONFIG arriba).
+  // El Widget SDK v1 NO expone ZOHO.CREATOR.API.invoke, así que no hay llamada
+  // a API: los botones se renderizan desde el array local y disparan sendMessage
+  // con un prompt natural que Zia enruta a la tool correspondiente.
   // -------------------------------------------------------------------
-  async function loadSuggestions() {
-    const suggestions = await suggestionsApi.fetchSuggestions();
-    renderSuggestionButtons(suggestions);
+  function loadSuggestions() {
+    renderSuggestionButtons(CONFIG.suggestions || []);
   }
 
-
-
-  // -------------------------------------------------------------------
-  // 2. Renderizado de los botones en la UI
-  // -------------------------------------------------------------------
   function renderSuggestionButtons(suggestions) {
-      // ordenar por campo `order`
-      suggestions.sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
-      var container = document.getElementById('suggestionsContainer');
-      if (!container) return;
-      container.innerHTML = '';
-      suggestions.forEach(function (s) {
-          if (s.enabled === false) return; // saltar desactivadas
-          var btn = document.createElement('button');
-          btn.type = 'button';
-          btn.textContent = s.label;
-          btn.style.padding = '6px 12px';
-          btn.style.border = '1px solid var(--primary-blue)';
-          btn.style.background = 'var(--primary-blue)';
-          btn.style.color = '#fff';
-          btn.style.borderRadius = '4px';
-          btn.style.cursor = 'pointer';
-          btn.onclick = function () {
-              // `payload` ya contiene la estructura {tool:..., params:{}}
-              sendQuery(s.payload);
-          };
-          container.appendChild(btn);
+    const list = suggestions.slice().sort(function (a, b) {
+      return (a.order || 0) - (b.order || 0);
+    });
+    const container = document.getElementById("suggestionsContainer");
+    if (!container) return;
+    container.innerHTML = "";
+    list.forEach(function (s) {
+      if (s.enabled === false) return; // saltar desactivadas
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "suggestion-chip";
+      const icon = document.createElement("span");
+      icon.className = "suggestion-icon";
+      icon.textContent = s.icon || "💡";
+      const label = document.createElement("span");
+      label.textContent = s.label;
+      btn.appendChild(icon);
+      btn.appendChild(label);
+      btn.addEventListener("click", function () {
+        // Prompt natural enrutable por Zia (fallback: label del botón)
+        useSuggestion(s.prompt || s.label);
       });
+      container.appendChild(btn);
+    });
   }
 
+  function useSuggestion(text) {
+    chatInput.value = text;
+    chatInput.dispatchEvent(new Event("input"));
+    sendMessage();
+  }
 
-    // -------------------------------------------------------------------
-    // 3. Inicializar al cargar la página
-    // -------------------------------------------------------------------
-    window.addEventListener('load', function () {
-        loadSuggestions();
-    });
-    // -------------------------------------------------------------------
-    // Fin de inserción de sugerencias dinámicas
-    // -------------------------------------------------------------------
+  window.addEventListener("load", function () {
+    loadSuggestions();
+  });
+
+  // -------------------------------------------------------------------
+  // Fin de inserción de sugerencias dinámicas
+  // -------------------------------------------------------------------
 
 
 
@@ -2415,7 +2408,7 @@
         chatInput.focus();
       }
 
-      init();
+init();
     </script>
   </body>
 </html>
