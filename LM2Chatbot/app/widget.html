@@ -2218,7 +2218,7 @@
 
       sendBtn.addEventListener("click", sendMessage);
 
-  const creatorApi = {
+  const suggestionsApi = {
     // -------------------------------------------------
     // 1️⃣  Lectura de sugerencias estáticas (desde chat_config)
     // -------------------------------------------------
@@ -2259,7 +2259,7 @@
   // 1. Helper para cargar las sugerencias desde Creator (fetch_suggestions)
   // -------------------------------------------------------------------
   async function loadSuggestions() {
-    const suggestions = await creatorApi.fetchSuggestions();
+    const suggestions = await suggestionsApi.fetchSuggestions();
     renderSuggestionButtons(suggestions);
   }
 
