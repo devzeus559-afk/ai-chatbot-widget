@@ -1002,7 +1002,6 @@
       const MAX_CONVERSATIONS = 50;
       const STORAGE_KEY = "lm2chatbot:conversations";
       const COLLAPSED_KEY = "lm2chatbot:sidebarCollapsed";
-      const LAST_CONV_KEY = "lm2chatbot:lastConversationId";
 
       const state = {
         currentConv: null, // conversación activa: { id, title, createdAt, updatedAt, messages }
@@ -1272,33 +1271,49 @@
         };
       }
 
+      // Borra TODAS las sesiones que comparten Session_ID (el backend puede
+      // crear varias por mensaje — ver replyFallback). Devuelve:
+      //   { deleted: n, ok: true }  si todos los deleteRecord confirmaron
+      //   { deleted: n, ok: false } si algún deleteRecord falló o expiró
       async function deleteSessionOnServer(convId) {
         // Sin criteria string (mismo motivo: 3330 en el live). Filtrado en JS.
-        const sessions = await apiGetAll(CONFIG.chatSessionsReport, { limit: 200 });
-        const session = (sessions || []).find((s) => s.Session_ID === convId);
-        if (!session) return;
+        let ok = true;
         async function deleteAll(formName, recs) {
           for (const rec of recs) {
-            await clientApi("deleteRecord", {
+            const res = await clientApi("deleteRecord", {
               appName: CONFIG.appName,
               formName: formName,
               id: rec.ID,
             });
+            // El widgets SDK puede ejecutar el borrado pero nunca responder
+            // (bug observado en addRecord) o devolver un error real; en ambos
+            // casos no podemos dar por borrado algo que el servidor aún tiene.
+            if (!res || Number(res.code) !== 3000 || res.timedOut) ok = false;
           }
         }
-        const msgs = await apiGetAll(CONFIG.chatMessagesReport, {
-          criteria: "Session == " + session.ID,
-          limit: 200,
-        });
-        await deleteAll(CONFIG.chatMessagesForm, msgs);
+
+        const allSessions = await apiGetAll(CONFIG.chatSessionsReport, { limit: 200 });
+        // Puede haber VARIAS sesiones con el mismo Session_ID (bug del backend
+        // que crea una por mensaje): borrarlas TODAS o reaparecen al recargar.
+        const sessions = (allSessions || []).filter((s) => s.Session_ID === convId);
+        for (const session of sessions) {
+          const msgs = await apiGetAll(CONFIG.chatMessagesReport, {
+            criteria: "Session == " + session.ID,
+            limit: 200,
+          });
+          await deleteAll(CONFIG.chatMessagesForm, msgs);
+          const res = await clientApi("deleteRecord", {
+            appName: CONFIG.appName,
+            formName: CONFIG.chatSessionsForm,
+            id: session.ID,
+          });
+          if (!res || Number(res.code) !== 3000 || res.timedOut) ok = false;
+        }
         let reqs = await apiGetAll(CONFIG.chatRequestsReport, { limit: 200 });
         reqs = (reqs || []).filter((r) => r.Session_ID === convId);
         await deleteAll(CONFIG.chatRequestsForm, reqs);
-        await clientApi("deleteRecord", {
-          appName: CONFIG.appName,
-          formName: CONFIG.chatSessionsForm,
-          id: session.ID,
-        });
+
+        return { deleted: sessions.length, ok: ok };
       }
 
       // Si el reporte ChatRequests no expone Reply en el live, lee el último
@@ -1438,17 +1453,28 @@
           localSaveAll(all);
         },
 
+        // Devuelve true si se eliminó (o no existía), false si el servidor falló.
         async remove(id) {
           if (this.mode === "server") {
             try {
-              await deleteSessionOnServer(id);
+              const res = await deleteSessionOnServer(id);
+              if (!res || res.ok === false) {
+                // El servidor aún tiene la conversación: refrescar el cache
+                // para reflejar la verdad (si no, "borrada" reaparece al recargar).
+                console.warn("historyStore.remove: server delete failed for", id);
+                await this.refreshSessions();
+                return false;
+              }
             } catch (err) {
               console.error("historyStore.remove", err);
+              await this.refreshSessions();
+              return false;
             }
             this._cache = this._cache.filter((c) => c.id !== id);
-            return;
+            return true;
           }
           localSaveAll(localList().filter((c) => c.id !== id));
+          return true;
         },
 
         // Envía un mensaje y devuelve la respuesta del agente
@@ -1567,11 +1593,6 @@
         messageList.innerHTML = "";
         messageList.classList.add("hidden");
         welcomeScreen.classList.remove("hidden");
-        try {
-          localStorage.removeItem(LAST_CONV_KEY);
-        } catch (err) {
-          console.error(err);
-        }
         renderSidebar();
         chatInput.focus();
       }
@@ -1594,23 +1615,19 @@
         messageList.innerHTML = "";
         conv.messages.forEach((m) => renderMessageNode(m.content, m.role));
         scrollToBottom();
-        try {
-          localStorage.setItem(LAST_CONV_KEY, id);
-        } catch (err) {
-          console.error(err);
-        }
         renderSidebar();
       }
 
       async function deleteConversation(id) {
         if (state.currentConv?.id === id && state.isLoading) return;
-        await historyStore.remove(id);
+        const removed = await historyStore.remove(id);
+        if (removed === false) {
+          showToast("No se pudo eliminar la conversación en el servidor");
+          renderSidebar();
+          return;
+        }
+        showToast("Conversación eliminada");
         if (state.currentConv?.id === id) {
-          try {
-            localStorage.removeItem(LAST_CONV_KEY);
-          } catch (err) {
-            console.error(err);
-          }
           newChat();
         } else {
           renderSidebar();
@@ -1627,11 +1644,6 @@
         state.currentConv = { id, title: "", createdAt: now, updatedAt: now, messages: [] };
         state.messages = state.currentConv.messages;
         historyStore.create(state.currentConv);
-        try {
-          localStorage.setItem(LAST_CONV_KEY, id);
-        } catch (err) {
-          console.error(err);
-        }
         renderSidebar();
       }
 
@@ -2398,14 +2410,9 @@
         await historyStore.init();
         renderSidebar();
         applyViewportMode();
-        // Restaurar la última conversación activa si existe
-        try {
-          const lastId = localStorage.getItem(LAST_CONV_KEY);
-          if (lastId) await selectConversation(lastId);
-        } catch (err) {
-          console.error(err);
-        }
-        chatInput.focus();
+        // 3) Nueva conversación en la pantalla de inicio en cada carga.
+        //    El usuario carga una conversación anterior manualmente desde el sidebar.
+        newChat();
       }
 
 init();
