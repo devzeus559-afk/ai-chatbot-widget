@@ -2218,59 +2218,91 @@
 
       sendBtn.addEventListener("click", sendMessage);
 
-        // -------------------------------------------------------------------
-        // 1. Helper para cargar las sugerencias desde Creator (fetch_suggestions)
-        // -------------------------------------------------------------------
-        function loadSuggestions() {
-            var data = {
-                "method_name": "fetch_suggestions",
-                "arguments": {}
-            };
-            ZOHO.CREATOR.API.invoke(data).then(function (response) {
-                var suggestions = response.data || [];
-                renderSuggestionButtons(suggestions);
-            }).catch(function (err) {
-                console.error("Error loading suggestions:", err);
-            });
-        }
-
-        // -------------------------------------------------------------------
-        // 2. Renderizado de los botones en la UI
-        // -------------------------------------------------------------------
-        function renderSuggestionButtons(suggestions) {
-            // ordenar por campo `order`
-            suggestions.sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
-            var container = document.getElementById('suggestionsContainer');
-            if (!container) return;
-            container.innerHTML = '';
-            suggestions.forEach(function (s) {
-                if (s.enabled === false) return; // saltar desactivadas
-                var btn = document.createElement('button');
-                btn.type = 'button';
-                btn.textContent = s.label;
-                btn.style.padding = '6px 12px';
-                btn.style.border = '1px solid var(--primary-blue)';
-                btn.style.background = 'var(--primary-blue)';
-                btn.style.color = '#fff';
-                btn.style.borderRadius = '4px';
-                btn.style.cursor = 'pointer';
-                btn.onclick = function () {
-                    // `payload` ya contiene la estructura {tool:..., params:{}}
-                    sendQuery(s.payload);
-                };
-                container.appendChild(btn);
-            });
-        }
-
-        // -------------------------------------------------------------------
-        // 3. Inicializar al cargar la página
-        // -------------------------------------------------------------------
-        window.addEventListener('load', function () {
-            loadSuggestions();
+  const clientApi = {
+    // -------------------------------------------------
+    // 1️⃣  Lectura de sugerencias estáticas (desde chat_config)
+    // -------------------------------------------------
+    fetchSuggestions: async function () {
+      const payload = {
+        method_name: "fetch_suggestions",
+        arguments: {}
+      };
+      try {
+        const response = await ZOHO.CREATOR.API.invoke(payload);
+        // response.data contiene el array de sugerencias
+        return response.data || [];
+      } catch (err) {
+        console.error("fetchSuggestions error:", err);
+        return [];
+      }
+    },
+    // -------------------------------------------------
+    // 2️⃣  Lectura genérica de cualquier reporte de Creator
+    // -------------------------------------------------
+    fetchReport: async function (reportName, params = {}) {
+      try {
+        const res = await ZOHO.CREATOR.API.getAllRecords({
+          Report_Name: reportName,
+          page: 0,
+          per_page: 200,
+          ...params
         });
-        // -------------------------------------------------------------------
-        // Fin de inserción de sugerencias dinámicas
-        // -------------------------------------------------------------------
+        return res.data || [];
+      } catch (e) {
+        console.error(`fetchReport ${reportName} error:`, e);
+        return [];
+      }
+    }
+  };
+
+  // -------------------------------------------------------------------
+  // 1. Helper para cargar las sugerencias desde Creator (fetch_suggestions)
+  // -------------------------------------------------------------------
+  async function loadSuggestions() {
+    const suggestions = await clientApi.fetchSuggestions();
+    renderSuggestionButtons(suggestions);
+  }
+
+
+  // -------------------------------------------------------------------
+  // 2. Renderizado de los botones en la UI
+  // -------------------------------------------------------------------
+  function renderSuggestionButtons(suggestions) {
+      // ordenar por campo `order`
+      suggestions.sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+      var container = document.getElementById('suggestionsContainer');
+      if (!container) return;
+      container.innerHTML = '';
+      suggestions.forEach(function (s) {
+          if (s.enabled === false) return; // saltar desactivadas
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = s.label;
+          btn.style.padding = '6px 12px';
+          btn.style.border = '1px solid var(--primary-blue)';
+          btn.style.background = 'var(--primary-blue)';
+          btn.style.color = '#fff';
+          btn.style.borderRadius = '4px';
+          btn.style.cursor = 'pointer';
+          btn.onclick = function () {
+              // `payload` ya contiene la estructura {tool:..., params:{}}
+              sendQuery(s.payload);
+          };
+          container.appendChild(btn);
+      });
+  }
+
+
+  // -------------------------------------------------------------------
+  // 3. Inicializar al cargar la página
+  // -------------------------------------------------------------------
+  window.addEventListener('load', function () {
+      loadSuggestions();
+  });
+  // -------------------------------------------------------------------
+  // Fin de inserción de sugerencias dinámicas
+  // -------------------------------------------------------------------
+
 
       toggleSidebarBtn.addEventListener("click", () => {
         if (mq.matches) {
