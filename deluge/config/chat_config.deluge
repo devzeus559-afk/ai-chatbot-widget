@@ -109,6 +109,28 @@ map chat_config.chat_config()
   tool.put("description","Informe de cajas que no han sido escaneadas (Pkg_Tracking.Scanned == false), con su último estado, fecha de escaneo y oficina. Params opcionales: limit, office (nombre de oficina).");
   tool.put("params",{"limit":"string opcional","office":"string opcional"});
   tools.add(tool);
+  // --- Catálogo de sugerencias UI ---
+  suggestions = [
+    {
+        "label"   : "Top clientes (paquetes)",
+        "payload" : {"tool":"report_top_customers","params":{}},
+        "order"   : 1,
+        "enabled" : true
+    },
+    {
+        "label"   : "Top clientes (libras)",
+        "payload" : {"tool":"report_top_package_customers","params":{"measure":"pounds"}},
+        "order"   : 2,
+        "enabled" : true
+    },
+    {
+        "label"   : "Paquetes demorados",
+        "payload" : {"tool":"report_delayed_packages","params":{}},
+        "order"   : 3,
+        "enabled" : true
+    }
+  ];
+  config.put("suggestions", suggestions);
   // --- Catálogo de herramientas en texto legible (para el prompt de Zia) ---
   // Texto plano en vez de json.toJson (no reconocido por el editor de Creator).
   toolsText = "";
@@ -124,4 +146,5 @@ map chat_config.chat_config()
   }
   config.put("toolsText",toolsText);
   return config;
+
 }
