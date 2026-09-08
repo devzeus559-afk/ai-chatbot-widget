@@ -96,7 +96,8 @@ map chat_intent.normalize_zia_response(map response)
         trackingNumber = params.get("trackingNumber");
         if(trackingNumber == null || trackingNumber == "")
         {
-          return {"status":"error","kind":"clarify","text":"Necesito el número de seguimiento para rastrear tu paquete. ¿Puedes proporcionármelo?"};
+          // status "ok" + kind "clarify" para que resolve_reply lo maneje como clarify válido
+          return {"status":"ok","kind":"clarify","text":"Necesito el número de seguimiento para rastrear tu paquete. ¿Puedes proporcionármelo?"};
         }
       }
       return {"status":"ok","kind":"tool","tool":toolName,"params":params};
