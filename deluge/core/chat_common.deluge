@@ -436,7 +436,15 @@ string chat_common.format_merchandise_type(map data)
 }
 string chat_common.format_pounds_shipped(map data)
 {
-  if(data == null || data.get("totalPackages") == 0)
+  if(data == null || data.get("empty") == true)
+  {
+    if(data != null && data.get("message") != null)
+    {
+      return data.get("message");
+    }
+    return "No fue posible calcular las libras enviadas.";
+  }
+  if(data.get("totalPackages") == 0)
   {
     return "No encontré paquetes en el período indicado.";
   }
@@ -532,7 +540,15 @@ string chat_common.format_delayed_packages(map data)
 }
 string chat_common.format_unscanned_packages(map data)
 {
-  if(data == null || data.get("totalUnscanned") == 0)
+  if(data == null || data.get("empty") == true)
+  {
+    if(data != null && data.get("message") != null)
+    {
+      return data.get("message");
+    }
+    return "No fue posible calcular las cajas sin escanear.";
+  }
+  if(data.get("totalUnscanned") == 0)
   {
     return "No encontré cajas sin escanear.";
   }

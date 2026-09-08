@@ -51,7 +51,9 @@ map chat_tools.report_pounds_shipped(map params)
     records = List();
   }
   total = records.size();
-  truncated = total > 200;
+  // fetch_packages_report_by_window_office ya aplica range 0-199 (máx 200),
+  // así que total nunca supera el cap: el flag truncated es siempre false.
+  truncated = false;
   // Agregaciones
   officeMap = Map();
   pkgTypeMap = Map();

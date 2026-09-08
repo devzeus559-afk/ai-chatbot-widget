@@ -963,13 +963,14 @@ list chat_data_access.fetch_pkg_tracking_unscanned()
 int chat_data_access.insert_unanswered_query(map data)
 {
   config = thisapp.chat_config.chat_config();
-  newId = insert into Unanswered_Queries
+  newId = insert into ChatUnansweredQueries
   [
   Prompt_Text=data.get("Prompt_Text")
   Timestamp=zoho.currenttime
   Session_ID=data.get("Session_ID")
   Status="pending"
   Notes=data.get("Notes")
+  Added_User=zoho.loginuser
   ];
   return newId;
 }

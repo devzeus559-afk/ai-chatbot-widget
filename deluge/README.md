@@ -55,7 +55,16 @@ deluge/
 │   ├── tool_offices.deluge        ← oficinas comerciales (ciudad/país)
 │   ├── tool_coverage.deluge       ← cobertura de países/proveedores por servicio
 │   ├── tool_contacts.deluge       ← búsqueda de contactos (remitente/receptor)
-│   └── tool_report_top_customers.deluge ← clientes más frecuentes (top N, ventana fija de 30 días)
+│   ├── tool_report_top_customers.deluge ← clientes más frecuentes (top N, ventana fija de 30 días)
+│   ├── tool_report_top_package_customers.deluge ← clientes top por paquetes recibidos
+│   ├── tool_report_top_remittance_customers.deluge ← clientes top por remesas (monto USD)
+│   ├── tool_report_shipping_type_frequency.deluge ← frecuencia por tipo de envío
+│   ├── tool_report_merchandise_type.deluge ← paquetes por tipo de mercancía
+│   ├── tool_report_pounds_shipped.deluge ← libras enviadas por oficina/tipo/clase
+│   ├── tool_report_daily_average.deluge ← promedio diario de libras
+│   ├── tool_report_monthly_comparison.deluge ← comparativa mensual
+│   ├── tool_report_delayed_packages.deluge ← paquetes demorados
+│   └── tool_report_unscanned_packages.deluge ← cajas sin escanear
 └── workflow/
     └── on_submit_chatrequests.deluge  ← script del workflow On Submit de ChatRequests
 ```
@@ -65,12 +74,12 @@ deluge/
 | Archivo | Funciones |
 |---|---|
 | `chat_config.deluge` | `chat_config` |
-| `chat_common.deluge` | `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts`, `format_top_customers` |
-| `data_access.deluge` | `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_session_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_user`, `insert_chat_session`, `fetch_chat_messages_by_session`, `insert_chat_message`, `fetch_packages_by_tracking`, `fetch_services_ids_by_type/_by_destination`, `fetch_services_by_ids`, `fetch_services_all`, `fetch_services_count_by_date_window/_ids_by_date_window/_by_date_window`, `fetch_offices_by_ids`, `fetch_offices_all`, `fetch_coverage_by_ids`, `fetch_coverage_all`, `fetch_vendors_ids_by_type/_by_name`, `fetch_vendors_by_ids`, `fetch_vendors_all`, `fetch_contacts_ids_by_full_name/phone/document`, `fetch_contacts_by_ids`, `fetch_contacts_all` |
+| `chat_common.deluge` | `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts`, `format_top_customers`, `format_top_package_customers`, `format_top_remittance_customers`, `format_shipping_type_frequency`, `format_merchandise_type`, `format_pounds_shipped`, `format_daily_average`, `format_monthly_comparison`, `format_delayed_packages`, `format_unscanned_packages` (+ helpers `insert_ranked_entry`, `build_empty_*`, `build_breakdown_list`, `decidirVisualizacion`, `build_viz`) |
+| `data_access.deluge` | `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_session_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_user`, `insert_chat_session`, `fetch_chat_messages_by_session`, `insert_chat_message`, `insert_unanswered_query`, `fetch_packages_by_tracking`, `fetch_services_ids_by_type/_by_destination`, `fetch_services_by_ids`, `fetch_services_all`, `fetch_services_count_by_date_window/_ids_by_date_window/_by_date_window`, `fetch_services_report_by_date_window/_by_ids`, `materialize_service_report`, `fetch_offices_by_ids`, `fetch_offices_all`, `fetch_coverage_by_ids`, `fetch_coverage_all`, `fetch_vendors_ids_by_type/_by_name`, `fetch_vendors_by_ids`, `fetch_vendors_all`, `fetch_contacts_ids_by_full_name/phone/document`, `fetch_contacts_by_ids`, `fetch_contacts_all`, `fetch_office_id_by_name`, `fetch_packages_report_by_window_office`, `materialize_package_report`, `fetch_pkg_tracking_scanned_all`, `fetch_pkg_tracking_unscanned`, `materialize_pkg_tracking_report` |
 | `chat_intent.deluge` | `chat_intent`, `build_intent_prompt` |
 | `chat_invoke.deluge` | `chat_invoke`, `resolve_reply`, `dispatch_tool`, `compose_with_ai`, `get_or_create_session`, `create_message`, `get_recent_history`, `update_session` |
 | `chat_list.deluge` | `chat_list` |
-| `tools/*.deluge` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts`, `tool_report_top_customers` (+ helpers `insert_ranked_entry`, `build_empty_report`) |
+| `tools/*.deluge` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts`, `tool_report_top_customers`, `tool_report_top_package_customers`, `tool_report_top_remittance_customers`, `tool_report_shipping_type_frequency`, `tool_report_merchandise_type`, `tool_report_pounds_shipped`, `tool_report_daily_average`, `tool_report_monthly_comparison`, `tool_report_delayed_packages`, `tool_report_unscanned_packages` |
 
 > El nombre de la función en el editor de Creator debe coincidir EXACTAMENTE con el nombre
 > definido en el archivo (por ejemplo, crear la función `chat_invoke`, no `chat_invoke.deluge`).
