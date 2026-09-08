@@ -21,6 +21,14 @@ string chat_intent.build_intent_prompt(string userPrompt, list history, string c
   prompt = prompt + "2) {\"answer\": \"<texto>\"} cuando puedas responder sin consultar datos.\n";
   prompt = prompt + "3) {\"clarify\": \"<pregunta>\"} cuando falte información para elegir una herramienta.\n\n";
   prompt = prompt + "HERRAMIENTAS DISPONIBLES:\n" + catalogText + "\n\n";
+  prompt = prompt + "EJEMPLOS DE PARÁMETROS POR HERRAMIENTA:\n";
+  prompt = prompt + "- track_package: usuario dice 'rastrear 123456' → {\"trackingNumber\": \"123456\"}\n";
+  prompt = prompt + "- search_services: 'servicios a Madrid' → {\"destination\": \"Madrid\"}; 'paquetería' → {\"serviceType\": \"Package Receipt\"}\n";
+  prompt = prompt + "- find_offices: 'oficinas en México' → {\"country\": \"México\"}; 'oficina Bogotá' → {\"city\": \"Bogotá\"}\n";
+  prompt = prompt + "- check_coverage: 'cobertura Cuba' → {\"country\": \"Cuba\"}; 'proveedores paquetería' → {\"serviceType\": \"Package Receipt\"}\n";
+  prompt = prompt + "- find_contacts: 'contacto Juan Pérez' → {\"name\": \"Juan Pérez\"}; 'tel 555-1234' → {\"phone\": \"555-1234\"}\n";
+  prompt = prompt + "- report_*: 'reporte top 5' → {\"limit\": \"5\"}; 'oficina Central' → {\"office\": \"Central\"}\n\n";
+  prompt = prompt + "REGLA CRÍTICA: Si el usuario NO especifica un parámetro opcional, OMÍTELO del JSON (no pases null ni string vacío). Si FALTA uno requerido (ej. trackingNumber), devuelve {\"clarify\": \"...\"}.\n\n";
   if(history != null && history.size() > 0)
   {
     prompt = prompt + "HISTORIAL RECIENTE:\n";
@@ -76,12 +84,22 @@ map chat_intent.normalize_zia_response(map response)
     }
     if(parsed.containKey("tool"))
     {
+      toolName = parsed.get("tool");
       params = parsed.get("params");
       if(params == null)
       {
         params = Map();
       }
-      return {"status":"ok","kind":"tool","tool":parsed.get("tool"),"params":params};
+      // Validación de campos requeridos (solo track_package tiene required)
+      if(toolName == "track_package")
+      {
+        trackingNumber = params.get("trackingNumber");
+        if(trackingNumber == null || trackingNumber == "")
+        {
+          return {"status":"error","kind":"clarify","text":"Necesito el número de seguimiento para rastrear tu paquete. ¿Puedes proporcionármelo?"};
+        }
+      }
+      return {"status":"ok","kind":"tool","tool":toolName,"params":params};
     }
     if(parsed.containKey("answer"))
     {
@@ -109,7 +127,7 @@ map chat_intent.chat_intent(string userPrompt, list history)
    *   {"answer": "<texto>"}                    → respuesta directa sin tools
    *   {"clarify": "<pregunta>"}                → falta información
    *
-   * La salida de Zia es TEXTO; se pide JSON estricto con temperature 0 y se
+   * La salida de Zia es TEXTO; se pide JSON estricto con temperature 0.1 y se
    * valida con parse_json_strict (chat_common.dg).
    */
   config = thisapp.chat_config.chat_config();
@@ -124,7 +142,7 @@ map chat_intent.chat_intent(string userPrompt, list history)
   [
   message:message
   context:context
-  parameters:{"temperature":0.0}
+  parameters:{"temperature":0.1}
   ];
   if(zia_response == null)
   {
