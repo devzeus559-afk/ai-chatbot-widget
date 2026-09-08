@@ -486,7 +486,7 @@ map tests_chat_intent.run_live_multiturn(map counters)
   info "LIVE-M6 prompt: ¿quiénes son top clientes remesa? con historial 4 turnos";
   rM6 = thisapp.chat_intent.chat_intent("¿quiénes son top clientes remesa?",histM6);
   info "LIVE-M6 result: " + rM6.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-M6: tool",rM6.get("tool"),"report_top_customers",counters);
+  counters = thisapp.tests_chat_intent.assert_equals("LIVE-M6: tool",rM6.get("tool"),"report_top_remittance_customers",counters);
   return counters;
 }
 
