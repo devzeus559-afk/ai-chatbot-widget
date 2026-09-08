@@ -214,7 +214,10 @@ map tests_chat_intent.test_normalize_clarify(map counters)
   resp.put("status",true);
   resp.put("data","{\"clarify\":\"¿Podrías decirme el país?\"}");
   result = thisapp.chat_intent.normalize_zia_response(resp);
+  // Regresión: rama real clarify, NO el fallback de error (que también es kind:clarify)
+  counters = thisapp.tests_chat_intent.assert_equals("normalize_clarify: status ok",result.get("status"),"ok",counters);
   counters = thisapp.tests_chat_intent.assert_equals("normalize_clarify: kind",result.get("kind"),"clarify",counters);
+  counters = thisapp.tests_chat_intent.assert_equals("normalize_clarify: text exacto",result.get("text"),"¿Podrías decirme el país?",counters);
   return counters;
 }
 map tests_chat_intent.test_normalize_parse_error(map counters)
