@@ -186,6 +186,18 @@ map tests_chat_intent.test_normalize_tool_null_params(map counters)
   counters = thisapp.tests_chat_intent.assert_true("normalize_null_params: params vacío",isEmpty == true,counters,"params null debe normalizar a Map vacío");
   return counters;
 }
+map tests_chat_intent.test_normalize_track_package_missing_number(map counters)
+{
+  // Regresión: track_package sin trackingNumber debe ser clarify, NO tool ni error genérico
+  resp = Map();
+  resp.put("status",true);
+  resp.put("data","{\"tool\":\"track_package\",\"params\":{}}");
+  result = thisapp.chat_intent.normalize_zia_response(resp);
+  counters = thisapp.tests_chat_intent.assert_equals("normalize_track_missing: status ok",result.get("status"),"ok",counters);
+  counters = thisapp.tests_chat_intent.assert_equals("normalize_track_missing: kind clarify",result.get("kind"),"clarify",counters);
+  counters = thisapp.tests_chat_intent.assert_contains("normalize_track_missing: text pide número",result.get("text"),"número de seguimiento",counters);
+  return counters;
+}
 map tests_chat_intent.test_normalize_answer(map counters)
 {
   resp = Map();
@@ -493,6 +505,7 @@ map tests_chat_intent.run_unit()
   counters = thisapp.tests_chat_intent.test_normalize_error_status(counters);
   counters = thisapp.tests_chat_intent.test_normalize_tool_ok(counters);
   counters = thisapp.tests_chat_intent.test_normalize_tool_null_params(counters);
+  counters = thisapp.tests_chat_intent.test_normalize_track_package_missing_number(counters);
   counters = thisapp.tests_chat_intent.test_normalize_answer(counters);
   counters = thisapp.tests_chat_intent.test_normalize_clarify(counters);
   counters = thisapp.tests_chat_intent.test_normalize_parse_error(counters);

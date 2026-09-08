@@ -22,12 +22,12 @@ string chat_intent.build_intent_prompt(string userPrompt, list history, string c
   prompt = prompt + "3) {\"clarify\": \"<pregunta>\"} cuando falte información para elegir una herramienta.\n\n";
   prompt = prompt + "HERRAMIENTAS DISPONIBLES:\n" + catalogText + "\n\n";
   prompt = prompt + "EJEMPLOS DE PARÁMETROS POR HERRAMIENTA:\n";
-  prompt = prompt + "- track_package: usuario dice 'rastrear 123456' → {\"trackingNumber\": \"123456\"}\n";
+  prompt = prompt + "- track_package: usuario dice 'rastrear P-123456' → {\"trackingNumber\": \"P-123456\"}\n";
   prompt = prompt + "- search_services: 'servicios a Madrid' → {\"destination\": \"Madrid\"}; 'paquetería' → {\"serviceType\": \"Package Receipt\"}\n";
-  prompt = prompt + "- find_offices: 'oficinas en México' → {\"country\": \"México\"}; 'oficina Bogotá' → {\"city\": \"Bogotá\"}\n";
+  prompt = prompt + "- find_offices: 'oficinas en Estados Unidos' → {\"country\": \"Estados Unidos\"}; 'oficina New York' → {\"city\": \"New York\"}\n";
   prompt = prompt + "- check_coverage: 'cobertura Cuba' → {\"country\": \"Cuba\"}; 'proveedores paquetería' → {\"serviceType\": \"Package Receipt\"}\n";
   prompt = prompt + "- find_contacts: 'contacto Juan Pérez' → {\"name\": \"Juan Pérez\"}; 'tel 555-1234' → {\"phone\": \"555-1234\"}\n";
-  prompt = prompt + "- report_*: 'reporte top 5' → {\"limit\": \"5\"}; 'oficina Central' → {\"office\": \"Central\"}\n\n";
+  prompt = prompt + "- report_*: 'reporte top 5' → {\"limit\": \"5\"}; 'oficina New York' → {\"office\": \"New York\"}\n\n";
   prompt = prompt + "REGLA CRÍTICA: Si el usuario NO especifica un parámetro opcional, OMÍTELO del JSON (no pases null ni string vacío). Si FALTA uno requerido (ej. trackingNumber), devuelve {\"clarify\": \"...\"}.\n\n";
   if(history != null && history.size() > 0)
   {
