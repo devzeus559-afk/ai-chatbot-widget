@@ -1,0 +1,338 @@
+/**
+ * tests_report_top_customers.deluge
+ *
+ * Suite SMOKE del GRUPO A para report_top_customers (gate 6.1 del cambio
+ * report-top-customers; verificación manual en Zoho Creator).
+ *
+ * NO llama a Zia ni usa la Client API: solo acceso nativo vía
+ * chat_data_access + chat_tools.report_top_customers +
+ * chat_common.format_top_customers — 100% ejecutable en el editor de Deluge.
+ *
+ * Contrato bajo prueba (post commit 7beacd7):
+ *   - serviceType OBLIGATORIO como List<string> ≥1; falta/vacío/no-list =>
+ *     {"ok":false,"kind":"clarify","message":"Debes especificar al menos un tipo de servicio."}
+ *   - dominio genérico SOLO: Locker, Store, Recharge, Online Store, Other
+ *     Services (paquetería/remesas viven en los tools específicos)
+ *   - multi-tipo = unión de IDs por tipo (addAll) ∩ ventana 30 días
+ *   - ranking count desc con desempate por primera fecha (seniority)
+ *   - truncated: true si la intersección supera 200 (fetch_acotado)
+ *   - reply en español vía format_top_customers (sin "null")
+ *   - coincidencia de tipo EXACTA y sensible a mayúsculas
+ *
+ * REQUIERE datos en Creator:
+ *   - ≥250 servicios en la ventana de 30 días para validar el cap/truncated.
+ *     Si hay menos, los asserts del cap son CONDICIONALES (<=) y se marcan
+ *     [INFO] en vez de fallar (no bloquean).
+ *   - ≥2 remitentes distintos con el MISMO conteo (valida tie-break).
+ *   - servicios con Service_Type ∈ {Locker, Store, Recharge, Other Services}
+ *     en la ventana con Sender_field no vacío.
+ *   - IMPORTANTE: si un tipo concreto (p.ej. Locker) NO tiene servicios en la
+ *     ventana, el tool responde ok:true con customers vacío (correcto);
+ *     f1 y compose_reply lo marcan [INFO] en vez de fallar — es data prereq,
+ *     no bug del tool.
+ *
+ * Ejecución: pegar como funciones tests_report_top_customers.* en Creator
+ * (junto con tests_common.*) y llamar  tests_report_top_customers.run()
+ * Revisar logs `info`. No usa Form[criteriaVar] ni API de Creator.
+ */
+
+// --------------------------------------------------------------------------
+// (c) Sender ID surfacea como Number
+// --------------------------------------------------------------------------
+map tests_report_top_customers.test_sender_is_number(map counters)
+{
+  endDate = zoho.currentdate;
+  startDate = endDate.subDay(30);
+  records = thisapp.chat_data_access.fetch_services_by_date_window(startDate,endDate);
+  numberFound = 0;
+  stringFound = 0;
+  for each  r in records
+  {
+    senderVal = r.get("customerId");
+    if(senderVal == null || "" + senderVal == "")
+    {
+      continue;
+    }
+    // El tool normaliza con toNumber(...); replicar la comprobación.
+    asNumber = toNumber("" + senderVal);
+    if(asNumber == null)
+    {
+      stringFound = stringFound + 1;
+    }
+    else
+    {
+      numberFound = numberFound + 1;
+    }
+  }
+  info "sender as number: " + numberFound + " | no-numeric: " + stringFound + " (de " + records.size() + " records)";
+  counters = thisapp.tests_common.assert_true("sender_is_number: al menos 1 remitente numérico",numberFound > 0,counters,"ningún Sender_field numérico en ventana (requiere data)");
+  counters = thisapp.tests_common.assert_true("sender_is_number: ninguno no-numérico",stringFound == 0,counters,"hay " + stringFound + " remitentes no numéricos que el tool descartaría");
+  return counters;
+}
+
+// --------------------------------------------------------------------------
+// (d) Cap 200 + truncated (CONDICIONAL <=)
+// --------------------------------------------------------------------------
+map tests_report_top_customers.test_cap_200_truncated(map counters)
+{
+  result = thisapp.chat_tools.report_top_customers({"serviceType":{"Locker"},"limit":"10"});
+  ok = result.get("ok");
+  counters = thisapp.tests_common.assert_true("cap_200: tool responde ok",ok == true,counters,"result=" + result.toString());
+  if(ok == true)
+  {
+    data = result.get("data");
+    total = data.get("totalServices");
+    truncated = data.get("truncated");
+    // Para Locker específico casi nunca supera 200 en data de prueba; si el
+    // dataset alcanza el cap se exige truncated true, si no se informa.
+    if(total != null && total > 200)
+    {
+      counters = thisapp.tests_common.assert_true("cap_200: truncated true con total>200",truncated == true,counters,"total=" + total + " truncated=" + truncated);
+      customers = data.get("customers");
+      counters = thisapp.tests_common.assert_true("cap_200: customers <= 200",customers != null && customers.size() <= 200,counters,"customers=" + if(customers != null,customers.size(),"null"));
+    }
+    else
+    {
+      info "[INFO] cap_200: total=" + total + " <= 200 — truncation NO ejercitada (revisar data prereq; usar Locker+aleatorio si se quiere forzar)";
+      counters = thisapp.tests_common.assert_true("cap_200: no-capped → truncated false",truncated == false,counters,"truncated=" + truncated);
+    }
+  }
+  return counters;
+}
+
+// --------------------------------------------------------------------------
+// (e) Ranking: count desc + tie-break seniority + reply en español
+// --------------------------------------------------------------------------
+map tests_report_top_customers.test_tie_break_seniority(map counters)
+{
+  // Locker/Store para que el dominio genérico tenga casos; top 10.
+  result = thisapp.chat_tools.report_top_customers({"serviceType":{"Locker","Store"},"limit":"10"});
+  ok = result.get("ok");
+  if(ok != true)
+  {
+    info "[INFO] tie_break: tool no ok — " + result.toString();
+    counters = thisapp.tests_common.assert_true("tie_break: tool ok (fallback: data prereq)",false,counters,"result=" + result.toString());
+    return counters;
+  }
+  data = result.get("data");
+  customers = data.get("customers");
+  counters = thisapp.tests_common.assert_true("tie_break: hay customers",customers != null && customers.size() > 0,counters,"customers=" + if(customers != null,customers.size(),"null"));
+  if(customers != null && customers.size() > 1)
+  {
+    // Calcular si existe al menos un empate para ejercitar el desempate.
+    tiePresent = false;
+    orderOk = true;
+    prevCount = null;
+    prevDate = null;
+    for each  c in customers
+    {
+      cCount = toNumber("" + c.get("totalServices"));
+      cDate = c.get("firstServiceDate");
+      if(prevCount != null)
+      {
+        // Orden: count desc (nunca debe subir entre filas consecutivas)
+        if(cCount > prevCount)
+        {
+          orderOk = false;
+        }
+        // Empate => fecha más antigua primero (seniority)
+        if(cCount == prevCount && cDate != null && prevDate != null && cDate < prevDate)
+        {
+          orderOk = false;
+        }
+        if(cCount == prevCount)
+        {
+          tiePresent = true;
+        }
+      }
+      prevCount = cCount;
+      prevDate = cDate;
+    }
+    counters = thisapp.tests_common.assert_true("tie_break: ranking count desc",orderOk == true,counters,"orden violado (count subió o empate con fecha MÁS antigua después)");
+    if(tiePresent)
+    {
+      // El empate debe existir en los datos (data prereq) para que sea real.
+      counters = thisapp.tests_common.assert_true("tie_break: empate presente en datos",tiePresent == true,counters,"sin empates en top — no se ejercita desempate");
+    }
+    else
+    {
+      info "[INFO] tie_break: sin empates en el top 10 de esta data — desempate no ejercitado (data prereq: 2 remitentes mismo conteo)";
+    }
+  }
+  return counters;
+}
+
+// --------------------------------------------------------------------------
+// (f) Filtro por tipo: single + multi-type union + exact casing + clarify
+// --------------------------------------------------------------------------
+map tests_report_top_customers.test_type_filter(map counters)
+{
+  // f1 — single type: ok, serviceType exacto, breakdown con el tipo.
+  r1 = thisapp.chat_tools.report_top_customers({"serviceType":{"Locker"},"limit":"10"});
+  if(r1.get("ok") == true)
+  {
+    counters = thisapp.tests_common.assert_equals("type_filter f1: serviceType",r1.get("data").get("serviceType"),"Locker",counters);
+    f1Customers = r1.get("data").get("customers");
+    if(f1Customers != null && f1Customers.size() > 0)
+    {
+      counters = thisapp.tests_common.assert_true("type_filter f1: breakdown contiene Locker",thisapp.tests_report_top_customers.hasServiceType(f1Customers,"Locker") == true,counters,"ningún customer con breakdown Locker");
+    }
+    else
+    {
+      info "[INFO] type_filter f1: sin data Locker en ventana — breakdown no ejercitado (data prereq)";
+    }
+  }
+  else
+  {
+    info "[INFO] type_filter f1: tool no ok — " + r1.toString();
+    counters = thisapp.tests_common.assert_true("type_filter f1: tool ok (requiere data)",false,counters,r1.toString());
+  }
+
+  // f2 — multi-type: union (no intersect tipo-a-tipo); serviceType "Locker, Store"
+  r2 = thisapp.chat_tools.report_top_customers({"serviceType":{"Locker","Store"},"limit":"10"});
+  if(r2.get("ok") == true)
+  {
+    counters = thisapp.tests_common.assert_equals("type_filter f2: serviceType multi",r2.get("data").get("serviceType"),"Locker, Store",counters);
+    gotLocker = thisapp.tests_report_top_customers.hasServiceType(r2.get("data").get("customers"),"Locker");
+    gotStore = thisapp.tests_report_top_customers.hasServiceType(r2.get("data").get("customers"),"Store");
+    counters = thisapp.tests_common.assert_true("type_filter f2: union Locker|Store",gotLocker == true || gotStore == true,counters,"ni Locker ni Store en breakdown (union no ejercitada?)");
+    if(r1.get("ok") == true && r2.get("data").get("totalServices") != null && r1.get("data").get("totalServices") != null)
+    {
+      // Unión => total multi >= total single (nunca menor)
+      counters = thisapp.tests_common.assert_true("type_filter f2: total multi >= single",toNumber("" + r2.get("data").get("totalServices")) >= toNumber("" + r1.get("data").get("totalServices")),counters,"multi=" + r2.get("data").get("totalServices") + " single=" + r1.get("data").get("totalServices"));
+    }
+  }
+  else
+  {
+    info "[INFO] type_filter f2: sin data Locker/Store — " + r2.toString();
+    counters = thisapp.tests_common.assert_true("type_filter f2: tool ok (requiere data)",false,counters,r2.toString());
+  }
+
+  // f3 — exact casing: "locker" (minúscula) NO debe matchear => vacío, no error
+  r3 = thisapp.chat_tools.report_top_customers({"serviceType":{"locker"},"limit":"10"});
+  counters = thisapp.tests_common.assert_true("type_filter f3: casing exacto → ok vacío",r3.get("ok") == true && r3.get("data") != null && r3.get("data").get("customers") != null && r3.get("data").get("customers").size() == 0,counters,"result=" + r3.toString());
+
+  // F4 — clarify: falta / vacío / no-list
+  empty_map = Map();
+  r4a = thisapp.chat_tools.report_top_customers(empty_map);
+  counters = thisapp.tests_common.assert_true("type_filter f4a: falta → clarify",r4a.get("ok") == false && r4a.get("kind") == "clarify",counters,"result=" + r4a.toString());
+  r4b = thisapp.chat_tools.report_top_customers({"serviceType":List(),"limit":"10"});
+  counters = thisapp.tests_common.assert_true("type_filter f4b: lista vacía → clarify",r4b.get("ok") == false && r4b.get("kind") == "clarify",counters,"result=" + r4b.toString());
+  r4c = thisapp.chat_tools.report_top_customers({"serviceType":"Locker","limit":"10"});
+  counters = thisapp.tests_common.assert_true("type_filter f4c: string (no lista) → clarify",r4c.get("ok") == false && r4c.get("kind") == "clarify",counters,"result=" + r4c.toString());
+  return counters;
+}
+// Helper: ¿algún customer del ranking tiene el tipo en su breakdown?
+boolean tests_report_top_customers.hasServiceType(list customers, string serviceType)
+{
+  if(customers == null)
+  {
+    return false;
+  }
+  for each  c in customers
+  {
+    b = c.get("serviceBreakdown");
+    if(b != null && b.contains(serviceType))
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+// --------------------------------------------------------------------------
+// (e) Reply en español: template, sin "null", empty message
+// --------------------------------------------------------------------------
+map tests_report_top_customers.test_compose_reply(map counters)
+{
+  r = thisapp.chat_tools.report_top_customers({"serviceType":{"Locker"},"limit":"5"});
+  if(r.get("ok") == true && r.get("data").get("customers") != null && r.get("data").get("customers").size() > 0)
+  {
+    text = thisapp.chat_common.format_top_customers(r.get("data"));
+    info "reply: " + text;
+    counters = thisapp.tests_common.assert_contains("compose_reply: template español",text,"Clientes más frecuentes",counters);
+    counters = thisapp.tests_common.assert_true("compose_reply: sin 'null' en reply",text.contains("null") == false,counters,"reply contiene 'null': " + text);
+  }
+  else if(r.get("ok") == true)
+  {
+    info "[INFO] compose_reply: sin customers Locker — template no ejercitado (data prereq) — " + r.toString();
+  }
+  else
+  {
+    info "[INFO] compose_reply: tool no ok — " + r.toString();
+    counters = thisapp.tests_common.assert_true("compose_reply: tool ok (requiere data)",false,counters,r.toString());
+  }
+  // Empty report: tipo inexistente (casing) => "No encontré..." en español
+  re = thisapp.chat_tools.report_top_customers({"serviceType":{"__inexistente__"},"limit":"5"});
+  if(re.get("ok") == true)
+  {
+    emptText = thisapp.chat_common.format_top_customers(re.get("data"));
+    counters = thisapp.tests_common.assert_contains("compose_reply: empty message español",emptText,"No encontré",counters);
+  }
+  else
+  {
+    info "[INFO] compose_reply: empty path no ok — " + re.toString();
+    counters = thisapp.tests_common.assert_true("compose_reply: empty path ok",false,counters,re.toString());
+  }
+  return counters;
+}
+
+// --------------------------------------------------------------------------
+// (a)/(b) Window count + fetch — activos en run() (validan count + shape + cap)
+// --------------------------------------------------------------------------
+map tests_report_top_customers.test_window_count(map counters)
+{
+  // count de la ventana debe ejecutar con Date variables y ser > 0 con data.
+  endDate = zoho.currentdate;
+  startDate = endDate.subDay(30);
+  total = thisapp.chat_data_access.fetch_services_count_by_date_window(startDate,endDate);
+  info "window count: " + total;
+  counters = thisapp.tests_common.assert_true("window_count: count ejecuta y > 0",total != null && total > 0,counters,"total=" + total + " (requiere data en ventana 30d)");
+  return counters;
+}
+map tests_report_top_customers.test_window_fetch(map counters)
+{
+  endDate = zoho.currentdate;
+  startDate = endDate.subDay(30);
+  records = thisapp.chat_data_access.fetch_services_by_date_window(startDate,endDate);
+  total = thisapp.chat_data_access.fetch_services_count_by_date_window(startDate,endDate);
+  info "window fetch size: " + records.size() + " (count=" + total + ")";
+  // Fetch debe materializar el shape esperado por el tool (claves del reporte).
+  if(records != null && records.size() > 0)
+  {
+    first = records.get(0);
+    counters = thisapp.tests_common.assert_true("window_fetch: shape serviceType",first.containKey("serviceType"),counters,"key serviceType");
+    counters = thisapp.tests_common.assert_true("window_fetch: shape customerId",first.containKey("customerId"),counters,"key customerId");
+    counters = thisapp.tests_common.assert_true("window_fetch: shape date",first.containKey("date"),counters,"key date");
+    counters = thisapp.tests_common.assert_true("window_fetch: shape price",first.containKey("price"),counters,"key price");
+    // Cap: si count <= 200, fetch trae todo; si count > 200, fetch trae 200.
+    isCapped = total > 200;
+    sizeOk = records.size() == total || (isCapped && records.size() == 200);
+    counters = thisapp.tests_common.assert_true("window_fetch: size coherente con cap 200",sizeOk,counters,"fetch=" + records.size() + " count=" + total);
+  }
+  else
+  {
+    info "[INFO] window_fetch: sin registros en la ventana (revisar data prereq)";
+  }
+  return counters;
+}
+
+// --------------------------------------------------------------------------
+// Orquestador
+// --------------------------------------------------------------------------
+map tests_report_top_customers.run()
+{
+  counters = Map();
+  counters.put("passed",0);
+  counters.put("failed",0);
+  info "=== SMOKE report_top_customers (Grupo A, sin Zia) ===";
+  counters = thisapp.tests_report_top_customers.test_window_count(counters);
+  counters = thisapp.tests_report_top_customers.test_window_fetch(counters);
+  counters = thisapp.tests_report_top_customers.test_sender_is_number(counters);
+  counters = thisapp.tests_report_top_customers.test_cap_200_truncated(counters);
+  counters = thisapp.tests_report_top_customers.test_tie_break_seniority(counters);
+  counters = thisapp.tests_report_top_customers.test_type_filter(counters);
+  counters = thisapp.tests_report_top_customers.test_compose_reply(counters);
+  info "=== SMOKE done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}

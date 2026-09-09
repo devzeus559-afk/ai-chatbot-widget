@@ -7,66 +7,17 @@
  *  - normalize_zia_response (puro, mock de Zia) — parsing + normalización
  *  - chat_intent live con Zia real — 10 casos first-turn + 6 multiturno (16 live)
  *
- * Ejecución: pegar como funciones tests_chat_intent.* en Creator y llamar
+ * Ejecución: pegar como funciones tests_chat_intent.* en Creator (junto con
+ * tests_common.*) y llamar:
  *   tests_chat_intent.run_all()          // todo (unit + live)
  *   tests_chat_intent.run_unit()         // solo unit (sin consumo Zia)
  *   tests_chat_intent.run_live_first_turn()
  *   tests_chat_intent.run_live_multiturn()
  * Revisar logs `info` en Creator. Zia: temperature 0, max 40s por llamada.
- * No usa Form[criteriaVar] ni API Creator.
+ * No usa Form[criteriaVar] ni API Creator. Los asserts usan tests_common.*
+ * (helpers compartidos; ver tests_common.deluge).
  */
 
-// --------------------------------------------------------------------------
-// Helpers de aserción
-// --------------------------------------------------------------------------
-map tests_chat_intent.assert_equals(string testName, string actual, string expected, map counters)
-{
-  passed = counters.get("passed");
-  failed = counters.get("failed");
-  if(actual == expected)
-  {
-    info "[PASSED] " + testName;
-    counters.put("passed",passed + 1);
-  }
-  else
-  {
-    info "[FAILED] " + testName + " | expected: " + expected + " | actual: " + actual;
-    counters.put("failed",failed + 1);
-  }
-  return counters;
-}
-map tests_chat_intent.assert_contains(string testName, string haystack, string needle, map counters)
-{
-  passed = counters.get("passed");
-  failed = counters.get("failed");
-  if(haystack != null && haystack.contains(needle))
-  {
-    info "[PASSED] " + testName;
-    counters.put("passed",passed + 1);
-  }
-  else
-  {
-    info "[FAILED] " + testName + " | expected to contain: " + needle + " | haystack: " + haystack;
-    counters.put("failed",failed + 1);
-  }
-  return counters;
-}
-map tests_chat_intent.assert_true(string testName, boolean condition, map counters, string detail)
-{
-  passed = counters.get("passed");
-  failed = counters.get("failed");
-  if(condition == true)
-  {
-    info "[PASSED] " + testName;
-    counters.put("passed",passed + 1);
-  }
-  else
-  {
-    info "[FAILED] " + testName + " | " + detail;
-    counters.put("failed",failed + 1);
-  }
-  return counters;
-}
 // Helper para construir historial tipo get_recent_history: List<{role,content}>
 list tests_chat_intent.make_history_pair(string role1, string content1, string role2, string content2)
 {
@@ -92,12 +43,12 @@ map tests_chat_intent.test_build_prompt_no_history(map counters)
 {
   catalogText = "- track_package: Busca el estado\n";
   prompt = thisapp.chat_intent.build_intent_prompt("Hola",null,catalogText);
-  counters = thisapp.tests_chat_intent.assert_contains("build_prompt_no_history: contrato",prompt,"CONTRATO DE SALIDA",counters);
-  counters = thisapp.tests_chat_intent.assert_contains("build_prompt_no_history: catalog",prompt,catalogText,counters);
-  counters = thisapp.tests_chat_intent.assert_contains("build_prompt_no_history: userPrompt",prompt,"MENSAJE ACTUAL DEL USUARIO:\nHola",counters);
+  counters = thisapp.tests_common.assert_contains("build_prompt_no_history: contrato",prompt,"CONTRATO DE SALIDA",counters);
+  counters = thisapp.tests_common.assert_contains("build_prompt_no_history: catalog",prompt,catalogText,counters);
+  counters = thisapp.tests_common.assert_contains("build_prompt_no_history: userPrompt",prompt,"MENSAJE ACTUAL DEL USUARIO:\nHola",counters);
   // no debe contener HISTORIAL
   hasHistory = prompt.contains("HISTORIAL RECIENTE");
-  counters = thisapp.tests_chat_intent.assert_true("build_prompt_no_history: sin historial",hasHistory == false,counters,"no debe incluir HISTORIAL RECIENTE");
+  counters = thisapp.tests_common.assert_true("build_prompt_no_history: sin historial",hasHistory == false,counters,"no debe incluir HISTORIAL RECIENTE");
   return counters;
 }
 map tests_chat_intent.test_build_prompt_empty_history(map counters)
@@ -106,7 +57,7 @@ map tests_chat_intent.test_build_prompt_empty_history(map counters)
   emptyHist = List();
   prompt = thisapp.chat_intent.build_intent_prompt("test vacío",emptyHist,catalogText);
   hasHistory = prompt.contains("HISTORIAL RECIENTE");
-  counters = thisapp.tests_chat_intent.assert_true("build_prompt_empty_history: sin bloque historial",hasHistory == false,counters,"lista vacía no debe generar bloque");
+  counters = thisapp.tests_common.assert_true("build_prompt_empty_history: sin bloque historial",hasHistory == false,counters,"lista vacía no debe generar bloque");
   return counters;
 }
 map tests_chat_intent.test_build_prompt_with_history(map counters)
@@ -122,10 +73,10 @@ map tests_chat_intent.test_build_prompt_with_history(map counters)
   m2.put("content","¿En qué ayudo?");
   hist.add(m2);
   prompt = thisapp.chat_intent.build_intent_prompt("¿Tienen oficinas en Miami?",hist,catalogText);
-  counters = thisapp.tests_chat_intent.assert_contains("build_prompt_with_history: header historial",prompt,"HISTORIAL RECIENTE:",counters);
-  counters = thisapp.tests_chat_intent.assert_contains("build_prompt_with_history: user line",prompt,"user: Hola",counters);
-  counters = thisapp.tests_chat_intent.assert_contains("build_prompt_with_history: ai line",prompt,"ai: ¿En qué ayudo?",counters);
-  counters = thisapp.tests_chat_intent.assert_contains("build_prompt_with_history: prompt actual",prompt,"MENSAJE ACTUAL DEL USUARIO:\n¿Tienen oficinas en Miami?",counters);
+  counters = thisapp.tests_common.assert_contains("build_prompt_with_history: header historial",prompt,"HISTORIAL RECIENTE:",counters);
+  counters = thisapp.tests_common.assert_contains("build_prompt_with_history: user line",prompt,"user: Hola",counters);
+  counters = thisapp.tests_common.assert_contains("build_prompt_with_history: ai line",prompt,"ai: ¿En qué ayudo?",counters);
+  counters = thisapp.tests_common.assert_contains("build_prompt_with_history: prompt actual",prompt,"MENSAJE ACTUAL DEL USUARIO:\n¿Tienen oficinas en Miami?",counters);
   return counters;
 }
 map tests_chat_intent.test_build_prompt_catalog_in_prompt(map counters)
@@ -134,8 +85,8 @@ map tests_chat_intent.test_build_prompt_catalog_in_prompt(map counters)
   config = thisapp.chat_config.chat_config();
   catalogText = config.get("toolsText");
   prompt = thisapp.chat_intent.build_intent_prompt("rastrea ABC",null,catalogText);
-  counters = thisapp.tests_chat_intent.assert_contains("build_prompt_catalog: toolsText incluido",prompt,"track_package",counters);
-  counters = thisapp.tests_chat_intent.assert_contains("build_prompt_catalog: search_services incluido",prompt,"search_services",counters);
+  counters = thisapp.tests_common.assert_contains("build_prompt_catalog: toolsText incluido",prompt,"track_package",counters);
+  counters = thisapp.tests_common.assert_contains("build_prompt_catalog: search_services incluido",prompt,"search_services",counters);
   return counters;
 }
 
@@ -145,8 +96,8 @@ map tests_chat_intent.test_build_prompt_catalog_in_prompt(map counters)
 map tests_chat_intent.test_normalize_null(map counters)
 {
   result = thisapp.chat_intent.normalize_zia_response(null);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_null: status",result.get("status"),"error",counters);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_null: kind",result.get("kind"),"clarify",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_null: status",result.get("status"),"error",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_null: kind",result.get("kind"),"clarify",counters);
   return counters;
 }
 map tests_chat_intent.test_normalize_error_status(map counters)
@@ -156,8 +107,8 @@ map tests_chat_intent.test_normalize_error_status(map counters)
   resp.put("error","IA no habilitada");
   resp.put("data",null);
   result = thisapp.chat_intent.normalize_zia_response(resp);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_error: status",result.get("status"),"error",counters);
-  counters = thisapp.tests_chat_intent.assert_contains("normalize_error: text contiene error",result.get("text"),"IA no habilitada",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_error: status",result.get("status"),"error",counters);
+  counters = thisapp.tests_common.assert_contains("normalize_error: text contiene error",result.get("text"),"IA no habilitada",counters);
   return counters;
 }
 map tests_chat_intent.test_normalize_tool_ok(map counters)
@@ -166,12 +117,12 @@ map tests_chat_intent.test_normalize_tool_ok(map counters)
   resp.put("status",true);
   resp.put("data","{\"tool\":\"track_package\",\"params\":{\"trackingNumber\":\"ABC123\"}}");
   result = thisapp.chat_intent.normalize_zia_response(resp);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_tool_ok: status",result.get("status"),"ok",counters);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_tool_ok: kind",result.get("kind"),"tool",counters);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_tool_ok: tool",result.get("tool"),"track_package",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_tool_ok: status",result.get("status"),"ok",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_tool_ok: kind",result.get("kind"),"tool",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_tool_ok: tool",result.get("tool"),"track_package",counters);
   params = result.get("params");
   hasKey = params.containKey("trackingNumber");
-  counters = thisapp.tests_chat_intent.assert_true("normalize_tool_ok: params trackingNumber",hasKey == true,counters,"params debe contener trackingNumber");
+  counters = thisapp.tests_common.assert_true("normalize_tool_ok: params trackingNumber",hasKey == true,counters,"params debe contener trackingNumber");
   return counters;
 }
 map tests_chat_intent.test_normalize_tool_null_params(map counters)
@@ -180,10 +131,10 @@ map tests_chat_intent.test_normalize_tool_null_params(map counters)
   resp.put("status",true);
   resp.put("data","{\"tool\":\"find_offices\",\"params\":null}");
   result = thisapp.chat_intent.normalize_zia_response(resp);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_null_params: kind",result.get("kind"),"tool",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_null_params: kind",result.get("kind"),"tool",counters);
   params = result.get("params");
   isEmpty = params.size() == 0;
-  counters = thisapp.tests_chat_intent.assert_true("normalize_null_params: params vacío",isEmpty == true,counters,"params null debe normalizar a Map vacío");
+  counters = thisapp.tests_common.assert_true("normalize_null_params: params vacío",isEmpty == true,counters,"params null debe normalizar a Map vacío");
   return counters;
 }
 map tests_chat_intent.test_normalize_track_package_missing_number(map counters)
@@ -193,9 +144,9 @@ map tests_chat_intent.test_normalize_track_package_missing_number(map counters)
   resp.put("status",true);
   resp.put("data","{\"tool\":\"track_package\",\"params\":{}}");
   result = thisapp.chat_intent.normalize_zia_response(resp);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_track_missing: status ok",result.get("status"),"ok",counters);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_track_missing: kind clarify",result.get("kind"),"clarify",counters);
-  counters = thisapp.tests_chat_intent.assert_contains("normalize_track_missing: text pide número",result.get("text"),"número de seguimiento",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_track_missing: status ok",result.get("status"),"ok",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_track_missing: kind clarify",result.get("kind"),"clarify",counters);
+  counters = thisapp.tests_common.assert_contains("normalize_track_missing: text pide número",result.get("text"),"número de seguimiento",counters);
   return counters;
 }
 map tests_chat_intent.test_normalize_answer(map counters)
@@ -204,8 +155,8 @@ map tests_chat_intent.test_normalize_answer(map counters)
   resp.put("status",true);
   resp.put("data","{\"answer\":\"Hola, somos agencia de paquetería\"}");
   result = thisapp.chat_intent.normalize_zia_response(resp);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_answer: kind",result.get("kind"),"answer",counters);
-  counters = thisapp.tests_chat_intent.assert_contains("normalize_answer: text",result.get("text"),"paquetería",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_answer: kind",result.get("kind"),"answer",counters);
+  counters = thisapp.tests_common.assert_contains("normalize_answer: text",result.get("text"),"paquetería",counters);
   return counters;
 }
 map tests_chat_intent.test_normalize_clarify(map counters)
@@ -215,9 +166,9 @@ map tests_chat_intent.test_normalize_clarify(map counters)
   resp.put("data","{\"clarify\":\"¿Podrías decirme el país?\"}");
   result = thisapp.chat_intent.normalize_zia_response(resp);
   // Regresión: rama real clarify, NO el fallback de error (que también es kind:clarify)
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_clarify: status ok",result.get("status"),"ok",counters);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_clarify: kind",result.get("kind"),"clarify",counters);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_clarify: text exacto",result.get("text"),"¿Podrías decirme el país?",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_clarify: status ok",result.get("status"),"ok",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_clarify: kind",result.get("kind"),"clarify",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_clarify: text exacto",result.get("text"),"¿Podrías decirme el país?",counters);
   return counters;
 }
 map tests_chat_intent.test_normalize_parse_error(map counters)
@@ -226,8 +177,8 @@ map tests_chat_intent.test_normalize_parse_error(map counters)
   resp.put("status",true);
   resp.put("data","no es json");
   result = thisapp.chat_intent.normalize_zia_response(resp);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_parse_error: status",result.get("status"),"error",counters);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_parse_error: kind",result.get("kind"),"clarify",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_parse_error: status",result.get("status"),"error",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_parse_error: kind",result.get("kind"),"clarify",counters);
   return counters;
 }
 map tests_chat_intent.test_normalize_unknown_key(map counters)
@@ -236,7 +187,7 @@ map tests_chat_intent.test_normalize_unknown_key(map counters)
   resp.put("status",true);
   resp.put("data","{\"foo\":\"bar\"}");
   result = thisapp.chat_intent.normalize_zia_response(resp);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_unknown: status",result.get("status"),"error",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_unknown: status",result.get("status"),"error",counters);
   return counters;
 }
 map tests_chat_intent.test_normalize_markdown_fence(map counters)
@@ -245,8 +196,8 @@ map tests_chat_intent.test_normalize_markdown_fence(map counters)
   resp.put("status",true);
   resp.put("data","```json\n{\"tool\":\"search_services\",\"params\":{\"destination\":\"Madrid\"}}\n```");
   result = thisapp.chat_intent.normalize_zia_response(resp);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_fence: kind",result.get("kind"),"tool",counters);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_fence: tool",result.get("tool"),"search_services",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_fence: kind",result.get("kind"),"tool",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_fence: tool",result.get("tool"),"search_services",counters);
   return counters;
 }
 map tests_chat_intent.test_normalize_noise_wrapped(map counters)
@@ -255,7 +206,7 @@ map tests_chat_intent.test_normalize_noise_wrapped(map counters)
   resp.put("status",true);
   resp.put("data","texto antes {\"answer\":\"hola\"} texto después");
   result = thisapp.chat_intent.normalize_zia_response(resp);
-  counters = thisapp.tests_chat_intent.assert_equals("normalize_noise: kind",result.get("kind"),"answer",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_noise: kind",result.get("kind"),"answer",counters);
   return counters;
 }
 
@@ -270,8 +221,8 @@ map tests_chat_intent.live_assert_tool(string caseId, string prompt, string expe
   hist = List();
   result = thisapp.chat_intent.chat_intent(prompt,hist);
   info "LIVE " + caseId + " result: " + result.toString();
-  counters = thisapp.tests_chat_intent.assert_equals(caseId + ": kind",result.get("kind"),"tool",counters);
-  counters = thisapp.tests_chat_intent.assert_equals(caseId + ": tool",result.get("tool"),expectedTool,counters);
+  counters = thisapp.tests_common.assert_equals(caseId + ": kind",result.get("kind"),"tool",counters);
+  counters = thisapp.tests_common.assert_equals(caseId + ": tool",result.get("tool"),expectedTool,counters);
   if(expectedParamKey != null && expectedParamKey != "")
   {
     params = result.get("params");
@@ -294,7 +245,7 @@ map tests_chat_intent.live_assert_tool(string caseId, string prompt, string expe
     }
     else
     {
-      counters = thisapp.tests_chat_intent.assert_true(caseId + ": params contiene " + expectedParamKey,hasKey == true,counters,"params=" + params.toString());
+      counters = thisapp.tests_common.assert_true(caseId + ": params contiene " + expectedParamKey,hasKey == true,counters,"params=" + params.toString());
     }
   }
   return counters;
@@ -331,78 +282,78 @@ map tests_chat_intent.run_live_first_turn(map counters)
       isSafe6b = false;
     }
   }
-  counters = thisapp.tests_chat_intent.assert_true("LIVE-06b: report vago no llama al genérico sin serviceType",isSafe6b == true,counters,"kind=" + r6b.get("kind") + " tool=" + r6b.get("tool") + " params=" + r6b.get("params"));
+  counters = thisapp.tests_common.assert_true("LIVE-06b: report vago no llama al genérico sin serviceType",isSafe6b == true,counters,"kind=" + r6b.get("kind") + " tool=" + r6b.get("tool") + " params=" + r6b.get("params"));
   // 7 — answer (sin tool)
   info "LIVE-07 answer prompt: Hola, ¿qué hacen ustedes?";
   r7 = thisapp.chat_intent.chat_intent("Hola, ¿qué hacen ustedes?",List());
   info "LIVE-07 result: " + r7.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-07: kind answer",r7.get("kind"),"answer",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-07: kind answer",r7.get("kind"),"answer",counters);
   // 8 — clarify ambiguo
   info "LIVE-08 clarify prompt: ayuda";
   r8 = thisapp.chat_intent.chat_intent("ayuda",List());
   info "LIVE-08 result: " + r8.toString();
   kind8 = r8.get("kind");
   isClarify8 = kind8 == "clarify" || kind8 == "answer";
-  counters = thisapp.tests_chat_intent.assert_true("LIVE-08: clarify o answer para 'ayuda'",isClarify8 == true,counters,"kind=" + kind8);
+  counters = thisapp.tests_common.assert_true("LIVE-08: clarify o answer para 'ayuda'",isClarify8 == true,counters,"kind=" + kind8);
   // 9 — vago sin destino/tipo: debe ser tool con params vacíos, NO clarify (config: Si no especifica, params vacíos)
   // Prompt ajustado a forma menos ambigua para estabilidad Zia; cubre still params {}
   info "LIVE-09 vago prompt: ¿Qué servicios tienen disponibles?";
   r9 = thisapp.chat_intent.chat_intent("¿Qué servicios tienen disponibles?",List());
   info "LIVE-09 result: " + r9.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-09: kind tool (vago no es clarify)",r9.get("kind"),"tool",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-09: kind tool (vago no es clarify)",r9.get("kind"),"tool",counters);
   // 10 — vacío/ruido (amplía a answer como graceful fallback de Zia)
   info "LIVE-10 vacío prompt: ABC";
   r10 = thisapp.chat_intent.chat_intent("ABC",List());
   info "LIVE-10 result: " + r10.toString();
   kind10 = r10.get("kind");
   isClarify10 = kind10 == "clarify" || kind10 == "answer" || r10.get("status") == "error";
-  counters = thisapp.tests_chat_intent.assert_true("LIVE-10: clarify/answer/error para ABC",isClarify10 == true,counters,"kind=" + kind10);
+  counters = thisapp.tests_common.assert_true("LIVE-10: clarify/answer/error para ABC",isClarify10 == true,counters,"kind=" + kind10);
   // 11 — off-topic clima (Zia puede devolver clarify o answer; el texto debe mencionar dominio)
   info "LIVE-11 off-topic prompt: ¿Cuál es el clima en Madrid?";
   r11 = thisapp.chat_intent.chat_intent("¿Cuál es el clima en Madrid?",List());
   info "LIVE-11 result: " + r11.toString();
   kind11 = r11.get("kind");
   isRelevant11 = kind11 == "clarify" || kind11 == "answer";
-  counters = thisapp.tests_chat_intent.assert_true("LIVE-11: clarify/answer para off-topic clima",isRelevant11 == true,counters,"kind=" + kind11);
+  counters = thisapp.tests_common.assert_true("LIVE-11: clarify/answer para off-topic clima",isRelevant11 == true,counters,"kind=" + kind11);
   text11 = r11.get("text");
   if(text11 == null) { text11 = ""; }
-  counters = thisapp.tests_chat_intent.assert_contains("LIVE-11: respuesta menciona dominio",text11,"paquetería",counters);
+  counters = thisapp.tests_common.assert_contains("LIVE-11: respuesta menciona dominio",text11,"paquetería",counters);
   // 12 — off-topic fútbol
   info "LIVE-12 off-topic prompt: ¿Quién ganó el mundial?";
   r12 = thisapp.chat_intent.chat_intent("¿Quién ganó el mundial?",List());
   info "LIVE-12 result: " + r12.toString();
   kind12 = r12.get("kind");
   isRelevant12 = kind12 == "clarify" || kind12 == "answer";
-  counters = thisapp.tests_chat_intent.assert_true("LIVE-12: clarify/answer para off-topic fútbol",isRelevant12 == true,counters,"kind=" + kind12);
+  counters = thisapp.tests_common.assert_true("LIVE-12: clarify/answer para off-topic fútbol",isRelevant12 == true,counters,"kind=" + kind12);
   text12 = r12.get("text");
   if(text12 == null) { text12 = ""; }
-  counters = thisapp.tests_chat_intent.assert_contains("LIVE-12: respuesta menciona dominio",text12,"paquetería",counters);
+  counters = thisapp.tests_common.assert_contains("LIVE-12: respuesta menciona dominio",text12,"paquetería",counters);
   // 13 — off-topic chiste
   info "LIVE-13 off-topic prompt: Cuéntame un chiste";
   r13 = thisapp.chat_intent.chat_intent("Cuéntame un chiste",List());
   info "LIVE-13 result: " + r13.toString();
   kind13 = r13.get("kind");
   isRelevant13 = kind13 == "clarify" || kind13 == "answer";
-  counters = thisapp.tests_chat_intent.assert_true("LIVE-13: clarify/answer para off-topic chiste",isRelevant13 == true,counters,"kind=" + kind13);
+  counters = thisapp.tests_common.assert_true("LIVE-13: clarify/answer para off-topic chiste",isRelevant13 == true,counters,"kind=" + kind13);
   text13 = r13.get("text");
   if(text13 == null) { text13 = ""; }
-  counters = thisapp.tests_chat_intent.assert_contains("LIVE-13: respuesta menciona dominio",text13,"paquetería",counters);
+  counters = thisapp.tests_common.assert_contains("LIVE-13: respuesta menciona dominio",text13,"paquetería",counters);
   // 14 — regression: parece off-topic pero es in-domain (Argentina → check_coverage)
   info "LIVE-14 regression in-domain prompt: ¿Tienen servicio en Argentina?";
   r14 = thisapp.chat_intent.chat_intent("¿Tienen servicio en Argentina?",List());
   info "LIVE-14 result: " + r14.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-14: tool check_coverage para Argentina",r14.get("tool"),"check_coverage",counters);
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-14: kind tool (Argentina es in-domain)",r14.get("kind"),"tool",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-14: tool check_coverage para Argentina",r14.get("tool"),"check_coverage",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-14: kind tool (Argentina es in-domain)",r14.get("kind"),"tool",counters);
   // 15 — regression: Bitcoin no aceptado, respuesta debe mencionar métodos reales
   info "LIVE-15 regression off-topic prompt: ¿Aceptan Bitcoin?";
   r15 = thisapp.chat_intent.chat_intent("¿Aceptan Bitcoin?",List());
   info "LIVE-15 result: " + r15.toString();
   kind15 = r15.get("kind");
   isClarify15 = kind15 == "clarify" || kind15 == "answer";
-  counters = thisapp.tests_chat_intent.assert_true("LIVE-15: clarify/answer para Bitcoin (no es tool)",isClarify15 == true,counters,"kind=" + kind15);
+  counters = thisapp.tests_common.assert_true("LIVE-15: clarify/answer para Bitcoin (no es tool)",isClarify15 == true,counters,"kind=" + kind15);
   text15 = r15.get("text");
   if(text15 == null) { text15 = ""; }
-  counters = thisapp.tests_chat_intent.assert_contains("LIVE-15: respuesta menciona transferencia",text15,"transferencia",counters);
+  counters = thisapp.tests_common.assert_contains("LIVE-15: respuesta menciona transferencia",text15,"transferencia",counters);
   return counters;
 }
 
@@ -425,8 +376,8 @@ map tests_chat_intent.run_live_multiturn(map counters)
   info "LIVE-M1 prompt: ABC123456 con historial clarify previo";
   rM1 = thisapp.chat_intent.chat_intent("ABC123456",histM1);
   info "LIVE-M1 result: " + rM1.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-M1: kind",rM1.get("kind"),"tool",counters);
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-M1: tool",rM1.get("tool"),"track_package",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-M1: kind",rM1.get("kind"),"tool",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-M1: tool",rM1.get("tool"),"track_package",counters);
   // M2 — anáfora destino Barcelona tras Madrid
   histM2 = List();
   m = Map();
@@ -440,7 +391,7 @@ map tests_chat_intent.run_live_multiturn(map counters)
   info "LIVE-M2 prompt: ¿y a Barcelona? con historial Madrid";
   rM2 = thisapp.chat_intent.chat_intent("¿y a Barcelona?",histM2);
   info "LIVE-M2 result: " + rM2.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-M2: tool",rM2.get("tool"),"search_services",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-M2: tool",rM2.get("tool"),"search_services",counters);
   // M3 — cambio de tool con referencia "allí"
   histM3 = List();
   m = Map();
@@ -454,7 +405,7 @@ map tests_chat_intent.run_live_multiturn(map counters)
   info "LIVE-M3 prompt: ¿y qué oficinas tienen allí? con historial Colombia";
   rM3 = thisapp.chat_intent.chat_intent("¿y qué oficinas tienen allí?",histM3);
   info "LIVE-M3 result: " + rM3.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-M3: tool",rM3.get("tool"),"find_offices",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-M3: tool",rM3.get("tool"),"find_offices",counters);
   // M4 — corrección segundo intento con teléfono
   histM4 = List();
   m = Map();
@@ -468,7 +419,7 @@ map tests_chat_intent.run_live_multiturn(map counters)
   info "LIVE-M4 prompt: prueba con teléfono 5551234 con historial Juan Pérez";
   rM4 = thisapp.chat_intent.chat_intent("prueba con teléfono 5551234",histM4);
   info "LIVE-M4 result: " + rM4.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-M4: tool",rM4.get("tool"),"find_contacts",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-M4: tool",rM4.get("tool"),"find_contacts",counters);
   // M5 — historial irrelevante no contamina
   histM5 = List();
   m = Map();
@@ -482,7 +433,7 @@ map tests_chat_intent.run_live_multiturn(map counters)
   info "LIVE-M5 prompt: rastrea paquete XYZ999 con historial saludo";
   rM5 = thisapp.chat_intent.chat_intent("rastrea paquete XYZ999",histM5);
   info "LIVE-M5 result: " + rM5.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-M5: tool",rM5.get("tool"),"track_package",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-M5: tool",rM5.get("tool"),"track_package",counters);
   // M6 — historial largo 4 turnos
   histM6 = List();
   m = Map();
@@ -504,7 +455,7 @@ map tests_chat_intent.run_live_multiturn(map counters)
   info "LIVE-M6 prompt: ¿quiénes son top clientes remesa? con historial 4 turnos";
   rM6 = thisapp.chat_intent.chat_intent("¿quiénes son top clientes remesa?",histM6);
   info "LIVE-M6 result: " + rM6.toString();
-  counters = thisapp.tests_chat_intent.assert_equals("LIVE-M6: tool",rM6.get("tool"),"report_top_remittance_customers",counters);
+  counters = thisapp.tests_common.assert_equals("LIVE-M6: tool",rM6.get("tool"),"report_top_remittance_customers",counters);
   return counters;
 }
 

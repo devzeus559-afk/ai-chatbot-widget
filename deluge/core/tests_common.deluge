@@ -1,0 +1,64 @@
+/**
+ * tests_common.deluge
+ *
+ * Helpers de aserción COMPARTIDOS por las suites de tests manuales
+ * (tests_chat_intent, tests_report_top_customers, etc).
+ * Se reutilizan en Creator vía thisapp.tests_common.* para no duplicar
+ * código entre suites (mismo contrato que el live, backup 11:29).
+ *
+ * Uso: pegar como funciones tests_common.* en Creator ANTES que la suite
+ * que los consume. Cada helper recibe/retorna el map `counters`
+ * {passed, failed}.
+ */
+
+// --------------------------------------------------------------------------
+// Helpers de aserción compartidos
+// --------------------------------------------------------------------------
+map tests_common.assert_equals(string testName, string actual, string expected, map counters)
+{
+  passed = counters.get("passed");
+  failed = counters.get("failed");
+  if(actual == expected)
+  {
+    info "[PASSED] " + testName;
+    counters.put("passed",passed + 1);
+  }
+  else
+  {
+    info "[FAILED] " + testName + " | expected: " + expected + " | actual: " + actual;
+    counters.put("failed",failed + 1);
+  }
+  return counters;
+}
+map tests_common.assert_contains(string testName, string haystack, string needle, map counters)
+{
+  passed = counters.get("passed");
+  failed = counters.get("failed");
+  if(haystack != null && haystack.contains(needle))
+  {
+    info "[PASSED] " + testName;
+    counters.put("passed",passed + 1);
+  }
+  else
+  {
+    info "[FAILED] " + testName + " | expected to contain: " + needle + " | haystack: " + haystack;
+    counters.put("failed",failed + 1);
+  }
+  return counters;
+}
+map tests_common.assert_true(string testName, boolean condition, map counters, string detail)
+{
+  passed = counters.get("passed");
+  failed = counters.get("failed");
+  if(condition == true)
+  {
+    info "[PASSED] " + testName;
+    counters.put("passed",passed + 1);
+  }
+  else
+  {
+    info "[FAILED] " + testName + " | " + detail;
+    counters.put("failed",failed + 1);
+  }
+  return counters;
+}
