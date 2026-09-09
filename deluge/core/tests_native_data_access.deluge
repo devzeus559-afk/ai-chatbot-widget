@@ -1,0 +1,811 @@
+/**
+ * tests_native_data_access.deluge
+ *
+ * Suite SMOKE para el gate 5.1 del cambio native-data-access.
+ * Verifica las 4 asunciones del gate + los 5 tools migrados (0/1/2+ params,
+ * empty intersection) + history order, usando helpers tipados de data_access.
+ *
+ * NO llama a Zia ni usa la Client API (addRecord/deleteRecord): solo acceso
+ * nativo vía chat_data_access + chat_tools — 100% ejecutable en el editor
+ * de Deluge.
+ *
+ * NO inserta registros (no hay delete API — dejaría basura en live).
+ * Los asserts usan tests_common.* (helpers compartidos).
+ *
+ * Ejecución: pegar como funciones tests_native_data_access.* en Creator
+ * (junto con tests_common.*) y llamar  tests_native_data_access.run()
+ * Revisar logs `info`. No usa Form[criteriaVar] ni API de Creator.
+ */
+
+// ==========================================================================
+// (a) Fetch-all por form — Form[ID != 0]
+// Cada fetch_*_all() debe devolver lista no-null.
+// INFO si 0 registros (posible data vacía, no es fallo).
+// ==========================================================================
+map tests_native_data_access.test_fetch_all_services(map counters)
+{
+  records = thisapp.chat_data_access.fetch_services_all();
+  counters = thisapp.tests_common.assert_true("fetch_all_services: no-null",records != null,counters,"records=null");
+  if(records != null)
+  {
+    info "fetch_all_services: " + records.size() + " registros";
+    if(records.size() == 0)
+    {
+      info "[INFO] fetch_all_services: 0 registros (data prereq)";
+    }
+  }
+  return counters;
+}
+map tests_native_data_access.test_fetch_all_offices(map counters)
+{
+  records = thisapp.chat_data_access.fetch_offices_all();
+  counters = thisapp.tests_common.assert_true("fetch_all_offices: no-null",records != null,counters,"records=null");
+  if(records != null)
+  {
+    info "fetch_all_offices: " + records.size() + " registros";
+    if(records.size() == 0)
+    {
+      info "[INFO] fetch_all_offices: 0 registros (data prereq)";
+    }
+  }
+  return counters;
+}
+map tests_native_data_access.test_fetch_all_coverage(map counters)
+{
+  records = thisapp.chat_data_access.fetch_coverage_all();
+  counters = thisapp.tests_common.assert_true("fetch_all_coverage: no-null",records != null,counters,"records=null");
+  if(records != null)
+  {
+    info "fetch_all_coverage: " + records.size() + " registros";
+    if(records.size() == 0)
+    {
+      info "[INFO] fetch_all_coverage: 0 registros (data prereq)";
+    }
+  }
+  return counters;
+}
+map tests_native_data_access.test_fetch_all_vendors(map counters)
+{
+  records = thisapp.chat_data_access.fetch_vendors_all();
+  counters = thisapp.tests_common.assert_true("fetch_all_vendors: no-null",records != null,counters,"records=null");
+  if(records != null)
+  {
+    info "fetch_all_vendors: " + records.size() + " registros";
+    if(records.size() == 0)
+    {
+      info "[INFO] fetch_all_vendors: 0 registros (data prereq)";
+    }
+  }
+  return counters;
+}
+map tests_native_data_access.test_fetch_all_contacts(map counters)
+{
+  records = thisapp.chat_data_access.fetch_contacts_all();
+  counters = thisapp.tests_common.assert_true("fetch_all_contacts: no-null",records != null,counters,"records=null");
+  if(records != null)
+  {
+    info "fetch_all_contacts: " + records.size() + " registros";
+    if(records.size() == 0)
+    {
+      info "[INFO] fetch_all_contacts: 0 registros (data prereq)";
+    }
+  }
+  return counters;
+}
+map tests_native_data_access.test_fetch_all_chat_sessions(map counters)
+{
+  records = ChatSessions[ID != 0] sort by ID range from 0 to 199;
+  counters = thisapp.tests_common.assert_true("fetch_all_chat_sessions: no-null",records != null,counters,"records=null");
+  if(records != null)
+  {
+    info "fetch_all_chat_sessions: " + records.size() + " registros";
+    if(records.size() == 0)
+    {
+      info "[INFO] fetch_all_chat_sessions: 0 registros (data prereq)";
+    }
+  }
+  return counters;
+}
+map tests_native_data_access.test_fetch_all_chat_messages(map counters)
+{
+  records = ChatMessages[ID != 0] sort by Created_Time desc range from 0 to 9;
+  counters = thisapp.tests_common.assert_true("fetch_all_chat_messages: no-null",records != null,counters,"records=null");
+  if(records != null)
+  {
+    info "fetch_all_chat_messages: " + records.size() + " registros";
+    if(records.size() == 0)
+    {
+      info "[INFO] fetch_all_chat_messages: 0 registros (data prereq)";
+    }
+  }
+  return counters;
+}
+map tests_native_data_access.test_fetch_all_chat_requests(map counters)
+{
+  records = ChatRequests[ID != 0] sort by ID range from 0 to 199;
+  counters = thisapp.tests_common.assert_true("fetch_all_chat_requests: no-null",records != null,counters,"records=null");
+  if(records != null)
+  {
+    info "fetch_all_chat_requests: " + records.size() + " registros";
+    if(records.size() == 0)
+    {
+      info "[INFO] fetch_all_chat_requests: 0 registros (data prereq)";
+    }
+  }
+  return counters;
+}
+
+// ==========================================================================
+// (b) Fetch por IDs — Form[ID in ids] + empty guard
+// Tomar IDs reales de fetch_*_all(), llamar fetch_*_by_ids(ids), assert
+// size() == ids.size(). Empty guard: tool con filtro que no matchea → data:[]
+// ==========================================================================
+map tests_native_data_access.test_fetch_services_by_ids(map counters)
+{
+  allRecords = thisapp.chat_data_access.fetch_services_all();
+  if(allRecords == null || allRecords.size() == 0)
+  {
+    info "[INFO] fetch_services_by_ids: sin registros para extraer IDs (data prereq)";
+    return counters;
+  }
+  // Tomar IDs reales (máx 3)
+  ids = List();
+  limit = allRecords.size();
+  if(limit > 3)
+  {
+    limit = 3;
+  }
+  i = 0;
+  while(i < limit)
+  {
+    rec = allRecords.get(i);
+    recId = rec.get("zid");
+    if(recId != null)
+    {
+      ids.add(recId);
+    }
+    i = i + 1;
+  }
+  if(ids.size() == 0)
+  {
+    info "[INFO] fetch_services_by_ids: no se pudieron extraer IDs (data prereq)";
+    return counters;
+  }
+  fetched = thisapp.chat_data_access.fetch_services_by_ids(ids);
+  counters = thisapp.tests_common.assert_true("fetch_services_by_ids: count coincide",fetched != null && fetched.size() == ids.size(),counters,"ids=" + ids.size() + " fetched=" + if(fetched != null,fetched.size(),0));
+  return counters;
+}
+map tests_native_data_access.test_fetch_offices_by_ids(map counters)
+{
+  allRecords = thisapp.chat_data_access.fetch_offices_all();
+  if(allRecords == null || allRecords.size() == 0)
+  {
+    info "[INFO] fetch_offices_by_ids: sin registros (data prereq)";
+    return counters;
+  }
+  // fetch_offices_all no retorna zid directamente; usar ID del registro nativo
+  records = Commercial_Office[Active == true] sort by Office_Name range from 0 to 2;
+  ids = List();
+  for each  r in records
+  {
+    ids.add(r.ID);
+  }
+  if(ids.size() == 0)
+  {
+    info "[INFO] fetch_offices_by_ids: no se pudieron extraer IDs (data prereq)";
+    return counters;
+  }
+  fetched = thisapp.chat_data_access.fetch_offices_by_ids(ids);
+  counters = thisapp.tests_common.assert_true("fetch_offices_by_ids: count coincide",fetched != null && fetched.size() == ids.size(),counters,"ids=" + ids.size() + " fetched=" + if(fetched != null,fetched.size(),0));
+  return counters;
+}
+map tests_native_data_access.test_fetch_coverage_by_ids(map counters)
+{
+  allRecords = thisapp.chat_data_access.fetch_coverage_all();
+  if(allRecords == null || allRecords.size() == 0)
+  {
+    info "[INFO] fetch_coverage_by_ids: sin registros (data prereq)";
+    return counters;
+  }
+  records = Coverage_Location[Active == true] sort by Location_Name range from 0 to 2;
+  ids = List();
+  for each  r in records
+  {
+    ids.add(r.ID);
+  }
+  if(ids.size() == 0)
+  {
+    info "[INFO] fetch_coverage_by_ids: no se pudieron extraer IDs (data prereq)";
+    return counters;
+  }
+  fetched = thisapp.chat_data_access.fetch_coverage_by_ids(ids);
+  counters = thisapp.tests_common.assert_true("fetch_coverage_by_ids: count coincide",fetched != null && fetched.size() == ids.size(),counters,"ids=" + ids.size() + " fetched=" + if(fetched != null,fetched.size(),0));
+  return counters;
+}
+map tests_native_data_access.test_fetch_vendors_by_ids(map counters)
+{
+  allRecords = thisapp.chat_data_access.fetch_vendors_all();
+  if(allRecords == null || allRecords.size() == 0)
+  {
+    info "[INFO] fetch_vendors_by_ids: sin registros (data prereq)";
+    return counters;
+  }
+  records = Vendor[Active == true] sort by Vendor_Name range from 0 to 2;
+  ids = List();
+  for each  r in records
+  {
+    ids.add(r.ID);
+  }
+  if(ids.size() == 0)
+  {
+    info "[INFO] fetch_vendors_by_ids: no se pudieron extraer IDs (data prereq)";
+    return counters;
+  }
+  fetched = thisapp.chat_data_access.fetch_vendors_by_ids(ids);
+  counters = thisapp.tests_common.assert_true("fetch_vendors_by_ids: count coincide",fetched != null && fetched.size() == ids.size(),counters,"ids=" + ids.size() + " fetched=" + if(fetched != null,fetched.size(),0));
+  return counters;
+}
+map tests_native_data_access.test_fetch_contacts_by_ids(map counters)
+{
+  allRecords = thisapp.chat_data_access.fetch_contacts_all();
+  if(allRecords == null || allRecords.size() == 0)
+  {
+    info "[INFO] fetch_contacts_by_ids: sin registros (data prereq)";
+    return counters;
+  }
+  records = Contacts[Active == true] sort by Mobile range from 0 to 2;
+  ids = List();
+  for each  r in records
+  {
+    ids.add(r.ID);
+  }
+  if(ids.size() == 0)
+  {
+    info "[INFO] fetch_contacts_by_ids: no se pudieron extraer IDs (data prereq)";
+    return counters;
+  }
+  fetched = thisapp.chat_data_access.fetch_contacts_by_ids(ids);
+  counters = thisapp.tests_common.assert_true("fetch_contacts_by_ids: count coincide",fetched != null && fetched.size() == ids.size(),counters,"ids=" + ids.size() + " fetched=" + if(fetched != null,fetched.size(),0));
+  return counters;
+}
+
+// ==========================================================================
+// (c) Type match ChatRequests[ID == requestId] — Number coercion
+// ==========================================================================
+map tests_native_data_access.test_chat_requests_id_type_match(map counters)
+{
+  // Buscar un chat request real
+  requests = ChatRequests[ID != 0] sort by ID range from 0 to 0;
+  if(requests == null || requests.size() == 0)
+  {
+    info "[INFO] chat_requests_id_type: sin chat requests (data prereq)";
+    return counters;
+  }
+  realRec = requests.get(0);
+  realId = realRec.ID;
+  info "chat_requests_id_type: ID real=" + realId + " (ID de Creator es Number; primero se pasa como tal, luego como String→toNumber)";
+
+  // Pasar como Number (tipo explícito del helper)
+  result = thisapp.chat_data_access.fetch_chat_requests_by_id(realId);
+  counters = thisapp.tests_common.assert_true("chat_requests_id_type: Number match",result != null && result.size() > 0,counters,"ID=" + realId + " result=" + if(result != null,result.size(),0));
+
+  // Pasar como String (coerción String→Number)
+  resultStr = thisapp.chat_data_access.fetch_chat_requests_by_id(toNumber("" + realId));
+  counters = thisapp.tests_common.assert_true("chat_requests_id_type: String→Number coercion",resultStr != null && resultStr.size() > 0,counters,"ID=" + realId + " result=" + if(resultStr != null,resultStr.size(),0));
+  return counters;
+}
+
+// ==========================================================================
+// (d) Zia no-comma syntax — el editor acepta la sintaxis
+// La suite corriendo ya implica que el editor de Creator aceptó las llamadas
+// a Zia en chat_intent/chat_invoke. No se puede assert en runtime.
+// ==========================================================================
+map tests_native_data_access.test_zia_no_comma_syntax(map counters)
+{
+  info "[INFO] zia_no_comma: la sintaxis Zia sin coma entre parámetros se verifica por aceptación del editor de Creator. Esta suite corriendo ya implica que el editor aceptó todas las funciones (incluidas las llamadas a Zia en chat_intent/chat_invoke).";
+  return counters;
+}
+
+// ==========================================================================
+// Inserts — NUNCA se insertan registros en el suite
+// Los inserts se ejercitan en el E2E widget turn, no aquí.
+// ==========================================================================
+map tests_native_data_access.test_inserts_note(map counters)
+{
+  info "[INFO] inserts: insert_chat_session / insert_chat_message NO se llaman en este suite (no hay delete API — dejaría basura en live). Insert se ejercita en el E2E widget turn, no en suite.";
+  return counters;
+}
+
+// ==========================================================================
+// Tools — 0/1/2+ params + empty intersection
+// ==========================================================================
+
+// --- track_package ---
+map tests_native_data_access.test_track_package_empty(map counters)
+{
+  result = thisapp.chat_tools.track_package({});
+  counters = thisapp.tests_common.assert_true("track_package empty: ok=false",result.get("ok") == false,counters,"result=" + result.toString());
+  return counters;
+}
+map tests_native_data_access.test_track_package_not_found(map counters)
+{
+  result = thisapp.chat_tools.track_package({"trackingNumber":"FAKE-TRACKING-999999"});
+  counters = thisapp.tests_common.assert_true("track_package fake: ok=false",result.get("ok") == false,counters,"result=" + result.toString());
+  return counters;
+}
+map tests_native_data_access.test_track_package_real(map counters)
+{
+  // Buscar un tracking real del módulo Package
+  pkgs = Package[Package_ID != null && Package_ID != "" && Latest_Solved_Status != ""] sort by Receipt_Date desc range from 0 to 0;
+  if(pkgs == null || pkgs.size() == 0)
+  {
+    info "[INFO] track_package real: sin paquetes con tracking (data prereq)";
+    return counters;
+  }
+  realTracking = "" + pkgs.get(0).Package_ID;
+  info "track_package real: tracking=" + realTracking;
+  result = thisapp.chat_tools.track_package({"trackingNumber":realTracking});
+  counters = thisapp.tests_common.assert_true("track_package real: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  return counters;
+}
+
+// --- search_services ---
+map tests_native_data_access.test_services_no_filter(map counters)
+{
+  result = thisapp.chat_tools.search_services({});
+  counters = thisapp.tests_common.assert_true("services no-filter: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  data = result.get("data");
+  if(data == null || data.size() == 0)
+  {
+    info "[INFO] services no-filter: data vacía (data prereq)";
+  }
+  else
+  {
+    info "services no-filter: " + data.size() + " registros";
+  }
+  return counters;
+}
+map tests_native_data_access.test_services_by_type_real(map counters)
+{
+  // Derivar tipo real de un servicio existente
+  allServices = thisapp.chat_data_access.fetch_services_all();
+  if(allServices == null || allServices.size() == 0)
+  {
+    info "[INFO] services by type real: sin servicios (data prereq)";
+    return counters;
+  }
+  realType = allServices.get(0).get("serviceType");
+  if(realType == null || realType == "")
+  {
+    info "[INFO] services by type real: serviceType null en primer registro (data prereq)";
+    return counters;
+  }
+  info "services by type real: tipo=" + realType;
+  result = thisapp.chat_tools.search_services({"serviceType":realType});
+  counters = thisapp.tests_common.assert_true("services type real: ok=true con data",result.get("ok") == true && result.get("data") != null && result.get("data").size() > 0,counters,"result=" + result.toString());
+  return counters;
+}
+map tests_native_data_access.test_services_type_not_found(map counters)
+{
+  result = thisapp.chat_tools.search_services({"serviceType":"__TipoInexistente__"});
+  counters = thisapp.tests_common.assert_true("services type miss: ok=true data=[]",result.get("ok") == true && result.get("data") != null && result.get("data").size() == 0,counters,"result=" + result.toString());
+  return counters;
+}
+map tests_native_data_access.test_services_type_and_destination(map counters)
+{
+  // Derivar tipo + destination real de un servicio existente
+  allServices = thisapp.chat_data_access.fetch_services_all();
+  if(allServices == null || allServices.size() == 0)
+  {
+    info "[INFO] services type+dest: sin servicios (data prereq)";
+    return counters;
+  }
+  realType = allServices.get(0).get("serviceType");
+  // Buscar destination: usar un destino derivado del módulo Coverage_Location
+  coverage = thisapp.chat_data_access.fetch_coverage_all();
+  realDest = null;
+  if(coverage != null && coverage.size() > 0)
+  {
+    // country del primer coverage como destino genérico
+    realDest = coverage.get(0).get("country");
+  }
+  if(realType == null || realType == "" || realDest == null || realDest == "")
+  {
+    info "[INFO] services type+dest: datos insuficientes (data prereq)";
+    return counters;
+  }
+  info "services type+dest: tipo=" + realType + " dest=" + realDest;
+  result = thisapp.chat_tools.search_services({"serviceType":realType,"destination":realDest});
+  counters = thisapp.tests_common.assert_true("services type+dest: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  // La intersección puede ser vacía (no hay servicio de ese tipo en ese destino)
+  data = result.get("data");
+  if(data == null || data.size() == 0)
+  {
+    info "[INFO] services type+dest: intersección vacía (data prereq)";
+  }
+  else
+  {
+    info "services type+dest: " + data.size() + " registros";
+  }
+  return counters;
+}
+
+// --- find_offices ---
+map tests_native_data_access.test_offices_no_filter(map counters)
+{
+  result = thisapp.chat_tools.find_offices({});
+  counters = thisapp.tests_common.assert_true("offices no-filter: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  data = result.get("data");
+  if(data == null || data.size() == 0)
+  {
+    info "[INFO] offices no-filter: data vacía (data prereq)";
+  }
+  else
+  {
+    info "offices no-filter: " + data.size() + " registros";
+  }
+  return counters;
+}
+map tests_native_data_access.test_offices_by_city_real(map counters)
+{
+  // Derivar city real de una oficina existente (Address.district_city)
+  allOffices = thisapp.chat_data_access.fetch_offices_all();
+  if(allOffices == null || allOffices.size() == 0)
+  {
+    info "[INFO] offices city real: sin oficinas (data prereq)";
+    return counters;
+  }
+  realCity = allOffices.get(0).get("city");
+  if(realCity == null || realCity == "")
+  {
+    info "[INFO] offices city real: city null en primera oficina (data prereq)";
+    return counters;
+  }
+  info "offices city real: city=" + realCity;
+  result = thisapp.chat_tools.find_offices({"city":realCity});
+  counters = thisapp.tests_common.assert_true("offices city real: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  data = result.get("data");
+  if(data == null || data.size() == 0)
+  {
+    info "[INFO] offices city real: 0 resultados para city=" + realCity + " (data prereq)";
+  }
+  else
+  {
+    info "offices city real: " + data.size() + " registros para city=" + realCity;
+  }
+  return counters;
+}
+map tests_native_data_access.test_offices_city_not_found(map counters)
+{
+  result = thisapp.chat_tools.find_offices({"city":"CiudadInexistenteXYZ"});
+  counters = thisapp.tests_common.assert_true("offices city miss: ok=true data=[]",result.get("ok") == true && result.get("data") != null && result.get("data").size() == 0,counters,"result=" + result.toString());
+  return counters;
+}
+
+// --- check_coverage ---
+map tests_native_data_access.test_coverage_by_country_real(map counters)
+{
+  // Derivar country real de coverage existente
+  allCoverage = thisapp.chat_data_access.fetch_coverage_all();
+  if(allCoverage == null || allCoverage.size() == 0)
+  {
+    info "[INFO] coverage country real: sin coverage (data prereq)";
+    return counters;
+  }
+  realCountry = allCoverage.get(0).get("country");
+  if(realCountry == null || realCountry == "")
+  {
+    info "[INFO] coverage country real: country null (data prereq)";
+    return counters;
+  }
+  info "coverage country real: country=" + realCountry;
+  result = thisapp.chat_tools.check_coverage({"country":realCountry});
+  counters = thisapp.tests_common.assert_true("coverage country real: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  locList = result.get("data");
+  counters = thisapp.tests_common.assert_true("coverage country real: locList no-vacía",locList != null && locList.size() > 0,counters,"locList=" + if(locList != null,locList.size(),0));
+  return counters;
+}
+map tests_native_data_access.test_coverage_country_not_found(map counters)
+{
+  result = thisapp.chat_tools.check_coverage({"country":"PaisInexistenteXYZ"});
+  counters = thisapp.tests_common.assert_true("coverage country miss: ok=true locations=[]",result.get("ok") == true && result.get("data") != null && result.get("data").size() == 0,counters,"result=" + result.toString());
+  return counters;
+}
+map tests_native_data_access.test_coverage_by_service_type(map counters)
+{
+  // Vendor real: tomar Vendor_Type de un vendor existente
+  allVendors = thisapp.chat_data_access.fetch_vendors_all();
+  if(allVendors == null || allVendors.size() == 0)
+  {
+    info "[INFO] coverage serviceType: sin vendors (data prereq)";
+    return counters;
+  }
+  realType = allVendors.get(0).get("vendorType");
+  if(realType == null || realType == "")
+  {
+    info "[INFO] coverage serviceType: vendorType null (data prereq)";
+    return counters;
+  }
+  info "coverage serviceType: type=" + realType;
+  result = thisapp.chat_tools.check_coverage({"serviceType":realType});
+  counters = thisapp.tests_common.assert_true("coverage serviceType real: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  vendorList = result.get("vendors");
+  if(vendorList == null || vendorList.size() == 0)
+  {
+    info "[INFO] coverage serviceType: vendors vacío para type=" + realType + " (data prereq)";
+  }
+  else
+  {
+    info "coverage serviceType: " + vendorList.size() + " vendors";
+  }
+  return counters;
+}
+map tests_native_data_access.test_coverage_vendor_not_found(map counters)
+{
+  result = thisapp.chat_tools.check_coverage({"vendor":"VendorInexistenteXYZ"});
+  counters = thisapp.tests_common.assert_true("coverage vendor miss: ok=true vendors=[]",result.get("ok") == true && result.get("vendors") != null && result.get("vendors").size() == 0,counters,"result=" + result.toString());
+  return counters;
+}
+map tests_native_data_access.test_coverage_country_and_service_type(map counters)
+{
+  // Derivar country + serviceType de datos reales
+  allCoverage = thisapp.chat_data_access.fetch_coverage_all();
+  allVendors = thisapp.chat_data_access.fetch_vendors_all();
+  realCountry = null;
+  realType = null;
+  if(allCoverage != null && allCoverage.size() > 0)
+  {
+    realCountry = allCoverage.get(0).get("country");
+  }
+  if(allVendors != null && allVendors.size() > 0)
+  {
+    realType = allVendors.get(0).get("vendorType");
+  }
+  if(realCountry == null || realCountry == "" || realType == null || realType == "")
+  {
+    info "[INFO] coverage country+type: datos insuficientes (data prereq)";
+    return counters;
+  }
+  info "coverage country+type: country=" + realCountry + " type=" + realType;
+  result = thisapp.chat_tools.check_coverage({"country":realCountry,"serviceType":realType});
+  counters = thisapp.tests_common.assert_true("coverage country+type: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  // Las locations se filtran por country; los vendors por serviceType (independientes)
+  return counters;
+}
+
+// --- find_contacts ---
+map tests_native_data_access.test_contacts_no_filter(map counters)
+{
+  result = thisapp.chat_tools.find_contacts({});
+  counters = thisapp.tests_common.assert_true("contacts no-filter: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  data = result.get("data");
+  if(data == null || data.size() == 0)
+  {
+    info "[INFO] contacts no-filter: data vacía (data prereq)";
+  }
+  else
+  {
+    info "contacts no-filter: " + data.size() + " registros";
+  }
+  return counters;
+}
+map tests_native_data_access.test_contacts_by_phone_real(map counters)
+{
+  // Derivar phone real de un contacto existente
+  allContacts = thisapp.chat_data_access.fetch_contacts_all();
+  if(allContacts == null || allContacts.size() == 0)
+  {
+    info "[INFO] contacts phone real: sin contactos (data prereq)";
+    return counters;
+  }
+  realPhone = allContacts.get(0).get("phone");
+  if(realPhone == null || realPhone == "")
+  {
+    info "[INFO] contacts phone real: phone null en primer contacto (data prereq)";
+    return counters;
+  }
+  info "contacts phone real: phone=" + realPhone;
+  result = thisapp.chat_tools.find_contacts({"phone":realPhone});
+  counters = thisapp.tests_common.assert_true("contacts phone real: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  data = result.get("data");
+  if(data == null || data.size() == 0)
+  {
+    info "[INFO] contacts phone real: 0 resultados (data prereq)";
+  }
+  else
+  {
+    info "contacts phone real: " + data.size() + " resultados";
+  }
+  return counters;
+}
+map tests_native_data_access.test_contacts_by_document_real(map counters)
+{
+  allContacts = thisapp.chat_data_access.fetch_contacts_all();
+  if(allContacts == null || allContacts.size() == 0)
+  {
+    info "[INFO] contacts document real: sin contactos (data prereq)";
+    return counters;
+  }
+  realDoc = allContacts.get(0).get("document");
+  if(realDoc == null || realDoc == "")
+  {
+    info "[INFO] contacts document real: document null (data prereq)";
+    return counters;
+  }
+  info "contacts document real: document=" + realDoc;
+  result = thisapp.chat_tools.find_contacts({"document":realDoc});
+  counters = thisapp.tests_common.assert_true("contacts document real: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  data = result.get("data");
+  if(data == null || data.size() == 0)
+  {
+    info "[INFO] contacts document real: 0 resultados (data prereq)";
+  }
+  else
+  {
+    info "contacts document real: " + data.size() + " resultados";
+  }
+  return counters;
+}
+map tests_native_data_access.test_contacts_by_name_real(map counters)
+{
+  allContacts = thisapp.chat_data_access.fetch_contacts_all();
+  if(allContacts == null || allContacts.size() == 0)
+  {
+    info "[INFO] contacts name real: sin contactos (data prereq)";
+    return counters;
+  }
+  // fullName viene de fetch_contacts_all (first + last + suffix concatenado)
+  realName = allContacts.get(0).get("fullName");
+  if(realName == null || realName == "")
+  {
+    info "[INFO] contacts name real: fullName null (data prereq)";
+    return counters;
+  }
+  info "contacts name real: name=" + realName;
+  result = thisapp.chat_tools.find_contacts({"name":realName});
+  counters = thisapp.tests_common.assert_true("contacts name real: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  data = result.get("data");
+  if(data == null || data.size() == 0)
+  {
+    info "[INFO] contacts name real: 0 resultados (data prereq; nombre puede no matchear por composición)";
+  }
+  else
+  {
+    info "contacts name real: " + data.size() + " resultados";
+  }
+  return counters;
+}
+map tests_native_data_access.test_contacts_not_found(map counters)
+{
+  result = thisapp.chat_tools.find_contacts({"name":"NombreInexistenteXYZ123"});
+  counters = thisapp.tests_common.assert_true("contacts name miss: ok=true data=[]",result.get("ok") == true && result.get("data") != null && result.get("data").size() == 0,counters,"result=" + result.toString());
+  return counters;
+}
+
+// ==========================================================================
+// History order — desc por Created_Time
+// Si hay ≥2 mensajes de una sesión real, assert desc order.
+// ==========================================================================
+map tests_native_data_access.test_history_order(map counters)
+{
+  // Buscar una sesión con ≥2 mensajes
+  sessions = ChatSessions[ID != 0] sort by ID range from 0 to 0;
+  if(sessions == null || sessions.size() == 0)
+  {
+    info "[INFO] history order: sin sesiones (data prereq)";
+    return counters;
+  }
+  sessionId = sessions.get(0).ID;
+  messages = thisapp.chat_data_access.fetch_chat_messages_by_session(sessionId);
+  if(messages == null || messages.size() < 2)
+  {
+    info "[INFO] history order: sesión " + sessionId + " tiene " + if(messages != null,messages.size(),0) + " mensajes (se necesitan ≥2, data prereq)";
+    return counters;
+  }
+  info "history order: sesión " + sessionId + " tiene " + messages.size() + " mensajes";
+  // Verificar desc order por Created_Time
+  orderOk = true;
+  prevTime = null;
+  for each  m in messages
+  {
+    t = m.get("Created_Time");
+    if(prevTime != null && t != null)
+    {
+      if(t > prevTime)
+      {
+        orderOk = false;
+        info "[FAILED] history order: Created_Time subió — " + t + " > " + prevTime;
+      }
+    }
+    if(t != null)
+    {
+      prevTime = t;
+    }
+  }
+  counters = thisapp.tests_common.assert_true("history order: Created_Time desc",orderOk == true,counters,"orden violado (Created_Time subió entre mensajes consecutivos)");
+  return counters;
+}
+
+// ==========================================================================
+// Orquestador
+// ==========================================================================
+map tests_native_data_access.run()
+{
+  counters = Map();
+  counters.put("passed",0);
+  counters.put("failed",0);
+  info "=== SMOKE native_data_access (gate 5.1, sin Zia) ===";
+
+  // (a) Fetch-all por form
+  info "--- (a) Fetch-all por form ---";
+  counters = thisapp.tests_native_data_access.test_fetch_all_services(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_all_offices(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_all_coverage(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_all_vendors(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_all_contacts(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_all_chat_sessions(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_all_chat_messages(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_all_chat_requests(counters);
+
+  // (b) Fetch por IDs + empty guard
+  info "--- (b) Fetch por IDs ---";
+  counters = thisapp.tests_native_data_access.test_fetch_services_by_ids(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_offices_by_ids(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_coverage_by_ids(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_vendors_by_ids(counters);
+  counters = thisapp.tests_native_data_access.test_fetch_contacts_by_ids(counters);
+
+  // (c) ChatRequests type match
+  info "--- (c) ChatRequests type match ---";
+  counters = thisapp.tests_native_data_access.test_chat_requests_id_type_match(counters);
+
+  // (d) Zia no-comma (info only)
+  info "--- (d) Zia no-comma syntax ---";
+  counters = thisapp.tests_native_data_access.test_zia_no_comma_syntax(counters);
+
+  // Inserts — no-op info
+  info "--- Inserts ---";
+  counters = thisapp.tests_native_data_access.test_inserts_note(counters);
+
+  // Tools — track_package
+  info "--- Tools: track_package ---";
+  counters = thisapp.tests_native_data_access.test_track_package_empty(counters);
+  counters = thisapp.tests_native_data_access.test_track_package_not_found(counters);
+  counters = thisapp.tests_native_data_access.test_track_package_real(counters);
+
+  // Tools — search_services
+  info "--- Tools: search_services ---";
+  counters = thisapp.tests_native_data_access.test_services_no_filter(counters);
+  counters = thisapp.tests_native_data_access.test_services_by_type_real(counters);
+  counters = thisapp.tests_native_data_access.test_services_type_not_found(counters);
+  counters = thisapp.tests_native_data_access.test_services_type_and_destination(counters);
+
+  // Tools — find_offices
+  info "--- Tools: find_offices ---";
+  counters = thisapp.tests_native_data_access.test_offices_no_filter(counters);
+  counters = thisapp.tests_native_data_access.test_offices_by_city_real(counters);
+  counters = thisapp.tests_native_data_access.test_offices_city_not_found(counters);
+
+  // Tools — check_coverage
+  info "--- Tools: check_coverage ---";
+  counters = thisapp.tests_native_data_access.test_coverage_by_country_real(counters);
+  counters = thisapp.tests_native_data_access.test_coverage_country_not_found(counters);
+  counters = thisapp.tests_native_data_access.test_coverage_by_service_type(counters);
+  counters = thisapp.tests_native_data_access.test_coverage_vendor_not_found(counters);
+  counters = thisapp.tests_native_data_access.test_coverage_country_and_service_type(counters);
+
+  // Tools — find_contacts
+  info "--- Tools: find_contacts ---";
+  counters = thisapp.tests_native_data_access.test_contacts_no_filter(counters);
+  counters = thisapp.tests_native_data_access.test_contacts_by_phone_real(counters);
+  counters = thisapp.tests_native_data_access.test_contacts_by_document_real(counters);
+  counters = thisapp.tests_native_data_access.test_contacts_by_name_real(counters);
+  counters = thisapp.tests_native_data_access.test_contacts_not_found(counters);
+
+  // History order
+  info "--- History order ---";
+  counters = thisapp.tests_native_data_access.test_history_order(counters);
+
+  info "=== SMOKE done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
