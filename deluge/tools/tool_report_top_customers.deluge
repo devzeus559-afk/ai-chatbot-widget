@@ -2,46 +2,73 @@
 * tool_report_top_customers.deluge
 *
 * Reporte métrico: clientes más frecuentes (top N) por cantidad de servicios
-* en una ventana FIJA de 30 días sobre Date_field1 (fecha de negocio del
-* servicio). Filtro opcional por serviceType (coincidencia EXACTA, sensible
-* a mayúsculas; los valores del picklist están enumerados en la descripción
-* del catálogo en chat_config).
-*
-* Recibe: {"serviceType"?: string, "limit"?: string|number (default 10)}
-* Devuelve: {"ok": true, "data": {
-  *   reportType: "top_customers", periodStart, periodEnd,
-  *   serviceType (null sin filtro), totalServices, totalCustomers,
-  *   truncated, customers: [{rank, customerId, customerName, totalServices,
-  *   firstServiceDate, serviceBreakdown}]}}
-  *
-  * Acceso nativo vía data_access (0 llamadas de API de Creator). Algoritmo:
-  * count-first → fetch acotado a 200 (range 0-199) → agregación por remitente
-  * (Sender_field; se ignoran los vacíos; IDs normalizados a Number) → top-N
-  * por inserción O(n·limit) con desempate por fecha más antigua → resolución
-  * de nombres SOLO para el top-N vía fetch_contacts_by_ids. Si el conteo de la
-  * ventana supera 200, el ranking es APROXIMADO (truncated: true) y la reply
-  * muestra un aviso.
-  *
-  * GATE 5.1: todos los criterios usan campos LITERALES con valores variables;
-  * el filtro por tipo se combina por ID-list (intersect), nunca criterios
-  * string. List.add() de Deluge solo APPENDEA: la inserción indexada del
-  * ranking usa el helper shift-copy insert_ranked_entry (operaciones
-  * garantizadas: size/get/add).
-  */
+ * en una ventana FIJA de 30 días sobre Date_field1 (fecha de negocio del
+ * servicio). serviceType es OBLIGATORIO y debe ser una List<string> con al
+ * menos un elemento (coincidencia EXACTA, sensible a mayúsculas; los valores
+ * del picklist están enumerados en la descripción del catálogo en
+ * chat_config). Este tool cubre SOLO los tipos Locker, Store, Recharge,
+ * Online Store y Other Services: paquetería y remesas usan los tools
+ * específicos report_top_package_customers / report_top_remittance_customers.
+ *
+ * Recibe: {"serviceType": List<string> (≥1), "limit"?: string|number (default 10)}
+ * Devuelve: {"ok": true, "data": {
+ *   reportType: "top_customers", periodStart, periodEnd,
+ *   serviceType (string con los tipos unidos por ", "), totalServices,
+ *   totalCustomers, truncated, customers: [{rank, customerId, customerName,
+ *   totalServices, firstServiceDate, serviceBreakdown}]}}
+ * Si serviceType falta, está vacío o no es una lista => {"ok": false,
+ * "kind": "clarify", "message": "Debes especificar al menos un tipo de servicio."}
+ *
+ * Acceso nativo vía data_access (0 llamadas de API de Creator). Algoritmo:
+ * unión de IDs por tipo (uno por elemento de serviceType) → intersección con
+ * la ventana de 30 días → fetch acotado a 200 (range 0-199) → agregación por
+ * remitente (Sender_field; se ignoran los vacíos; IDs normalizados a Number)
+ * → top-N por inserción O(n·limit) con desempate por fecha más antigua →
+ * resolución de nombres SOLO para el top-N vía fetch_contacts_by_ids. Si la
+ * intersección supera 200, el ranking es APROXIMADO (truncated: true) y la
+ * reply muestra un aviso.
+ *
+ * GATE 5.1: todos los criterios usan campos LITERALES con valores variables;
+ * el filtro por tipo se combina por ID-list (addAll por tipo + intersect con
+ * la ventana), nunca criterios string. List.add() de Deluge solo APPENDEA:
+ * la inserción indexada del ranking usa el helper shift-copy
+ * insert_ranked_entry (operaciones garantizadas: size/get/add).
+ */
 
   map chat_tools.report_top_customers(map params)
   {
-    // Filtro opcional: null/"" => sin filtro (cuenta TODOS los tipos)
+    // serviceType es OBLIGATORIO y debe ser una List<string> con ≥1 elemento.
+    // Opción A: si falta, está vacío o no es una lista => clarify.
+    // try/catch: .get() sobre un String (contrato roto) lanzaría error en
+    // Deluge, así que se normaliza a clarify sin excepción.
     serviceType = params.get("serviceType");
-    if(serviceType == null)
+    validTypes = false;
+    try
     {
-      serviceType = "";
+      if(serviceType != null && serviceType.size() > 0 && serviceType.get(0) != null && serviceType.get(0) != "")
+      {
+        validTypes = true;
+      }
     }
-    hasFilter = serviceType != "";
-    reportedType = null;
-    if(hasFilter)
+    catch(e)
     {
-      reportedType = serviceType;
+      validTypes = false;
+    }
+    if(!validTypes)
+    {
+      return {"ok":false,"kind":"clarify","message":"Debes especificar al menos un tipo de servicio."};
+    }
+    reportedType = "";
+    for each  st in serviceType
+    {
+      if(reportedType == "")
+      {
+        reportedType = "" + st;
+      }
+      else
+      {
+        reportedType = reportedType + ", " + st;
+      }
     }
     // limit: Zia puede enviarlo como string; toNumber + default 10
     limitNum = 10;
@@ -57,31 +84,31 @@
     // Ventana FIJA de 30 días (no configurable este slice)
     endDate = zoho.currentdate;
     startDate = endDate.subDay(30);
-    // Count-first + fetch acotado a 200; con filtro, intersección por IDs
-    if(!hasFilter)
+    // Unión de IDs por tipo (addAll) → intersección con la ventana.
+    // serviceType ya es una lista válida (≥1 elemento) por la validación.
+    windowIDs = thisapp.chat_data_access.fetch_services_ids_by_date_window(startDate,endDate);
+    typeIDs = List();
+    for each  st in serviceType
     {
-      total = thisapp.chat_data_access.fetch_services_count_by_date_window(startDate,endDate);
-      truncated = total > 200;
-      records = thisapp.chat_data_access.fetch_services_by_date_window(startDate,endDate);
+      ids = thisapp.chat_data_access.fetch_services_ids_by_type(st);
+      if(ids != null)
+      {
+        typeIDs.addAll(ids);
+      }
     }
-    else
+    // Guard: Form[ID in []] tiene comportamiento desconocido en Creator
+    if(windowIDs == null || windowIDs.size() == 0 || typeIDs.size() == 0)
     {
-      windowIDs = thisapp.chat_data_access.fetch_services_ids_by_date_window(startDate,endDate);
-      typeIDs = thisapp.chat_data_access.fetch_services_ids_by_type(serviceType);
-      // Guard: Form[ID in []] tiene comportamiento desconocido en Creator
-      if(windowIDs == null || windowIDs.size() == 0 || typeIDs == null || typeIDs.size() == 0)
-      {
-        return thisapp.chat_common.build_empty_report(startDate,endDate,reportedType);
-      }
-      targetIDs = windowIDs.intersect(typeIDs);
-      if(targetIDs == null || targetIDs.size() == 0)
-      {
-        return thisapp.chat_common.build_empty_report(startDate,endDate,reportedType);
-      }
-      total = targetIDs.size();
-      truncated = total > 200;
-      records = thisapp.chat_data_access.fetch_services_by_ids(targetIDs);
+      return thisapp.chat_common.build_empty_report(startDate,endDate,reportedType);
     }
+    targetIDs = windowIDs.intersect(typeIDs);
+    if(targetIDs == null || targetIDs.size() == 0)
+    {
+      return thisapp.chat_common.build_empty_report(startDate,endDate,reportedType);
+    }
+    total = targetIDs.size();
+    truncated = total > 200;
+    records = thisapp.chat_data_access.fetch_services_by_ids(targetIDs);
     // Agregación por remitente (Map clave = "" + senderId normalizado)
     senderMap = Map();
     if(records == null)
@@ -252,11 +279,7 @@
     // Visualización: labels = nombres, values = servicios. Decisión determinista.
     vizLabels = List();
     vizValues = List();
-    vizTitle = "Clientes más frecuentes";
-    if(hasFilter)
-    {
-      vizTitle = vizTitle + " (" + reportedType + ")";
-    }
+    vizTitle = "Clientes más frecuentes (" + reportedType + ")";
     for each  c in ranking
     {
       vizLabels.add(c.get("customerName"));

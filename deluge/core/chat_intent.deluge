@@ -27,7 +27,8 @@ string chat_intent.build_intent_prompt(string userPrompt, list history, string c
   prompt = prompt + "- find_offices: 'oficinas en Estados Unidos' → {\"country\": \"Estados Unidos\"}; 'oficina New York' → {\"city\": \"New York\"}\n";
   prompt = prompt + "- check_coverage: 'cobertura Cuba' → {\"country\": \"Cuba\"}; 'proveedores paquetería' → {\"serviceType\": \"Package Receipt\"}\n";
   prompt = prompt + "- find_contacts: 'contacto Juan Pérez' → {\"name\": \"Juan Pérez\"}; 'tel 555-1234' → {\"phone\": \"555-1234\"}\n";
-  prompt = prompt + "- report_*: 'reporte top 5' → {\"limit\": \"5\"}; 'oficina New York' → {\"office\": \"New York\"}\n\n";
+  prompt = prompt + "- report_*: 'reporte top 5 de clientes Locker' → {\"serviceType\": [\"Locker\"], \"limit\": \"5\"}; 'oficina New York' → {\"office\": \"New York\"}\n";
+  prompt = prompt + "- REGLA report_top_customers: serviceType es OBLIGATORIO como lista (ej. [\"Locker\"]); si el usuario no indica tipo de servicio, devuelve {\"clarify\": \"...\"}. Paquetería → report_top_package_customers; remesas → report_top_remittance_customers.\n\n";
   prompt = prompt + "REGLA CRÍTICA: Si el usuario NO especifica un parámetro opcional, OMÍTELO del JSON (no pases null ni string vacío). Si FALTA uno requerido (ej. trackingNumber), devuelve {\"clarify\": \"...\"}.\n\n";
   if(history != null && history.size() > 0)
   {

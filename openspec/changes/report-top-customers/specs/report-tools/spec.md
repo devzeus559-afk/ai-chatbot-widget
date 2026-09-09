@@ -8,20 +8,27 @@ Change: **report-top-customers** — adds the first metric/reporting tool `repor
 
 The system MUST register `report_top_customers` in the `chat_config` tools catalog so `chat_intent` can select it.
 
-- MUST declare params `serviceType` (optional) and `limit` (optional, default 10)
-- MUST enumerate in the description the exact picklist values: `Package Receipt`, `Locker`, `Store`, `Remittance`, `Recharge`, `Online Store`, `Other Services` — case-sensitive equality ("paquetería" maps to `Package Receipt`)
+- MUST declare params `serviceType` (required) and `limit` (optional, default 10)
+- MUST document `serviceType` as a `List<string>` with at least one element
+- MUST enumerate in the description the exact picklist values: `Locker`, `Store`, `Recharge`, `Online Store`, `Other Services` — case-sensitive equality. `Package Receipt` and `Remittance` are OUT of this tool's domain (they route to `report_top_package_customers` / `report_top_remittance_customers`).
 
 #### Scenario: Zia selects the tool
 
-- GIVEN the question "lista los 10 clientes más frecuentes en el servicio paquetería"
+- GIVEN the question "lista los 10 clientes más frecuentes en el servicio Locker"
 - WHEN `chat_intent` matches a tool
-- THEN it returns `report_top_customers` with `serviceType: "Package Receipt"`
+- THEN it returns `report_top_customers` with `serviceType: ["Locker"]`
 
 #### Scenario: Description enumerates exact values
 
 - GIVEN the catalog entry
 - WHEN statically reviewed
-- THEN the description lists all 7 picklist values with exact casing
+- THEN the description lists all 5 picklist values with exact casing and excludes `Package Receipt`/`Remittance`
+
+#### Scenario: Type omitted falls back to clarify
+
+- GIVEN a vague "quiénes son los clientes más frecuentes" without a service type
+- WHEN `chat_intent` considers the generic tool
+- THEN it must either return a `clarify` or select a tool other than `report_top_customers` (it MUST NOT invoke the generic without `serviceType`)
 
 ### Requirement: Dispatch Routing
 
@@ -39,25 +46,32 @@ The system MUST register `report_top_customers` in the `chat_config` tools catal
 - WHEN `dispatch_tool` runs
 - THEN the existing `{"ok": false, "message": "Herramienta desconocida: ..."}` fallback still returns
 
-### Requirement: Fixed 30-Day Window with Optional Type Filter
+### Requirement: Fixed 30-Day Window with Mandatory Type Filter
 
-The tool MUST rank services within a fixed 30-day window on `Date_field1` (business date), optionally restricted by `serviceType`.
+The tool MUST rank services within a fixed 30-day window on `Date_field1` (business date), restricted by the mandatory `serviceType` list.
 
 - MUST use a fixed 30-day window, never configurable
-- MUST match `serviceType` exactly (case-sensitive)
-- MUST treat missing/empty `serviceType` as no filter
+- MUST match each `serviceType` element exactly (case-sensitive)
+- MUST require `serviceType` as a non-empty list; missing, empty, or non-list input returns `{"ok": false, "kind": "clarify", "message": "Debes especificar al menos un tipo de servicio."}` (no unfiltered mode)
+- MUST union the ID sets of every requested type (`addAll`), then intersect with the window ID set
 
 #### Scenario: Type-filtered report
 
-- GIVEN `serviceType: "Package Receipt"`
+- GIVEN `serviceType: ["Locker", "Store"]`
 - WHEN the tool aggregates
-- THEN only services with `Service_Type == "Package Receipt"` in the window count
+- THEN only services with `Service_Type` in the requested list within the window count
 
-#### Scenario: Unfiltered report
+#### Scenario: Multi-type union
+
+- GIVEN `serviceType: ["Locker", "Store"]`
+- WHEN the tool fetches IDs
+- THEN the type ID sets are added together (union) and intersected with the window, not intersected type-by-type
+
+#### Scenario: Missing type returns clarify
 
 - GIVEN no `serviceType` param
-- WHEN the tool aggregates
-- THEN all services in the window count
+- WHEN the tool validates
+- THEN it returns `{"ok": false, "kind": "clarify"}` without ranking
 
 ### Requirement: Frequency Ranking with Seniority Tie-Break
 

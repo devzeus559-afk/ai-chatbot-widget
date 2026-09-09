@@ -312,8 +312,26 @@ map tests_chat_intent.run_live_first_turn(map counters)
   counters = thisapp.tests_chat_intent.live_assert_tool("LIVE-04 check_coverage Colombia","¿Tienen cobertura en Colombia para remesas?","check_coverage","country",counters);
   // 5 — find_contacts
   counters = thisapp.tests_chat_intent.live_assert_tool("LIVE-05 find_contacts Juan","Busca el contacto Juan Pérez teléfono 5551234","find_contacts","name",counters);
-  // 6 — report_top_customers
-  counters = thisapp.tests_chat_intent.live_assert_tool("LIVE-06 report_top","¿Quiénes son los clientes más frecuentes del último mes?","report_top_customers","EMPTY_OK",counters);
+  // 6 — report_top_customers (genérico: SOLO tipos Locker/Store/Recharge/Online Store/Other)
+  //   Prompt vago SIN tipo => NO debe caer aquí (contrato del cambio: serviceType
+  //   obligatorio; ver LIVE-06b para el clarify). Este prompt nombra un tipo del dominio.
+  counters = thisapp.tests_chat_intent.live_assert_tool("LIVE-06 report_top Locker","¿Quiénes son los clientes más frecuentes del servicio Locker del último mes?","report_top_customers","EMPTY_OK",counters);
+  // 6b — report vago SIN tipo: el router NO debe llamar al genérico sin
+  //   serviceType (contrato del cambio). Vale clarify, answer u otro tool;
+  //   si eligiera report_top_customers, debe llevar serviceType.
+  info "LIVE-06b clarify prompt: ¿Quiénes son los clientes más frecuentes del último mes?";
+  r6b = thisapp.chat_intent.chat_intent("¿Quiénes son los clientes más frecuentes del último mes?",List());
+  info "LIVE-06b result: " + r6b.toString();
+  isSafe6b = true;
+  if(r6b.get("kind") == "tool" && r6b.get("tool") == "report_top_customers")
+  {
+    p6b = r6b.get("params");
+    if(p6b == null || p6b.get("serviceType") == null)
+    {
+      isSafe6b = false;
+    }
+  }
+  counters = thisapp.tests_chat_intent.assert_true("LIVE-06b: report vago no llama al genérico sin serviceType",isSafe6b == true,counters,"kind=" + r6b.get("kind") + " tool=" + r6b.get("tool") + " params=" + r6b.get("params"));
   // 7 — answer (sin tool)
   info "LIVE-07 answer prompt: Hola, ¿qué hacen ustedes?";
   r7 = thisapp.chat_intent.chat_intent("Hola, ¿qué hacen ustedes?",List());

@@ -163,9 +163,12 @@ en AMBOS sitios (el literal de la consulta en `data_access` y el mapa `*Fields`)
 - **Límite de registros**: acceso nativo con `range from 0 to 199` (200 registros) en los
   listados de negocio, `0 to 49` (50) en contactos y los 10 más recientes en el historial
   del chat (`0 to 9`, orden `Created_Time desc`). `report_top_customers` procesa la ventana
-  fija de 30 días acotada a 200 servicios: si el conteo exacto de la ventana supera 200,
-  devuelve `truncated: true` y la reply avisa que el ranking es aproximado (se analizaron
-  los primeros 200 por fecha de negocio).
+  fija de 30 días sobre **solo** los tipos del dominio genérico (Locker, Store, Recharge,
+  Online Store, Other Services): unión de IDs por `serviceType` (lista obligatoria ≥1) e
+  intersección con la ventana; si la intersección supera 200, devuelve `truncated: true` y
+  la reply avisa que el ranking es aproximado (se analizan los primeros 200 por fecha de
+  negocio). Paquetería y remesas se resuelven con los tools específicos
+  `report_top_package_customers` / `report_top_remittance_customers`.
 
 ## Conexión con el widget (implementada)
 

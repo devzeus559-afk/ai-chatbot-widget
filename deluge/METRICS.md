@@ -4,7 +4,7 @@ Métricas de marketing sobre `Service` (ventana `Date_field1`, `Sender_field` re
 
 | Métrica | Descripción breve | Estado |
 |---|---|---|
-| **report_top_customers** | Clientes más frecuentes (top N por cantidad de servicios en últimos 30 días). Filtro opcional `serviceType` exacto. Ranking `count desc` con desempate por `firstDate` más antigua. `truncated` si ventana >200. | **Implementada** — `deluge/tools/tool_report_top_customers.deluge` + `data_access:fetch_services_*_by_date_window` materializado `List<Map>` |
+| **report_top_customers** | Clientes más frecuentes (top N por cantidad de servicios en últimos 30 días). `serviceType` **obligatorio** como `List<string>` con ≥1 elemento (solo Locker, Store, Recharge, Online Store, Other Services). Falta/vacío/string → `{"ok":false,"kind":"clarify"}`. Multi-tipo = unión de IDs por tipo (`addAll`) + `intersect` con ventana. Ranking `count desc` con desempate por `firstDate` más antigua. `truncated` si intersección >200. Paquetería → `report_top_package_customers`; remesas → `report_top_remittance_customers`. | **Implementada** — `deluge/tools/tool_report_top_customers.deluge` + `data_access:fetch_services_*_by_date_window` materializado `List<Map>` |
 | **report_top_customers_by_revenue** | Top por ingresos (top N por suma `Price` USD en 30/60 días). Mismo filtro `serviceType`. | Propuesta — reusa ventana + `sum(Price)` por sender |
 | **report_service_mix** | Mix por tipo (conteo y % por `Service_Type` en 30 días). | Propuesta |
 | **report_top_destinations** | Top destinos (top N ciudades `City` por volumen en 30 días, opcional `serviceType`). | Propuesta |
