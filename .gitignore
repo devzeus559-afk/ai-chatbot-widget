@@ -19,3 +19,4 @@ Thumbs.db
 
 # Zoho widget deploy artifacts (generated manually with `zet pack`)
 LM2Chatbot/dist/
+chatbot-widget/dist/

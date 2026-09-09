@@ -148,7 +148,7 @@ map tests_native_data_access.test_fetch_services_by_ids(map counters)
     info "[INFO] fetch_services_by_ids: sin registros para extraer IDs (data prereq)";
     return counters;
   }
-  // Tomar IDs reales (máx 3)
+  // Tomar IDs reales (máx 3) — for each + contador (Deluge no soporta while)
   ids = List();
   limit = allRecords.size();
   if(limit > 3)
@@ -156,13 +156,15 @@ map tests_native_data_access.test_fetch_services_by_ids(map counters)
     limit = 3;
   }
   i = 0;
-  while(i < limit)
+  for each rec in allRecords
   {
-    rec = allRecords.get(i);
-    recId = rec.get("zid");
-    if(recId != null)
+    if(i < limit)
     {
-      ids.add(recId);
+      recId = rec.get("zid");
+      if(recId != null)
+      {
+        ids.add(recId);
+      }
     }
     i = i + 1;
   }
