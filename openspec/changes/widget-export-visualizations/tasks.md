@@ -46,10 +46,10 @@ Chain strategy: pending
 ## Phase 3: Verification (static + manual Creator)
 
 - [x] 3.1 Static read-diff: CSV escaping/BOM/CRLF, multi-series header, `localIsoDate` non-UTC, filename `export-report_top_customers-2026-08-28.csv`, template lookup known/unknown→generic, `parseTrackingText` on fixed sample, submenu aria/listeners, `runExport` isolation.
-- [ ] 3.2 Manual (Creator): `report_top_customers` table + ≤8-category bar → CSV opens with accents in Excel; XLSX layout applied; correct filenames.
-- [ ] 3.3 Manual (Creator): `track_package` → toolbar under text message (no viz) → single-row CSV/XLSX.
-- [ ] 3.4 Manual (Creator): DevTools offline → XLSX toast + auto CSV fallback; conversation continues; `exportBtn` JSON export still works.
-- [ ] 3.5 Manual (Creator): re-open saved conversation → export intact (re-parsed envelope, same data); type `none`/missing → no control.
+- [x] 3.2 Manual (Creator): `report_top_customers` table + ≤8-category bar → CSV opens with accents in Excel; XLSX layout applied; correct filenames. ✅ Verificado 2026-09-10 en Creator (live) por el usuario.
+- [x] 3.3 Manual (Creator): `track_package` → toolbar under text message (no viz) → single-row CSV/XLSX. ✅ Verificado 2026-09-10 en Creator (live) por el usuario.
+- [x] 3.4 Manual (Creator): DevTools offline → XLSX toast + auto CSV fallback; conversation continues; `exportBtn` JSON export still works. ✅ Verificado 2026-09-10 en Creator (live) por el usuario.
+- [x] 3.5 Manual (Creator): re-open saved conversation → export intact (re-parsed envelope, same data); type `none`/missing → no control. ✅ Verificado 2026-09-10 en Creator (live) por el usuario.
 
 ## Phase 4: Rollback / docs
 
