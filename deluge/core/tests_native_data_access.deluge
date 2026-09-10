@@ -13,7 +13,11 @@
  * Los asserts usan tests_common.* (helpers compartidos).
  *
  * Ejecución: pegar como funciones tests_native_data_access.* en Creator
- * (junto con tests_common.*) y llamar  tests_native_data_access.run()
+ * (junto con tests_common.*) y llamar los runners por grupo (un run()
+ * monolítico excede el límite de sentencias de Deluge):
+ *   run_fetch_all(), run_fetch_ids(), run_tools_track(),
+ *   run_tools_services(), run_tools_offices(), run_tools_coverage(),
+ *   run_tools_contacts(), run_history()
  * Revisar logs `info`. No usa Form[criteriaVar] ni API de Creator.
  */
 
@@ -729,17 +733,24 @@ map tests_native_data_access.test_history_order(map counters)
 }
 
 // ==========================================================================
-// Orquestador
+// Orquestadores — divididos por grupo: run() monolítico excede el límite de
+// sentencias de Deluge. Ejecutar cada runner por separado en Creator:
+//   tests_native_data_access.run_fetch_all()
+//   tests_native_data_access.run_fetch_ids()
+//   tests_native_data_access.run_tools_track()
+//   tests_native_data_access.run_tools_services()
+//   tests_native_data_access.run_tools_offices()
+//   tests_native_data_access.run_tools_coverage()
+//   tests_native_data_access.run_tools_contacts()
+//   tests_native_data_access.run_history()
+// Cada runner reporta su propio resumen passed/failed.
 // ==========================================================================
-map tests_native_data_access.run()
+map tests_native_data_access.run_fetch_all()
 {
   counters = Map();
   counters.put("passed",0);
   counters.put("failed",0);
-  info "=== SMOKE native_data_access (gate 5.1, sin Zia) ===";
-
-  // (a) Fetch-all por form
-  info "--- (a) Fetch-all por form ---";
+  info "=== SMOKE native_data_access: (a) Fetch-all por form ===";
   counters = thisapp.tests_native_data_access.test_fetch_all_services(counters);
   counters = thisapp.tests_native_data_access.test_fetch_all_offices(counters);
   counters = thisapp.tests_native_data_access.test_fetch_all_coverage(counters);
@@ -748,66 +759,98 @@ map tests_native_data_access.run()
   counters = thisapp.tests_native_data_access.test_fetch_all_chat_sessions(counters);
   counters = thisapp.tests_native_data_access.test_fetch_all_chat_messages(counters);
   counters = thisapp.tests_native_data_access.test_fetch_all_chat_requests(counters);
-
-  // (b) Fetch por IDs + empty guard
-  info "--- (b) Fetch por IDs ---";
+  info "=== run_fetch_all done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+map tests_native_data_access.run_fetch_ids()
+{
+  counters = Map();
+  counters.put("passed",0);
+  counters.put("failed",0);
+  info "=== SMOKE native_data_access: (b) Fetch por IDs + (c) type match + (d) Zia ===";
   counters = thisapp.tests_native_data_access.test_fetch_services_by_ids(counters);
   counters = thisapp.tests_native_data_access.test_fetch_offices_by_ids(counters);
   counters = thisapp.tests_native_data_access.test_fetch_coverage_by_ids(counters);
   counters = thisapp.tests_native_data_access.test_fetch_vendors_by_ids(counters);
   counters = thisapp.tests_native_data_access.test_fetch_contacts_by_ids(counters);
-
-  // (c) ChatRequests type match
-  info "--- (c) ChatRequests type match ---";
   counters = thisapp.tests_native_data_access.test_chat_requests_id_type_match(counters);
-
-  // (d) Zia no-comma (info only)
-  info "--- (d) Zia no-comma syntax ---";
   counters = thisapp.tests_native_data_access.test_zia_no_comma_syntax(counters);
-
-  // Inserts — no-op info
-  info "--- Inserts ---";
   counters = thisapp.tests_native_data_access.test_inserts_note(counters);
-
-  // Tools — track_package
-  info "--- Tools: track_package ---";
+  info "=== run_fetch_ids done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+map tests_native_data_access.run_tools_track()
+{
+  counters = Map();
+  counters.put("passed",0);
+  counters.put("failed",0);
+  info "=== SMOKE native_data_access: Tools — track_package ===";
   counters = thisapp.tests_native_data_access.test_track_package_empty(counters);
   counters = thisapp.tests_native_data_access.test_track_package_not_found(counters);
   counters = thisapp.tests_native_data_access.test_track_package_real(counters);
-
-  // Tools — search_services
-  info "--- Tools: search_services ---";
+  info "=== run_tools_track done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+map tests_native_data_access.run_tools_services()
+{
+  counters = Map();
+  counters.put("passed",0);
+  counters.put("failed",0);
+  info "=== SMOKE native_data_access: Tools — search_services ===";
   counters = thisapp.tests_native_data_access.test_services_no_filter(counters);
   counters = thisapp.tests_native_data_access.test_services_by_type_real(counters);
   counters = thisapp.tests_native_data_access.test_services_type_not_found(counters);
   counters = thisapp.tests_native_data_access.test_services_type_and_destination(counters);
-
-  // Tools — find_offices
-  info "--- Tools: find_offices ---";
+  info "=== run_tools_services done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+map tests_native_data_access.run_tools_offices()
+{
+  counters = Map();
+  counters.put("passed",0);
+  counters.put("failed",0);
+  info "=== SMOKE native_data_access: Tools — find_offices ===";
   counters = thisapp.tests_native_data_access.test_offices_no_filter(counters);
   counters = thisapp.tests_native_data_access.test_offices_by_city_real(counters);
   counters = thisapp.tests_native_data_access.test_offices_city_not_found(counters);
-
-  // Tools — check_coverage
-  info "--- Tools: check_coverage ---";
+  info "=== run_tools_offices done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+map tests_native_data_access.run_tools_coverage()
+{
+  counters = Map();
+  counters.put("passed",0);
+  counters.put("failed",0);
+  info "=== SMOKE native_data_access: Tools — check_coverage ===";
   counters = thisapp.tests_native_data_access.test_coverage_by_country_real(counters);
   counters = thisapp.tests_native_data_access.test_coverage_country_not_found(counters);
   counters = thisapp.tests_native_data_access.test_coverage_by_service_type(counters);
   counters = thisapp.tests_native_data_access.test_coverage_vendor_not_found(counters);
   counters = thisapp.tests_native_data_access.test_coverage_country_and_service_type(counters);
-
-  // Tools — find_contacts
-  info "--- Tools: find_contacts ---";
+  info "=== run_tools_coverage done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+map tests_native_data_access.run_tools_contacts()
+{
+  counters = Map();
+  counters.put("passed",0);
+  counters.put("failed",0);
+  info "=== SMOKE native_data_access: Tools — find_contacts ===";
   counters = thisapp.tests_native_data_access.test_contacts_no_filter(counters);
   counters = thisapp.tests_native_data_access.test_contacts_by_phone_real(counters);
   counters = thisapp.tests_native_data_access.test_contacts_by_document_real(counters);
   counters = thisapp.tests_native_data_access.test_contacts_by_name_real(counters);
   counters = thisapp.tests_native_data_access.test_contacts_not_found(counters);
-
-  // History order
-  info "--- History order ---";
+  info "=== run_tools_contacts done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+map tests_native_data_access.run_history()
+{
+  counters = Map();
+  counters.put("passed",0);
+  counters.put("failed",0);
+  info "=== SMOKE native_data_access: History order ===";
   counters = thisapp.tests_native_data_access.test_history_order(counters);
-
-  info "=== SMOKE done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  info "=== run_history done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
   return counters;
 }
