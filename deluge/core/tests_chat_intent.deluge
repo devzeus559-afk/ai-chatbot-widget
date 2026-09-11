@@ -673,7 +673,7 @@ map tests_chat_intent.run_live_hierarchical(map counters)
   p8 = null;
   try { p8 = r8.get("params"); } catch (e) {}
   hasPeriodOrDate8 = true;
-  if(p8 != null)
+  if(p8 != null && p8.size() > 0)
   {
     hasPeriodOrDate8 = false;
     try { if(p8.containKey("period") || p8.containKey("startDate")) { hasPeriodOrDate8 = true; } } catch (e) {}
@@ -728,7 +728,7 @@ map tests_intent_hierarchical.run_smoke()
   p8 = null;
   try { p8 = r8.get("params"); } catch (e) {}
   hasPeriodOrDate8 = true;
-  if(p8 != null)
+  if(p8 != null && p8.size() > 0)
   {
     hasPeriodOrDate8 = false;
     try { if(p8.containKey("period") || p8.containKey("startDate")) { hasPeriodOrDate8 = true; } } catch (e) {}

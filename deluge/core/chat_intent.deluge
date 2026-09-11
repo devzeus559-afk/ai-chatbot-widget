@@ -166,10 +166,14 @@ string chat_intent.build_tool_prompt(string userPrompt, string category, string 
   prompt = prompt + "CATEGORÍA: " + category + "\n\n";
   prompt = prompt + "HERRAMIENTAS DISPONIBLES (solo de esta categoría):\n";
   prompt = prompt + filteredCatalog + "\n";
-  prompt = prompt + "REGLAS:\n";
+prompt = prompt + "REGLAS:\n";
   prompt = prompt + "- Elige SOLO una herramienta de la lista de arriba.\n";
-  prompt = prompt + "- Si el usuario menciona paquetería → considera tools con \"paquete\" o \"package\" en el nombre.\n";
-  prompt = prompt + "- Si el usuario menciona remesas → considera tools con \"remittance\" en el nombre.\n";
+  prompt = prompt + "- Si el usuario menciona paquetería → considera tools con "paquete" o "package" en el nombre.\n";
+  prompt = prompt + "- Si el usuario menciona remesas → considera tools con "remittance" en el nombre.\n";
+  if(category == "SEARCH")
+  {
+    prompt = prompt + "- SEARCH: si el usuario menciona "cobertura" → check_coverage. Si menciona "oficina"/"sucursal" → find_offices. Si menciona "servicios" → search_services. Si menciona "contacto" → find_contacts. NUNCA clarifiques para elegir entre estas: usa la palabra clave.\n";
+  }
   prompt = prompt + "- Si falta un parámetro OBLIGATORIO (trackingNumber, serviceType como lista ≥1), AÚN ASÍ elige la herramienta. No pidas clarify aquí.\n";
   prompt = prompt + "- NUNCA devuelvas texto fuera del JSON.\n\n";
   prompt = prompt + "MENSAJE ACTUAL DEL USUARIO:\n" + userPrompt;
@@ -201,7 +205,16 @@ string chat_intent.build_params_prompt(string userPrompt, string toolName, strin
     prompt = prompt + "- Si el usuario menciona "último mes", "últimos 30 días" → period: \"ultimo_mes\". Si dice "mes anterior"/"mes pasado" → \"mes_anterior\". Si dice "esta semana" → \"ultimos_7_dias\". Si dice "este mes" → \"este_mes\".\n";
     prompt = prompt + "- Si el usuario menciona un MES CONCRETO distinto (ej. "marzo" sin ser el mes previo), NO calcules fechas y NO pidas aclaración: omite period y deja que el sistema use el rango por defecto de 30 días.\n";
   }
-  prompt = prompt + "- Solo pide clarificación si falta un parámetro OBLIGATORIO (track_package requiere trackingNumber; report_top_customers requiere serviceType como lista).\n";
+  prompt = prompt + "- Solo pide clarificación si falta un parámetro OBLIGATORIO del esquema de arriba.\n";
+  hasRequired = false;
+  if(paramSchema.contains("REQUIRED"))
+  {
+    hasRequired = true;
+  }
+  if(!hasRequired)
+  {
+    prompt = prompt + "- IMPORTANTE: ESTA HERRAMIENTA NO TIENE PARÁMETROS OBLIGATORIOS. Nunca pidas serviceType ni ningún otro dato que no esté en el esquema. Si el usuario no menciona nada extraíble, devuelve {\"params\": {}}.\n";
+  }
   prompt = prompt + "- Para herramientas con fechas: usa el PERIODO en vez de calcular fechas. Valores válidos: ultimo_mes, mes_anterior, este_mes, ultimos_7_dias.\n";
   prompt = prompt + "- Si el usuario da fechas EXPLÍCITAS (startDate/endDate), inclúyelas directamente.\n";
   prompt = prompt + "- NUNCA calcules fechas tú mismo. Devuelve el enum de periodo o las fechas que el usuario dio.\n\n";
@@ -405,6 +418,45 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
         cleanedParams.put(k,v);
       }
       params = cleanedParams;
+      // Saneamiento semántico (S-05/S-08): Zia rellena opcionales con basura.
+      // - limit debe ser numérico (top-N); "cajas sin escanear" no es un limit.
+      // - un mes-calendario (marzo, febrero...) nunca es country/office/measure/city.
+      if(params.containKey("limit"))
+      {
+        limitVal = params.get("limit");
+        if(limitVal == null)
+        {
+          params.remove("limit");
+        }
+        else
+        {
+          limitText = limitVal.toString();
+          if(!limitText.matches("[0-9]+"))
+          {
+            params.remove("limit");
+          }
+        }
+      }
+      monthKeys = List({"country","office","measure","city","vendor","destCountry","destination"});
+      for each  mk in monthKeys
+      {
+        if(params.containKey(mk))
+        {
+          mv = params.get(mk);
+          if(mv == null)
+          {
+            params.remove(mk);
+          }
+          else
+          {
+            mt = mv.toString().toLowerCase();
+            if(mt.contains("marzo") || mt.contains("febrero") || mt.contains("enero") || mt.contains("abril") || mt.contains("mayo") || mt.contains("junio") || mt.contains("julio") || mt.contains("agosto") || mt.contains("septiembre") || mt.contains("octubre") || mt.contains("noviembre") || mt.contains("diciembre"))
+            {
+              params.remove(mk);
+            }
+          }
+        }
+      }
       // Validación determinista de campos requeridos (prompt no es la única barrera)
       if(parsed.containKey("params"))
       {
