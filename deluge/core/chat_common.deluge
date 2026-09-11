@@ -13,7 +13,7 @@
 *            build_empty_report, build_empty_package_customers_report,
 *            build_empty_remittance_report, build_empty_shipping_report,
 *            build_empty_merchandise_report, build_breakdown_list,
-*            first_of_month, days_in_month_range
+*            first_of_month, days_in_month_range, resolve_period
 *
 * Nota: el filtrado nativo NO usa builders de criterios (Form[criteriaVar]
 * es inválido en Creator, gate 5.1). La combinación AND se hace en las tools
@@ -832,4 +832,35 @@ string chat_common.viz_to_json(map viz)
   result = result + ",\"series\":[" + thisapp.chat_common.join_list(seriesParts,",") + "]";
   result = result + "}";
   return result;
+}
+// --------------------------------------------------------------------------
+// Period enum → date pair (hierarchical intent routing)
+// --------------------------------------------------------------------------
+list chat_common.resolve_period(string periodEnum, date endDate)
+{
+  // Resuelve un enum de periodo a un par [startDate, endDate].
+  // endDate se pasa explícitamente (normalmente zoho.currentdate) para que los
+  // tests unitarios puedan verificar ventanas sobre una fecha conocida.
+  if(endDate == null)
+  {
+    endDate = zoho.currentdate;
+  }
+  if(periodEnum == "ultimo_mes" || periodEnum == "ultimos_30_dias" || periodEnum == null || periodEnum == "")
+  {
+    return {endDate.subDay(30),endDate};
+  }
+  if(periodEnum == "mes_anterior")
+  {
+    return {thisapp.chat_common.first_of_month(endDate.addMonth(-1)),thisapp.chat_common.first_of_month(endDate).subDay(1)};
+  }
+  if(periodEnum == "este_mes")
+  {
+    return {thisapp.chat_common.first_of_month(endDate),endDate};
+  }
+  if(periodEnum == "ultimos_7_dias")
+  {
+    return {endDate.subDay(7),endDate};
+  }
+  // Fallback: últimos 30 días
+  return {endDate.subDay(30),endDate};
 }

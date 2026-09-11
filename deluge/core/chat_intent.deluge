@@ -1,17 +1,19 @@
 /**
 * chat_intent.deluge
 *
-* Router de intención: llama a la tarea Zia de Deluge y normaliza la salida
-* a UNO de estos contratos:
+* Router de intención jerárquico: 3 etapas Zia (category → tool → params).
+* La fachada chat_intent() orquesta el pipeline; cada etapa tiene su prompt
+* builder, normalizer y resolver. Short-circuit en answer/clarify/error.
 *
-*   {"tool": "<nombre>", "params": {...}}   → necesita datos de la app
-*   {"answer": "<texto>"}                    → respuesta directa sin tools
-*   {"clarify": "<pregunta>"}                → falta información
+* Contratos de salida (inalterados):
 *
-* La tarea Zia retorna un objeto con atributos .status, .data, .error.
-* .data es el TEXTO del LLM (se parsea con parse_json_strict de
-* chat_common.deluge). La llamada Zia usa la sintaxis oficial SIN comas
-* (cada parámetro nombrado en su propia línea).
+*   {"status":"ok","kind":"tool","tool":"<nombre>","params":{...}}   → dispatch_tool
+*   {"status":"ok","kind":"answer","text":"..."}                       → respuesta directa
+*   {"status":"ok","kind":"clarify","text":"..."}                      → falta información
+*   {"status":"error","kind":"clarify","text":"..."}                   → error/generic
+*
+* build_intent_prompt + normalize_zia_response se conservan para backward
+* compat con tests existentes pero ya NO se usan en el flujo principal.
 */
 
 string chat_intent.build_intent_prompt(string userPrompt, list history, string catalogText)
@@ -111,35 +113,334 @@ map chat_intent.normalize_zia_response(map response)
     {
       return {"status":"ok","kind":"clarify","text":parsed.get("clarify")};
     }
+    // 3.11 — category key (hierarchical pipeline)
+    if(parsed.containKey("category"))
+    {
+      return {"status":"ok","kind":"category","category":parsed.get("category")};
+    }
   } catch (e)
   {
-    // JSON válido pero con otra forma: pedir reformulación
+    // JSON válido pero con otra forma
   }
   return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
 }
-map chat_intent.chat_intent(string userPrompt, list history)
+// --------------------------------------------------------------------------
+// Hierarchical intent routing — prompt builders
+// --------------------------------------------------------------------------
+// Hierarchical intent routing — prompt builders
+// --------------------------------------------------------------------------
+string chat_intent.build_category_prompt(string userPrompt, list history)
 {
-  /**
-   * chat_intent.dg
-   *
-   * Router de intención: llama a la tarea Zia de Deluge y normaliza la salida
-   * a UNO de estos contratos:
-   *
-   *   {"tool": "<nombre>", "params": {...}}   → necesita datos de la app
-   *   {"answer": "<texto>"}                    → respuesta directa sin tools
-   *   {"clarify": "<pregunta>"}                → falta información
-   *
-   * La salida de Zia es TEXTO; se pide JSON estricto con temperature 0.1 y se
-   * valida con parse_json_strict (chat_common.dg).
-   */
+  prompt = "CONTRATO DE SALIDA: Devuelve SOLO JSON válido con UNO de estos tres formatos:\n";
+  prompt = prompt + "1) {\"category\": \"<NOMBRE>\"} para clasificar la consulta en una categoría.\n";
+  prompt = prompt + "2) {\"answer\": \"<texto>\"} cuando puedas responder sin consultar datos (saludos, agradecimientos).\n";
+  prompt = prompt + "3) {\"clarify\": \"<pregunta>\"} cuando falte información o la consulta sea ambigua.\n\n";
+  prompt = prompt + "CATEGORÍAS DISPONIBLES:\n";
+  prompt = prompt + "- SEARCH: consultas sobre servicios, oficinas, cobertura o contactos.\n";
+  prompt = prompt + "- TRACKING: rastreo de paquetes por número de seguimiento.\n";
+  prompt = prompt + "- TOP_CUSTOMERS: reportes de clientes más frecuentes por tipo de servicio.\n";
+  prompt = prompt + "- PACKAGE_ANALYSIS: análisis de paquetes (libras, promedio diario, comparación mensual).\n";
+  prompt = prompt + "- OTHER_ANALYSIS: reportes de frecuencia de envío, tipo de mercancía, demorados, sin escanear.\n\n";
+  prompt = prompt + "REGLAS:\n";
+  prompt = prompt + "- Si el usuario saluda, agradece o pregunta algo general → responde con {\"answer\": \"...\"}.\n";
+  prompt = prompt + "- Si la consulta NO está relacionada con paquetería, remesas, recargas, cobertura, oficinas o contactos → devuelve {\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, remesas y recargas. ¿En qué puedo asistirte?\"}.\n";
+  prompt = prompt + "- Si la consulta es ambigua entre categorías → devuelve {\"clarify\": \"<pregunta breve>\"}.\n";
+  prompt = prompt + "- NUNCA devuelvas texto fuera del JSON.\n\n";
+  if(history != null && history.size() > 0)
+  {
+    prompt = prompt + "HISTORIAL RECIENTE:\n";
+    for each  m in history
+    {
+      prompt = prompt + m.get("role") + ": " + m.get("content") + "\n";
+    }
+    prompt = prompt + "\n";
+  }
+  prompt = prompt + "MENSAJE ACTUAL DEL USUARIO:\n" + userPrompt;
+  return prompt;
+}
+string chat_intent.build_tool_prompt(string userPrompt, string category, string filteredCatalog)
+{
+  prompt = "CONTRATO DE SALIDA: Devuelve SOLO JSON válido con UNO de estos dos formatos:\n";
+  prompt = prompt + "1) {\"tool\": \"<nombre_tool>\"} para seleccionar la herramienta exacta.\n";
+  prompt = prompt + "2) {\"clarify\": \"<pregunta>\"} si no puedes determinar qué herramienta usar.\n\n";
+  prompt = prompt + "CATEGORÍA: " + category + "\n\n";
+  prompt = prompt + "HERRAMIENTAS DISPONIBLES (solo de esta categoría):\n";
+  prompt = prompt + filteredCatalog + "\n";
+  prompt = prompt + "REGLAS:\n";
+  prompt = prompt + "- Elige SOLO una herramienta de la lista de arriba.\n";
+  prompt = prompt + "- Si el usuario menciona paquetería → considera tools con \"paquete\" o \"package\" en el nombre.\n";
+  prompt = prompt + "- Si el usuario menciona remesas → considera tools con \"remittance\" en el nombre.\n";
+  prompt = prompt + "- Si falta un parámetro OBLIGATORIO (trackingNumber, serviceType como lista ≥1), AÚN ASÍ elige la herramienta. No pidas clarify aquí.\n";
+  prompt = prompt + "- NUNCA devuelvas texto fuera del JSON.\n\n";
+  prompt = prompt + "MENSAJE ACTUAL DEL USUARIO:\n" + userPrompt;
+  return prompt;
+}
+string chat_intent.build_params_prompt(string userPrompt, string toolName, string paramSchema)
+{
+  prompt = "CONTRATO DE SALIDA: Devuelve SOLO JSON válido con UNO de estos dos formatos:\n";
+  prompt = prompt + "1) {\"params\": {<parámetros>} extraídos del mensaje del usuario.\n";
+  prompt = prompt + "2) {\"clarify\": \"<pregunta>\"} si falta un parámetro obligatorio.\n\n";
+  prompt = prompt + "HERRAMIENTA: " + toolName + "\n\n";
+  prompt = prompt + "ESQUEMA DE PARÁMETROS:\n";
+  prompt = prompt + paramSchema + "\n\n";
+  prompt = prompt + "REGLAS CRÍTICAS:\n";
+  prompt = prompt + "- Si el usuario NO especifica un parámetro opcional, OMÍTELO del JSON (no pases null ni string vacío).\n";
+  prompt = prompt + "- Si FALTA un parámetro OBLIGATORIO, devuelve {\"clarify\": \"...\"} pidiendo solo ese dato.\n";
+  prompt = prompt + "- Para herramientas con fechas: usa el PERIODO en vez de calcular fechas. Valores válidos: ultimo_mes, mes_anterior, este_mes, ultimos_7_dias.\n";
+  prompt = prompt + "- Si el usuario da fechas EXPLÍCITAS (startDate/endDate), inclúyelas directamente.\n";
+  prompt = prompt + "- NUNCA calcules fechas tú mismo. Devuelve el enum de periodo o las fechas que el usuario dio.\n\n";
+  prompt = prompt + "MENSAJE ACTUAL DEL USUARIO:\n" + userPrompt;
+  return prompt;
+}
+// --------------------------------------------------------------------------
+// Hierarchical intent routing — normalizers
+// --------------------------------------------------------------------------
+map chat_intent.normalize_category(map ziaResponse)
+{
+  if(ziaResponse == null)
+  {
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  }
+  if(ziaResponse.get("status") == true && ziaResponse.get("data") != null)
+  {
+    dataValue = ziaResponse.get("data");
+    parsed = null;
+    try
+    {
+      dataFormatted = dataValue.toMap();
+      if(dataFormatted.containKey("category") || dataFormatted.containKey("answer") || dataFormatted.containKey("clarify"))
+      {
+        parsed = dataFormatted;
+      }
+    } catch (e)
+    {
+      // toMap lanzó — cae a parse_json_strict
+    }
+    if(parsed == null)
+    {
+      parsed = thisapp.chat_common.parse_json_strict(dataValue);
+    }
+  }
+  else
+  {
+    errorMsg = if(ziaResponse.get("error") != null,ziaResponse.get("error"),"Error desconocido");
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. " + errorMsg};
+  }
+  try
+  {
+    if(parsed.containKey("parse_error"))
+    {
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    }
+    if(parsed.containKey("category"))
+    {
+      cat = parsed.get("category");
+      valid = false;
+      if(cat == "SEARCH" || cat == "TRACKING" || cat == "TOP_CUSTOMERS" || cat == "PACKAGE_ANALYSIS" || cat == "OTHER_ANALYSIS")
+      {
+        valid = true;
+      }
+      if(valid)
+      {
+        return {"category":cat};
+      }
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    }
+    if(parsed.containKey("answer"))
+    {
+      return {"answer":parsed.get("answer")};
+    }
+    if(parsed.containKey("clarify"))
+    {
+      return {"clarify":parsed.get("clarify")};
+    }
+  } catch (e)
+  {
+    // JSON válido pero con otra forma
+  }
+  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+}
+map chat_intent.normalize_tool(map ziaResponse, string category)
+{
+  if(ziaResponse == null)
+  {
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  }
   config = thisapp.chat_config.chat_config();
-  catalogText = config.get("toolsText");
+  toolsByCategory = config.get("toolsByCategory");
+  if(ziaResponse.get("status") == true && ziaResponse.get("data") != null)
+  {
+    dataValue = ziaResponse.get("data");
+    parsed = null;
+    try
+    {
+      dataFormatted = dataValue.toMap();
+      if(dataFormatted.containKey("tool") || dataFormatted.containKey("clarify"))
+      {
+        parsed = dataFormatted;
+      }
+    } catch (e)
+    {
+      // toMap lanzó
+    }
+    if(parsed == null)
+    {
+      parsed = thisapp.chat_common.parse_json_strict(dataValue);
+    }
+  }
+  else
+  {
+    errorMsg = if(ziaResponse.get("error") != null,ziaResponse.get("error"),"Error desconocido");
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. " + errorMsg};
+  }
+  try
+  {
+    if(parsed.containKey("parse_error"))
+    {
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    }
+    if(parsed.containKey("tool"))
+    {
+      toolName = parsed.get("tool");
+      catForTool = toolsByCategory.get(toolName);
+      if(catForTool == category)
+      {
+        return {"tool":toolName,"params":Map()};
+      }
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    }
+    if(parsed.containKey("clarify"))
+    {
+      return {"clarify":parsed.get("clarify")};
+    }
+  } catch (e)
+  {
+    // JSON válido pero con otra forma
+  }
+  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+}
+map chat_intent.normalize_params(map ziaResponse, string toolName)
+{
+  if(ziaResponse == null)
+  {
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  }
+  if(ziaResponse.get("status") == true && ziaResponse.get("data") != null)
+  {
+    dataValue = ziaResponse.get("data");
+    parsed = null;
+    try
+    {
+      dataFormatted = dataValue.toMap();
+      if(dataFormatted.containKey("params") || dataFormatted.containKey("clarify"))
+      {
+        parsed = dataFormatted;
+      }
+    } catch (e)
+    {
+      // toMap lanzó
+    }
+    if(parsed == null)
+    {
+      parsed = thisapp.chat_common.parse_json_strict(dataValue);
+    }
+  }
+  else
+  {
+    errorMsg = if(ziaResponse.get("error") != null,ziaResponse.get("error"),"Error desconocido");
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. " + errorMsg};
+  }
+  try
+  {
+    if(parsed.containKey("parse_error"))
+    {
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    }
+    if(parsed.containKey("clarify"))
+    {
+      return {"clarify":parsed.get("clarify")};
+    }
+    if(parsed.containKey("params"))
+    {
+      params = parsed.get("params");
+      if(params == null)
+      {
+        params = Map();
+      }
+      // Validación determinista de campos requeridos (prompt no es la única barrera)
+      if(parsed.containKey("params"))
+      {
+        if(toolName == "track_package")
+        {
+          trackingNumber = params.get("trackingNumber");
+          if(trackingNumber == null || trackingNumber == "")
+          {
+            return {"clarify":"Necesito el número de seguimiento para rastrear tu paquete. ¿Puedes proporcionármelo?"};
+          }
+        }
+        if(toolName == "report_top_customers")
+        {
+          serviceTypes = params.get("serviceType");
+          validServiceList = false;
+          if(serviceTypes != null)
+          {
+            try
+            {
+              if(serviceTypes.size() >= 1)
+              {
+                validServiceList = true;
+              }
+            } catch (e)
+            {
+              // no es lista
+            }
+          }
+          if(!validServiceList)
+          {
+            return {"clarify":"Necesito saber el tipo de servicio para generar el reporte (Locker, Store, Recharge, Online Store u Other Services). ¿Cuál quieres consultar?"};
+          }
+        }
+      }
+      // Period enum → date pair conversion
+      if(params.containKey("period") && params.get("period") != null)
+      {
+        hasExplicitDates = false;
+        if(params.containKey("startDate") && params.get("startDate") != null)
+        {
+          hasExplicitDates = true;
+        }
+        if(params.containKey("endDate") && params.get("endDate") != null)
+        {
+          hasExplicitDates = true;
+        }
+        if(!hasExplicitDates)
+        {
+          periodEnum = params.get("period");
+          datePair = thisapp.chat_common.resolve_period(periodEnum,zoho.currentdate);
+          params.put("startDate",datePair.get(0));
+          params.put("endDate",datePair.get(1));
+        }
+      }
+      return {"kind":"tool","tool":toolName,"params":params};
+    }
+  } catch (e)
+  {
+    // JSON válido pero con otra forma
+  }
+  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+}
+// --------------------------------------------------------------------------
+// Hierarchical intent routing — resolvers (Zia call wrappers)
+// --------------------------------------------------------------------------
+map chat_intent.resolve_category(string userPrompt, list history)
+{
+  config = thisapp.chat_config.chat_config();
   context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Ayudas a clientes y agentes a consultar " + "datos de la aplicación. Debes responder ÚNICAMENTE con JSON válido, " + "sin texto adicional ni markdown.";
   context = context + " Si el usuario pregunta sobre algo NO relacionado con " + "paquetería, rastreo de envíos, remesas, recargas telefónicas, cobertura, " + "oficinas o contactos de la empresa, responde SOLO con: " + "{\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, " + "remesas y recargas. ¿En qué puedo asistirte?\"}";
   context = context + " Cuando el usuario pregunte por servicios, cobertura, oficinas " + "o contactos, DEBES usar la herramienta correspondiente. Nunca respondas " + "directamente.";
   context = context + " INFORMACIÓN COMERCIAL:\n" + "- Métodos de pago aceptados: transferencia bancaria, efectivo, tarjeta de crédito/débito\n" + "- Servicios: paquetería internacional, remesas, recargas telefónicas\n" + "- Cobertura: Latinoamérica, España, Estados Unidos";
   context = context + " Para consultas sobre métodos de pago, responde directamente " + "con la información comercial proporcionada. Ejemplo: si preguntan por Bitcoin, " + "responde que los métodos aceptados son transferencia bancaria, efectivo y tarjeta.";
-  message = thisapp.chat_intent.build_intent_prompt(userPrompt,history,catalogText);
+  message = thisapp.chat_intent.build_category_prompt(userPrompt,history);
   zia_response = zia
   [
   message:message
@@ -148,15 +449,130 @@ map chat_intent.chat_intent(string userPrompt, list history)
   ];
   if(zia_response == null)
   {
-    return thisapp.chat_intent.normalize_zia_response(null);
+    return thisapp.chat_intent.normalize_category(null);
   }
-  // La respuesta de Zia task es un objeto con atributos accedidos por punto:
-	//   response.status → boolean (éxito de la tarea)
-	//   response.data   → String (texto del LLM, contiene JSON) o Map ya parseado
-	//   response.error  → String/null (mensaje si falló)	
   response = Map();
-	response.put("status",zia_response.status);
-	response.put("data",zia_response.data);
-	response.put("error",zia_response.error);
-  return thisapp.chat_intent.normalize_zia_response(response);
+  response.put("status",zia_response.status);
+  response.put("data",zia_response.data);
+  response.put("error",zia_response.error);
+  return thisapp.chat_intent.normalize_category(response);
+}
+map chat_intent.resolve_tool(string userPrompt, string category, string filteredCatalog)
+{
+  config = thisapp.chat_config.chat_config();
+  context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Debes responder ÚNICAMENTE con JSON válido.";
+  message = thisapp.chat_intent.build_tool_prompt(userPrompt,category,filteredCatalog);
+  zia_response = zia
+  [
+  message:message
+  context:context
+  parameters:{"temperature":0.1}
+  ];
+  if(zia_response == null)
+  {
+    return thisapp.chat_intent.normalize_tool(null,category);
+  }
+  response = Map();
+  response.put("status",zia_response.status);
+  response.put("data",zia_response.data);
+  response.put("error",zia_response.error);
+  return thisapp.chat_intent.normalize_tool(response,category);
+}
+map chat_intent.resolve_params(string userPrompt, string toolName, string paramSchema)
+{
+  config = thisapp.chat_config.chat_config();
+  context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Debes responder ÚNICAMENTE con JSON válido. " + "NUNCA calcules fechas tú mismo — usa el enum de periodo o las fechas que el usuario dio.";
+  message = thisapp.chat_intent.build_params_prompt(userPrompt,toolName,paramSchema);
+  zia_response = zia
+  [
+  message:message
+  context:context
+  parameters:{"temperature":0.1}
+  ];
+  if(zia_response == null)
+  {
+    return thisapp.chat_intent.normalize_params(null,toolName);
+  }
+  response = Map();
+  response.put("status",zia_response.status);
+  response.put("data",zia_response.data);
+  response.put("error",zia_response.error);
+  return thisapp.chat_intent.normalize_params(response,toolName);
+}
+// --------------------------------------------------------------------------
+// chat_intent — hierarchical facade (3-stage pipeline)
+// --------------------------------------------------------------------------
+map chat_intent.chat_intent(string userPrompt, list history)
+{
+  /**
+   * Hierarchical intent routing facade.
+   *
+   * 3-step pipeline: category → tool → params.
+   * Short-circuit: any answer/clarify/error at any stage → return immediately.
+   *
+   * Contracts (same as monolithic — chat_invoke.resolve_reply depends on them):
+   *   {"status":"ok","kind":"tool","tool":"<name>","params":{...}}
+   *   {"status":"ok","kind":"answer","text":"..."}
+   *   {"status":"ok","kind":"clarify","text":"..."}
+   *   {"status":"error","kind":"clarify","text":"..."}
+   */
+  config = thisapp.chat_config.chat_config();
+  // Stage 1: classify into category
+  intent = thisapp.chat_intent.resolve_category(userPrompt,history);
+  if(intent.containKey("answer"))
+  {
+    ansText = intent.get("answer");
+    return {"status":"ok","kind":"answer","text":ansText};
+  }
+  if(intent.containKey("clarify"))
+  {
+    clarText = intent.get("clarify");
+    return {"status":"ok","kind":"clarify","text":clarText};
+  }
+  if(intent.get("status") == "error")
+  {
+    return intent;
+  }
+  category = intent.get("category");
+  if(category == null || category == "")
+  {
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  }
+  // Stage 2: pick tool within category
+  toolsTextByCategory = config.get("toolsTextByCategory");
+  filteredCatalog = toolsTextByCategory.get(category);
+  toolResult = thisapp.chat_intent.resolve_tool(userPrompt,category,filteredCatalog);
+  if(toolResult.containKey("clarify"))
+  {
+    clarText = toolResult.get("clarify");
+    return {"status":"ok","kind":"clarify","text":clarText};
+  }
+  if(toolResult.get("status") == "error")
+  {
+    return toolResult;
+  }
+  toolName = toolResult.get("tool");
+  if(toolName == null || toolName == "")
+  {
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  }
+  // Stage 3: extract exact params
+  paramSchema = config.get("paramSchema");
+  toolSchema = paramSchema.get(toolName);
+  paramsResult = thisapp.chat_intent.resolve_params(userPrompt,toolName,toolSchema);
+  if(paramsResult.containKey("clarify"))
+  {
+    clarText = paramsResult.get("clarify");
+    return {"status":"ok","kind":"clarify","text":clarText};
+  }
+  if(paramsResult.get("status") == "error")
+  {
+    return paramsResult;
+  }
+  finalParams = paramsResult.get("params");
+  if(finalParams == null)
+  {
+    finalParams = Map();
+  }
+  return {"status":"ok","kind":"tool","tool":toolName,"params":finalParams};
 }

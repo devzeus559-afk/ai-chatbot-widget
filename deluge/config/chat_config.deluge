@@ -4,6 +4,14 @@
 * Configuración central del backend del chatbot (paquetería internacional,
 * remesas y recargas telefónicas).
 *
+* Exposes:
+* - tools: flat tool catalog (15 tools, for compat/fallback)
+* - toolsText: formatted Zia prompt fragment (all tools)
+* - taxonomy: Map(category → List of tool names) — 5 categories
+* - toolsByCategory: Map(tool name → category name) — reverse lookup
+* - toolsTextByCategory: Map(category → formatted Zia prompt fragment)
+* - paramSchema: Map(tool name → schema text with required/optional params)
+*
 * IMPORTANTE:
 * 1. Reemplaza los link names por los reales de tu app de Creator.
 * 2. Deluge no comparte estado global entre funciones: cada función DEBE
@@ -131,6 +139,77 @@ map chat_config.chat_config()
     toolsText = toolsText + "\n";
   }
   config.put("toolsText",toolsText);
+  // --- Hierarchical intent routing: taxonomy + param schemas ---
+  taxonomy = Map();
+  taxonomy.put("SEARCH",{"search_services","find_offices","check_coverage","find_contacts"});
+  taxonomy.put("TRACKING",{"track_package"});
+  taxonomy.put("TOP_CUSTOMERS",{"report_top_customers","report_top_package_customers","report_top_remittance_customers"});
+  taxonomy.put("PACKAGE_ANALYSIS",{"report_pounds_shipped","report_daily_average","report_monthly_comparison"});
+  taxonomy.put("OTHER_ANALYSIS",{"report_shipping_type_frequency","report_merchandise_type","report_delayed_packages","report_unscanned_packages"});
+  config.put("taxonomy",taxonomy);
+  toolsByCategory = Map();
+  toolsByCategory.put("search_services","SEARCH");
+  toolsByCategory.put("find_offices","SEARCH");
+  toolsByCategory.put("check_coverage","SEARCH");
+  toolsByCategory.put("find_contacts","SEARCH");
+  toolsByCategory.put("track_package","TRACKING");
+  toolsByCategory.put("report_top_customers","TOP_CUSTOMERS");
+  toolsByCategory.put("report_top_package_customers","TOP_CUSTOMERS");
+  toolsByCategory.put("report_top_remittance_customers","TOP_CUSTOMERS");
+  toolsByCategory.put("report_pounds_shipped","PACKAGE_ANALYSIS");
+  toolsByCategory.put("report_daily_average","PACKAGE_ANALYSIS");
+  toolsByCategory.put("report_monthly_comparison","PACKAGE_ANALYSIS");
+  toolsByCategory.put("report_shipping_type_frequency","OTHER_ANALYSIS");
+  toolsByCategory.put("report_merchandise_type","OTHER_ANALYSIS");
+  toolsByCategory.put("report_delayed_packages","OTHER_ANALYSIS");
+  toolsByCategory.put("report_unscanned_packages","OTHER_ANALYSIS");
+  config.put("toolsByCategory",toolsByCategory);
+  toolsTextByCategory = Map();
+  for each  cat in taxonomy.keys()
+  {
+    catTools = taxonomy.get(cat);
+    catText = "";
+    for each  t in tools
+    {
+      isMatch = false;
+      for each  ct in catTools
+      {
+        if(ct == t.get("name"))
+        {
+          isMatch = true;
+        }
+      }
+      if(isMatch)
+      {
+        catText = catText + "- " + t.get("name") + ": " + t.get("description");
+        p = t.get("params");
+        if(p != null && p.size() > 0)
+        {
+          catText = catText + " Params: " + p.toString();
+        }
+        catText = catText + "\n";
+      }
+    }
+    toolsTextByCategory.put(cat,catText);
+  }
+  config.put("toolsTextByCategory",toolsTextByCategory);
+  paramSchema = Map();
+  paramSchema.put("track_package","REQUIRED: trackingNumber (string — número de seguimiento del paquete)");
+  paramSchema.put("search_services","OPTIONAL: serviceType (string), destination (string)");
+  paramSchema.put("find_offices","OPTIONAL: city (string), country (string), phone (string), document (string)");
+  paramSchema.put("check_coverage","OPTIONAL: country (string), city (string), vendor (string)");
+  paramSchema.put("find_contacts","OPTIONAL: name (string), phone (string), document (string)");
+  paramSchema.put("report_top_customers","REQUIRED: serviceType (List<string> ≥1 elemento: Locker, Store, Recharge, Online Store, Other Services). OPTIONAL: limit (string)");
+  paramSchema.put("report_top_package_customers","OPTIONAL: measure (string: packages|pounds), limit (string), serviceType (string)");
+  paramSchema.put("report_top_remittance_customers","OPTIONAL: limit (string)");
+  paramSchema.put("report_pounds_shipped","OPTIONAL: period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias — NUNCA calcules fechas; devuelve el enum string), office (string), country (string), measure (string)");
+  paramSchema.put("report_daily_average","OPTIONAL: period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias — NUNCA calcules fechas; devuelve el enum string), office (string), country (string)");
+  paramSchema.put("report_monthly_comparison","OPTIONAL: period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias — NUNCA calcules fechas; devuelve el enum string), months (string), office (string)");
+  paramSchema.put("report_shipping_type_frequency","OPTIONAL: limit (string), office (string)");
+  paramSchema.put("report_merchandise_type","OPTIONAL: limit (string), office (string)");
+  paramSchema.put("report_delayed_packages","OPTIONAL: destCountry (string)");
+  paramSchema.put("report_unscanned_packages","OPTIONAL: limit (string), office (string)");
+  config.put("paramSchema",paramSchema);
   return config;
 
 }
