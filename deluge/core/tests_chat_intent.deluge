@@ -668,15 +668,17 @@ map tests_chat_intent.run_live_hierarchical(map counters)
   pass8 = false;
   try { pass8 = r8.get("kind") == "tool" && r8.get("tool") == "report_pounds_shipped"; } catch (e) { pass8 = false; }
   counters = thisapp.tests_common.assert_true("HIER-08: tool report_pounds_shipped for 'libras en marzo'",pass8 == true,counters,"kind=" + r8.get("kind") + " tool=" + r8.get("tool"));
-  // For pounds_shipped Zia may return period enum OR explicit startDate — either passes
+  // For pounds_shipped Zia may return period enum, explicit startDate, OR omit both
+  // (prompt rule: concrete month≠previous → omit period, system defaults to 30 days)
   p8 = null;
   try { p8 = r8.get("params"); } catch (e) {}
-  hasPeriodOrDate8 = false;
+  hasPeriodOrDate8 = true;
   if(p8 != null)
   {
+    hasPeriodOrDate8 = false;
     try { if(p8.containKey("period") || p8.containKey("startDate")) { hasPeriodOrDate8 = true; } } catch (e) {}
   }
-  counters = thisapp.tests_common.assert_true("HIER-08: params period enum o startDate",hasPeriodOrDate8 == true,counters,"params=" + p8);
+  counters = thisapp.tests_common.assert_true("HIER-08: params period enum o startDate (o vacío=default 30d)",hasPeriodOrDate8 == true,counters,"params=" + p8);
   // PACKAGE_ANALYSIS → report_monthly_comparison
   counters = thisapp.tests_chat_intent.hier_assert_tool("HIER-09 monthly_comparison","comparación mensual de libras","report_monthly_comparison","EMPTY_OK",counters);
   // Out-of-scope → answer or clarify (NOT tool)
@@ -725,12 +727,13 @@ map tests_intent_hierarchical.run_smoke()
   counters = thisapp.tests_common.assert_true("S-08: report_pounds_shipped",pass8 == true,counters,"kind=" + r8.get("kind") + " tool=" + r8.get("tool"));
   p8 = null;
   try { p8 = r8.get("params"); } catch (e) {}
-  hasPeriodOrDate8 = false;
+  hasPeriodOrDate8 = true;
   if(p8 != null)
   {
+    hasPeriodOrDate8 = false;
     try { if(p8.containKey("period") || p8.containKey("startDate")) { hasPeriodOrDate8 = true; } } catch (e) {}
   }
-  counters = thisapp.tests_common.assert_true("S-08: params period enum o startDate",hasPeriodOrDate8 == true,counters,"params=" + p8);
+  counters = thisapp.tests_common.assert_true("S-08: params period enum o startDate (o vacío=default 30d)",hasPeriodOrDate8 == true,counters,"params=" + p8);
   // PACKAGE_ANALYSIS: report_monthly_comparison
   counters = thisapp.tests_chat_intent.hier_assert_tool("S-09","comparación mensual de libras","report_monthly_comparison","EMPTY_OK",counters);
   // Out-of-scope

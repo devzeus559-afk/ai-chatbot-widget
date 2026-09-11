@@ -184,8 +184,24 @@ string chat_intent.build_params_prompt(string userPrompt, string toolName, strin
   prompt = prompt + "ESQUEMA DE PARÁMETROS:\n";
   prompt = prompt + paramSchema + "\n\n";
   prompt = prompt + "REGLAS CRÍTICAS:\n";
-  prompt = prompt + "- Si el usuario NO especifica un parámetro opcional, OMÍTELO del JSON (no pases null ni string vacío).\n";
-  prompt = prompt + "- Si FALTA un parámetro OBLIGATORIO, devuelve {\"clarify\": \"...\"} pidiendo solo ese dato.\n";
+  prompt = prompt + "- NUNCA pidas clarificación por parámetros OPCIONALES. Si el usuario no menciona un opcional, OMÍTELO del JSON (no pases null ni string vacío).\n";
+  prompt = prompt + "- Si TODOS los parámetros son opcionales y el usuario no menciona ninguno, devuelve {\"params\": {}} — NO pidas aclaración.\n";
+  prompt = prompt + "- period tiene VALOR POR DEFECTO (ultimo_mes). Si el usuario no menciona periodo, NO pidas aclaración y NO incluyas period — el sistema aplicará los últimos 30 días automáticamente.\n";
+  hasPeriod = false;
+  if(paramSchema.contains("period"))
+  {
+    hasPeriod = true;
+  }
+  if(!hasPeriod)
+  {
+    prompt = prompt + "- IMPORTANTE: esta herramienta NO usa period ni fechas. Ignora cualquier mención de "último mes", "marzo" o period en el contexto.\n";
+  }
+  else
+  {
+    prompt = prompt + "- Si el usuario menciona "último mes", "últimos 30 días" → period: \"ultimo_mes\". Si dice "mes anterior"/"mes pasado" → \"mes_anterior\". Si dice "esta semana" → \"ultimos_7_dias\". Si dice "este mes" → \"este_mes\".\n";
+    prompt = prompt + "- Si el usuario menciona un MES CONCRETO distinto (ej. "marzo" sin ser el mes previo), NO calcules fechas y NO pidas aclaración: omite period y deja que el sistema use el rango por defecto de 30 días.\n";
+  }
+  prompt = prompt + "- Solo pide clarificación si falta un parámetro OBLIGATORIO (track_package requiere trackingNumber; report_top_customers requiere serviceType como lista).\n";
   prompt = prompt + "- Para herramientas con fechas: usa el PERIODO en vez de calcular fechas. Valores válidos: ultimo_mes, mes_anterior, este_mes, ultimos_7_dias.\n";
   prompt = prompt + "- Si el usuario da fechas EXPLÍCITAS (startDate/endDate), inclúyelas directamente.\n";
   prompt = prompt + "- NUNCA calcules fechas tú mismo. Devuelve el enum de periodo o las fechas que el usuario dio.\n\n";
@@ -367,6 +383,28 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
       {
         params = Map();
       }
+      // Saneamiento determinista: elimina claves con null o string vacío
+      // (Zia puede violar la regla del prompt "omite opcionales ausentes").
+      cleanedParams = Map();
+      keysToRemove = params.keys();
+      for each  k in keysToRemove
+      {
+        v = params.get(k);
+        if(k == null)
+        {
+          continue;
+        }
+        if(v == null)
+        {
+          continue;
+        }
+        if(v == "")
+        {
+          continue;
+        }
+        cleanedParams.put(k,v);
+      }
+      params = cleanedParams;
       // Validación determinista de campos requeridos (prompt no es la única barrera)
       if(parsed.containKey("params"))
       {
@@ -436,7 +474,7 @@ map chat_intent.resolve_category(string userPrompt, list history)
 {
   config = thisapp.chat_config.chat_config();
   context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Ayudas a clientes y agentes a consultar " + "datos de la aplicación. Debes responder ÚNICAMENTE con JSON válido, " + "sin texto adicional ni markdown.";
-  context = context + " Si el usuario pregunta sobre algo NO relacionado con " + "paquetería, rastreo de envíos, remesas, recargas telefónicas, cobertura, " + "oficinas o contactos de la empresa, responde SOLO con: " + "{\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, " + "remesas y recargas. ¿En qué puedo asistirte?\"}";
+  context = context + " Los temas VÁLIDOS de esta agencia son: paquetería, rastreo " + "de envíos, remesas, recargas telefónicas, cobertura, oficinas y contactos. " + "Si el usuario pregunta sobre algo DISTINTO a esa lista (por ejemplo Bitcoin, " + "clima, noticias), responde SOLO con: " + "{\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, " + "remesas y recargas. ¿En qué puedo asistirte?\"}";
   context = context + " Cuando el usuario pregunte por servicios, cobertura, oficinas " + "o contactos, DEBES usar la herramienta correspondiente. Nunca respondas " + "directamente.";
   context = context + " INFORMACIÓN COMERCIAL:\n" + "- Métodos de pago aceptados: transferencia bancaria, efectivo, tarjeta de crédito/débito\n" + "- Servicios: paquetería internacional, remesas, recargas telefónicas\n" + "- Cobertura: Latinoamérica, España, Estados Unidos";
   context = context + " Para consultas sobre métodos de pago, responde directamente " + "con la información comercial proporcionada. Ejemplo: si preguntan por Bitcoin, " + "responde que los métodos aceptados son transferencia bancaria, efectivo y tarjeta.";
