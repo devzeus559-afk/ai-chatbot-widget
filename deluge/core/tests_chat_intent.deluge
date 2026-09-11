@@ -460,6 +460,293 @@ map tests_chat_intent.run_live_multiturn(map counters)
 }
 
 // --------------------------------------------------------------------------
+// UNIT — normalize_category (Task 3.11) — mock sin Zia
+// Valida que normalize_zia_response reconoce la key "category" y devuelve
+// {status:ok, kind:category, category:<value>} para los 5 enums válidos.
+// --------------------------------------------------------------------------
+map tests_chat_intent.run_unit_normalize_category(map counters)
+{
+  categories = {"SEARCH","TRACKING","TOP_CUSTOMERS","PACKAGE_ANALYSIS","OTHER_ANALYSIS"};
+  for each  cat in categories
+  {
+    resp = Map();
+    resp.put("status",true);
+    resp.put("data","{\"category\":\"" + cat + "\"}");
+    result = thisapp.chat_intent.normalize_zia_response(resp);
+    counters = thisapp.tests_common.assert_equals("normalize_category " + cat + ": status ok",result.get("status"),"ok",counters);
+    counters = thisapp.tests_common.assert_equals("normalize_category " + cat + ": kind",result.get("kind"),"category",counters);
+    counters = thisapp.tests_common.assert_equals("normalize_category " + cat + ": category",result.get("category"),cat,counters);
+  }
+  // answer → kind answer
+  respA = Map();
+  respA.put("status",true);
+  respA.put("data","{\"answer\":\"Hola\"}");
+  resA = thisapp.chat_intent.normalize_zia_response(respA);
+  counters = thisapp.tests_common.assert_equals("normalize_category answer: kind",resA.get("kind"),"answer",counters);
+  // clarify → kind clarify
+  respC = Map();
+  respC.put("status",true);
+  respC.put("data","{\"clarify\":\"¿Qué necesitas?\"}");
+  resC = thisapp.chat_intent.normalize_zia_response(respC);
+  counters = thisapp.tests_common.assert_equals("normalize_category clarify: kind",resC.get("kind"),"clarify",counters);
+  // null → kind clarify + texto genérico
+  resN = thisapp.chat_intent.normalize_zia_response(null);
+  counters = thisapp.tests_common.assert_equals("normalize_category null: kind",resN.get("kind"),"clarify",counters);
+  counters = thisapp.tests_common.assert_contains("normalize_category null: texto genérico",resN.get("text"),"No pude interpretar",counters);
+  info "run_unit_normalize_category done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+
+// --------------------------------------------------------------------------
+// UNIT — resolve_period — fecha conocida 2025-03-15
+// Valida que chat_common.resolve_period devuelve las ventanas correctas
+// para cada enum sobre una fecha fija (endDate = 2025-03-15).
+// --------------------------------------------------------------------------
+map tests_chat_intent.run_unit_resolve_period(map counters)
+{
+  endDate = zoho.date(year:2025,month:3,day:15);
+  info "resolve_period endDate: " + endDate.toString();
+  // ultimo_mes: startDate = endDate - 30 = 2025-02-13
+  r1 = thisapp.chat_common.resolve_period("ultimo_mes",endDate);
+  counters = thisapp.tests_common.assert_equals("resolve_period ultimo_mes start",r1.get(0).toString(),zoho.date(year:2025,month:2,day:13).toString(),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period ultimo_mes end",r1.get(1).toString(),endDate.toString(),counters);
+  // mes_anterior: startDate = 2025-02-01, endDate = 2025-02-28
+  r2 = thisapp.chat_common.resolve_period("mes_anterior",endDate);
+  counters = thisapp.tests_common.assert_equals("resolve_period mes_anterior start",r2.get(0).toString(),zoho.date(year:2025,month:2,day:1).toString(),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period mes_anterior end",r2.get(1).toString(),zoho.date(year:2025,month:2,day:28).toString(),counters);
+  // este_mes: startDate = 2025-03-01, endDate = 2025-03-15
+  r3 = thisapp.chat_common.resolve_period("este_mes",endDate);
+  counters = thisapp.tests_common.assert_equals("resolve_period este_mes start",r3.get(0).toString(),zoho.date(year:2025,month:3,day:1).toString(),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period este_mes end",r3.get(1).toString(),endDate.toString(),counters);
+  // ultimos_7_dias: startDate = 2025-03-08, endDate = 2025-03-15
+  r4 = thisapp.chat_common.resolve_period("ultimos_7_dias",endDate);
+  counters = thisapp.tests_common.assert_equals("resolve_period ultimos_7_dias start",r4.get(0).toString(),zoho.date(year:2025,month:3,day:8).toString(),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period ultimos_7_dias end",r4.get(1).toString(),endDate.toString(),counters);
+  // default (desconocido): same as ultimo_mes
+  r5 = thisapp.chat_common.resolve_period("periodo_inventado",endDate);
+  counters = thisapp.tests_common.assert_equals("resolve_period default start",r5.get(0).toString(),zoho.date(year:2025,month:2,day:13).toString(),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period default end",r5.get(1).toString(),endDate.toString(),counters);
+  info "run_unit_resolve_period done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+
+// --------------------------------------------------------------------------
+// UNIT — normalize_tool + normalize_params (mock sin Zia)
+// validate normalize_tool: valid tool in category OK, tool outside category → clarify.
+// validate normalize_params: required absent → clarify, optional absent → omitted,
+// period returned as enum string (NOT date).
+// --------------------------------------------------------------------------
+map tests_chat_intent.run_unit_normalize_tool_params(map counters)
+{
+  // FORMAS INTERNAS (bare): normalize_tool devuelve {"tool","params"} | {"clarify"} |
+  //   {"status":"error","kind":"clarify","text"}; normalize_params devuelve
+  //   {"kind":"tool","tool","params"} | {"clarify"} | {"status":"error","kind":"clarify","text"}.
+  // La fachada chat_intent() re-envuelve al contrato externo {status,kind,...}.
+  // --- normalize_tool: valid tool in TRACKING category ---
+  respToolOk = Map();
+  respToolOk.put("status",true);
+  respToolOk.put("data","{\"tool\":\"track_package\"}");
+  rToolOk = thisapp.chat_intent.normalize_tool(respToolOk,"TRACKING");
+  counters = thisapp.tests_common.assert_equals("normalize_tool valid: tool","track_package",rToolOk.get("tool"),counters);
+  toolOkHasTool = rToolOk.containKey("tool");
+  counters = thisapp.tests_common.assert_true("normalize_tool valid: has tool key",toolOkHasTool == true,counters,"resp=" + rToolOk.toString());
+  // --- normalize_tool: tool outside category → clarify (status error + kind clarify) ---
+  respToolBad = Map();
+  respToolBad.put("status",true);
+  respToolBad.put("data","{\"tool\":\"find_offices\"}");
+  rToolBad = thisapp.chat_intent.normalize_tool(respToolBad,"TRACKING");
+  counters = thisapp.tests_common.assert_equals("normalize_tool wrong cat: kind clarify","clarify",rToolBad.get("kind"),counters);
+  // --- normalize_params: Zia devuelve clarify y normalize lo pasa (bare {"clarify"}) ---
+  // normalize_params también valida requireds determinísticamente (no solo vía Prompt 3).
+  respNoReq = Map();
+  respNoReq.put("status",true);
+  respNoReq.put("data","{\"clarify\":\"Necesito el número de seguimiento para rastrear tu paquete.\"}");
+  rNoReq = thisapp.chat_intent.normalize_params(respNoReq,"track_package");
+  noReqHasClarify = rNoReq.containKey("clarify");
+  counters = thisapp.tests_common.assert_true("normalize_params missing required: has clarify key",noReqHasClarify == true,counters,"resp=" + rNoReq.toString());
+  counters = thisapp.tests_common.assert_contains("normalize_params missing required: mention number",rNoReq.get("clarify"),"seguimiento",counters);
+  // --- normalize_params: Zia ignora el contrato y devuelve params vacíos → clarify determinista ---
+  respEmptyParams = Map();
+  respEmptyParams.put("status",true);
+  respEmptyParams.put("data","{\"params\":{}}");
+  rEmptyParams = thisapp.chat_intent.normalize_params(respEmptyParams,"track_package");
+  emptyHasClarify = rEmptyParams.containKey("clarify");
+  counters = thisapp.tests_common.assert_true("normalize_params params empty track_package: clarify",emptyHasClarify == true,counters,"params vacío debe ser clarify determinista, no tool; resp=" + rEmptyParams.toString());
+  // --- normalize_params: report_top_customers sin serviceType / serviceType no-lista → clarify ---
+  respTopNoST = Map();
+  respTopNoST.put("status",true);
+  respTopNoST.put("data","{\"params\":{\"limit\":\"10\"}}");
+  rTopNoST = thisapp.chat_intent.normalize_params(respTopNoST,"report_top_customers");
+  topNoSTHasClarify = rTopNoST.containKey("clarify");
+  counters = thisapp.tests_common.assert_true("normalize_params top_customers missing serviceType: clarify",topNoSTHasClarify == true,counters,"resp=" + rTopNoST.toString());
+  respTopStrST = Map();
+  respTopStrST.put("status",true);
+  respTopStrST.put("data","{\"params\":{\"serviceType\":\"Locker\"}}");
+  rTopStrST = thisapp.chat_intent.normalize_params(respTopStrST,"report_top_customers");
+  topStrSTHasClarify = rTopStrST.containKey("clarify");
+  counters = thisapp.tests_common.assert_true("normalize_params top_customers serviceType string: clarify",topStrSTHasClarify == true,counters,"serviceType string no es lista ≥1; resp=" + rTopStrST.toString());
+  // --- normalize_params: report_top_customers con List válida → tool ---
+  respTopListST = Map();
+  respTopListST.put("status",true);
+  respTopListST.put("data","{\"params\":{\"serviceType\":[\"Locker\"],\"limit\":\"10\"}}");
+  rTopListST = thisapp.chat_intent.normalize_params(respTopListST,"report_top_customers");
+  counters = thisapp.tests_common.assert_equals("normalize_params top_customers list valid: kind tool","tool",rTopListST.get("kind"),counters);
+  // --- normalize_params: find_offices without city → params OK, city absent ---
+  respNoOpt = Map();
+  respNoOpt.put("status",true);
+  respNoOpt.put("data","{\"params\":{\"country\":\"USA\"}}");
+  rNoOpt = thisapp.chat_intent.normalize_params(respNoOpt,"find_offices");
+  pNoOpt = rNoOpt.get("params");
+  counters = thisapp.tests_common.assert_equals("normalize_params optional absent: country present",pNoOpt.get("country"),"USA",counters);
+  cityKey = false;
+  try { cityKey = pNoOpt.containKey("city"); } catch (e) {}
+  counters = thisapp.tests_common.assert_true("normalize_params optional absent: city absent",cityKey == false,counters,"params=" + pNoOpt.toString());
+  // --- normalize_params: period enum preserved, NOT converted to date ---
+  respPeriod = Map();
+  respPeriod.put("status",true);
+  respPeriod.put("data","{\"params\":{\"period\":\"ultimo_mes\"}}");
+  rPeriod = thisapp.chat_intent.normalize_params(respPeriod,"report_pounds_shipped");
+  pPeriod = rPeriod.get("params");
+  counters = thisapp.tests_common.assert_equals("normalize_params period: kind tool",rPeriod.get("kind"),"tool",counters);
+  counters = thisapp.tests_common.assert_equals("normalize_params period: enum string preserved",pPeriod.get("period"),"ultimo_mes",counters);
+  hasSD = false;
+  try { hasSD = pPeriod.containKey("startDate"); } catch (e) {}
+  counters = thisapp.tests_common.assert_true("normalize_params period: startDate exists (resolve_period applied)",hasSD == true,counters,"params=" + pPeriod.toString());
+  hasED = false;
+  try { hasED = pPeriod.containKey("endDate"); } catch (e) {}
+  counters = thisapp.tests_common.assert_true("normalize_params period: endDate exists",hasED == true,counters,"params=" + pPeriod.toString());
+  info "run_unit_normalize_tool_params done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+
+// --------------------------------------------------------------------------
+// LIVE — hierarchical routing (10 frases del proposal)
+// Usa chat_intent(prompt, List()) y valida que el pipeline 3 etapas
+// produce el tool correcto o (out-of-scope) answer/clarify.
+// --------------------------------------------------------------------------
+map tests_chat_intent.hier_assert_tool(string caseId, string prompt, string expectedTool, string expectedParamKey, map counters)
+{
+  info "HIER " + caseId + " prompt: " + prompt;
+  r = thisapp.chat_intent.chat_intent(prompt,List());
+  info "HIER " + caseId + " result: " + r.toString();
+  // Kind must be tool
+  counters = thisapp.tests_common.assert_equals(caseId + ": kind tool",r.get("kind"),"tool",counters);
+  counters = thisapp.tests_common.assert_equals(caseId + ": tool",r.get("tool"),expectedTool,counters);
+  if(expectedParamKey != null && expectedParamKey != "" && expectedParamKey != "EMPTY_OK")
+  {
+    params = r.get("params");
+    hasKey = false;
+    if(params != null)
+    {
+      try { hasKey = params.containKey(expectedParamKey); } catch (e) {}
+    }
+    counters = thisapp.tests_common.assert_true(caseId + ": params contains " + expectedParamKey,hasKey == true,counters,"params=" + params.toString());
+  }
+  return counters;
+}
+map tests_chat_intent.run_live_hierarchical(map counters)
+{
+  info "=== LIVE HIERARCHICAL (10 cases, 5 cats + 3 ambiguous + 2 out-of-scope) ===";
+  // SEARCH → find_offices
+  counters = thisapp.tests_chat_intent.hier_assert_tool("HIER-01 find_offices","Dónde tienen oficina en Miami","find_offices","city",counters);
+  // SEARCH → check_coverage
+  counters = thisapp.tests_chat_intent.hier_assert_tool("HIER-02 check_coverage","cobertura en Cuba","check_coverage","country",counters);
+  // TRACKING → track_package
+  counters = thisapp.tests_chat_intent.hier_assert_tool("HIER-03 track_package","rastrear P-123456","track_package","trackingNumber",counters);
+  // TOP_CUSTOMERS → report_top_package_customers
+  counters = thisapp.tests_chat_intent.hier_assert_tool("HIER-04 top_package_customers","clientes más frecuentes de paquetería","report_top_package_customers","EMPTY_OK",counters);
+  // OTHER_ANALYSIS → report_unscanned_packages
+  counters = thisapp.tests_chat_intent.hier_assert_tool("HIER-05 unscanned_packages","cajas sin escanear","report_unscanned_packages","EMPTY_OK",counters);
+  // TOP_CUSTOMERS → report_top_remittance_customers
+  counters = thisapp.tests_chat_intent.hier_assert_tool("HIER-06 top_remittance","clientes con más remesas","report_top_remittance_customers","EMPTY_OK",counters);
+  // OTHER_ANALYSIS → report_shipping_type_frequency
+  counters = thisapp.tests_chat_intent.hier_assert_tool("HIER-07 shipping_frequency","frecuencia de envíos aéreos","report_shipping_type_frequency","EMPTY_OK",counters);
+  // PACKAGE_ANALYSIS → report_pounds_shipped (Zia may return period or startDate)
+  info "HIER-08 pounds_shipped prompt: libras enviadas en marzo";
+  r8 = thisapp.chat_intent.chat_intent("libras enviadas en marzo",List());
+  info "HIER-08 result: " + r8.toString();
+  pass8 = false;
+  try { pass8 = r8.get("kind") == "tool" && r8.get("tool") == "report_pounds_shipped"; } catch (e) { pass8 = false; }
+  counters = thisapp.tests_common.assert_true("HIER-08: tool report_pounds_shipped for 'libras en marzo'",pass8 == true,counters,"kind=" + r8.get("kind") + " tool=" + r8.get("tool"));
+  // For pounds_shipped Zia may return period enum OR explicit startDate — either passes
+  p8 = null;
+  try { p8 = r8.get("params"); } catch (e) {}
+  hasPeriodOrDate8 = false;
+  if(p8 != null)
+  {
+    try { if(p8.containKey("period") || p8.containKey("startDate")) { hasPeriodOrDate8 = true; } } catch (e) {}
+  }
+  counters = thisapp.tests_common.assert_true("HIER-08: params period enum o startDate",hasPeriodOrDate8 == true,counters,"params=" + p8);
+  // PACKAGE_ANALYSIS → report_monthly_comparison
+  counters = thisapp.tests_chat_intent.hier_assert_tool("HIER-09 monthly_comparison","comparación mensual de libras","report_monthly_comparison","EMPTY_OK",counters);
+  // Out-of-scope → answer or clarify (NOT tool)
+  info "HIER-10 out-of-scope prompt: ¿qué es Bitcoin?";
+  r10 = thisapp.chat_intent.chat_intent("¿qué es Bitcoin?",List());
+  info "HIER-10 result: " + r10.toString();
+  pass10 = false;
+  try { pass10 = r10.get("kind") != "tool"; } catch (e) { pass10 = false; }
+  counters = thisapp.tests_common.assert_true("HIER-10: answer/clarify for 'Bitcoin' (out-of-scope)",pass10 == true,counters,"kind=" + r10.get("kind") + " tool=" + r10.get("tool"));
+  info "=== LIVE HIERARCHICAL done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+  return counters;
+}
+
+// --------------------------------------------------------------------------
+// SMOKE — tests_intent_hierarchical
+// Suite manual con los 10 casos + medición de latencia.
+// Inspirado en tests_report_top_customers.run().
+// --------------------------------------------------------------------------
+map tests_intent_hierarchical.run_smoke()
+{
+  counters = Map();
+  counters.put("passed",0);
+  counters.put("failed",0);
+  startTime = zoho.currenttime;
+  info "=== SMOKE hierarchical-intent-routing (" + startTime + ") ===";
+  // SEARCH: find_offices
+  counters = thisapp.tests_chat_intent.hier_assert_tool("S-01","Dónde tienen oficina en Miami","find_offices","city",counters);
+  // SEARCH: check_coverage
+  counters = thisapp.tests_chat_intent.hier_assert_tool("S-02","cobertura en Cuba","check_coverage","country",counters);
+  // TRACKING: track_package
+  counters = thisapp.tests_chat_intent.hier_assert_tool("S-03","rastrear P-123456","track_package","trackingNumber",counters);
+  // TOP_CUSTOMERS: report_top_package_customers
+  counters = thisapp.tests_chat_intent.hier_assert_tool("S-04","clientes más frecuentes de paquetería","report_top_package_customers","EMPTY_OK",counters);
+  // OTHER_ANALYSIS: report_unscanned_packages
+  counters = thisapp.tests_chat_intent.hier_assert_tool("S-05","cajas sin escanear","report_unscanned_packages","EMPTY_OK",counters);
+  // TOP_CUSTOMERS: report_top_remittance_customers
+  counters = thisapp.tests_chat_intent.hier_assert_tool("S-06","clientes con más remesas","report_top_remittance_customers","EMPTY_OK",counters);
+  // OTHER_ANALYSIS: report_shipping_type_frequency
+  counters = thisapp.tests_chat_intent.hier_assert_tool("S-07","frecuencia de envíos aéreos","report_shipping_type_frequency","EMPTY_OK",counters);
+  // PACKAGE_ANALYSIS: report_pounds_shipped
+  info "S-08 prompt: libras enviadas en marzo";
+  r8 = thisapp.chat_intent.chat_intent("libras enviadas en marzo",List());
+  info "S-08 result: " + r8.toString();
+  pass8 = false;
+  try { pass8 = r8.get("kind") == "tool" && r8.get("tool") == "report_pounds_shipped"; } catch (e) { pass8 = false; }
+  counters = thisapp.tests_common.assert_true("S-08: report_pounds_shipped",pass8 == true,counters,"kind=" + r8.get("kind") + " tool=" + r8.get("tool"));
+  p8 = null;
+  try { p8 = r8.get("params"); } catch (e) {}
+  hasPeriodOrDate8 = false;
+  if(p8 != null)
+  {
+    try { if(p8.containKey("period") || p8.containKey("startDate")) { hasPeriodOrDate8 = true; } } catch (e) {}
+  }
+  counters = thisapp.tests_common.assert_true("S-08: params period enum o startDate",hasPeriodOrDate8 == true,counters,"params=" + p8);
+  // PACKAGE_ANALYSIS: report_monthly_comparison
+  counters = thisapp.tests_chat_intent.hier_assert_tool("S-09","comparación mensual de libras","report_monthly_comparison","EMPTY_OK",counters);
+  // Out-of-scope
+  info "S-10 prompt: ¿qué es Bitcoin?";
+  r10 = thisapp.chat_intent.chat_intent("¿qué es Bitcoin?",List());
+  info "S-10 result: " + r10.toString();
+  pass10 = false;
+  try { pass10 = r10.get("kind") != "tool"; } catch (e) { pass10 = false; }
+  counters = thisapp.tests_common.assert_true("S-10: answer/clarify for 'Bitcoin'",pass10 == true,counters,"kind=" + r10.get("kind") + " tool=" + r10.get("tool"));
+  endTime = zoho.currenttime;
+  info "=== SMOKE done (" + endTime + ") — passed: " + counters.get("passed") + " failed: " + counters.get("failed") + " ===";
+  info "Total time: " + endTime + " — " + counters.get("passed") + " passed, " + counters.get("failed") + " failed";
+  return counters;
+}
+
+// --------------------------------------------------------------------------
 // Orquestadores
 // --------------------------------------------------------------------------
 map tests_chat_intent.run_unit()
@@ -472,7 +759,7 @@ map tests_chat_intent.run_unit()
   counters = thisapp.tests_chat_intent.test_build_prompt_empty_history(counters);
   counters = thisapp.tests_chat_intent.test_build_prompt_with_history(counters);
   counters = thisapp.tests_chat_intent.test_build_prompt_catalog_in_prompt(counters);
-  info "=== UNIT: normalize_zia_response ===";
+  info "=== UNIT: normalize_zia_response (legacy) ===";
   counters = thisapp.tests_chat_intent.test_normalize_null(counters);
   counters = thisapp.tests_chat_intent.test_normalize_error_status(counters);
   counters = thisapp.tests_chat_intent.test_normalize_tool_ok(counters);
@@ -484,6 +771,12 @@ map tests_chat_intent.run_unit()
   counters = thisapp.tests_chat_intent.test_normalize_unknown_key(counters);
   counters = thisapp.tests_chat_intent.test_normalize_markdown_fence(counters);
   counters = thisapp.tests_chat_intent.test_normalize_noise_wrapped(counters);
+  info "=== UNIT: normalize_category (3.11) ===";
+  counters = thisapp.tests_chat_intent.run_unit_normalize_category(counters);
+  info "=== UNIT: resolve_period ===";
+  counters = thisapp.tests_chat_intent.run_unit_resolve_period(counters);
+  info "=== UNIT: normalize_tool + normalize_params ===";
+  counters = thisapp.tests_chat_intent.run_unit_normalize_tool_params(counters);
   info "UNIT done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
   return counters;
 }

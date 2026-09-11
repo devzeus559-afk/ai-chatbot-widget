@@ -36,6 +36,16 @@ createRecord(ChatRequests)  ───▶   On Submit workflow
 poll(getRecord: Status)  ◀───   Status: pending → answered | failed
 ```
 
+**Router de intención jerárquico**: `chat_intent()` usa un pipeline de 3 etapas Zia —
+`resolve_category` (taxonomía de 5 categorías: SEARCH, TRACKING, TOP_CUSTOMERS,
+PACKAGE_ANALYSIS, OTHER_ANALYSIS) → `resolve_tool` (1–4 tools de la categoría) →
+`resolve_params` (schema exacto del tool). Short-circuit: `answer`/`clarify`/`error`
+en cualquier etapa devuelve de inmediato. Las herramientas con fechas reciben el enum
+`period` (`ultimo_mes`, `mes_anterior`, `este_mes`, `ultimos_7_dias`) que
+`chat_common.resolve_period()` convierte a `[startDate, endDate]` — Zia nunca calcula
+fechas. `build_intent_prompt`/`normalize_zia_response` se conservan para compatibilidad
+con tests existentes; la fachada ya no los usa.
+
 ## Estructura de carpetas
 
 ```
@@ -76,7 +86,7 @@ deluge/
 | `chat_config.deluge` | `chat_config` |
 | `chat_common.deluge` | `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts`, `format_top_customers`, `format_top_package_customers`, `format_top_remittance_customers`, `format_shipping_type_frequency`, `format_merchandise_type`, `format_pounds_shipped`, `format_daily_average`, `format_monthly_comparison`, `format_delayed_packages`, `format_unscanned_packages` (+ helpers `insert_ranked_entry`, `build_empty_*`, `build_breakdown_list`, `decidirVisualizacion`, `build_viz`) |
 | `data_access.deluge` | `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_session_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_user`, `insert_chat_session`, `fetch_chat_messages_by_session`, `insert_chat_message`, `insert_unanswered_query`, `fetch_packages_by_tracking`, `fetch_services_ids_by_type/_by_destination`, `fetch_services_by_ids`, `fetch_services_all`, `fetch_services_count_by_date_window/_ids_by_date_window/_by_date_window`, `fetch_services_report_by_date_window/_by_ids`, `materialize_service_report`, `fetch_offices_by_ids`, `fetch_offices_all`, `fetch_coverage_by_ids`, `fetch_coverage_all`, `fetch_vendors_ids_by_type/_by_name`, `fetch_vendors_by_ids`, `fetch_vendors_all`, `fetch_contacts_ids_by_full_name/phone/document`, `fetch_contacts_by_ids`, `fetch_contacts_all`, `fetch_office_id_by_name`, `fetch_packages_report_by_window_office`, `materialize_package_report`, `fetch_pkg_tracking_scanned_all`, `fetch_pkg_tracking_unscanned`, `materialize_pkg_tracking_report` |
-| `chat_intent.deluge` | `chat_intent`, `build_intent_prompt` |
+| `chat_intent.deluge` | `chat_intent`, `build_intent_prompt`, `build_category_prompt`, `build_tool_prompt`, `build_params_prompt`, `normalize_category`, `normalize_tool`, `normalize_params`, `resolve_category`, `resolve_tool`, `resolve_params`, `normalize_zia_response` |
 | `chat_invoke.deluge` | `chat_invoke`, `resolve_reply`, `dispatch_tool`, `compose_with_ai`, `get_or_create_session`, `create_message`, `get_recent_history`, `update_session` |
 | `chat_list.deluge` | `chat_list` |
 | `tools/*.deluge` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts`, `tool_report_top_customers`, `tool_report_top_package_customers`, `tool_report_top_remittance_customers`, `tool_report_shipping_type_frequency`, `tool_report_merchandise_type`, `tool_report_pounds_shipped`, `tool_report_daily_average`, `tool_report_monthly_comparison`, `tool_report_delayed_packages`, `tool_report_unscanned_packages` |
