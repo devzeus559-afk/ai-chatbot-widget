@@ -51,7 +51,7 @@ map chat_intent.normalize_zia_response(map response)
   // Zia puede devolver null o un Map sin "status" al fallar (p. ej. IA no habilitada).
   if(response == null)
   {
-    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
   }
   if(response.get("status") == true && response.get("data") != null)
   {
@@ -83,7 +83,7 @@ map chat_intent.normalize_zia_response(map response)
   {
     if(parsed.containKey("parse_error"))
     {
-      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
     }
     if(parsed.containKey("tool"))
     {
@@ -122,7 +122,7 @@ map chat_intent.normalize_zia_response(map response)
   {
     // JSON válido pero con otra forma
   }
-  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
 }
 // --------------------------------------------------------------------------
 // Hierarchical intent routing — prompt builders
@@ -142,7 +142,8 @@ string chat_intent.build_category_prompt(string userPrompt, list history)
   prompt = prompt + "REGLAS:\n";
   prompt = prompt + "- Cuando el usuario pregunte por servicios, oficinas, cobertura o contactos DEBES clasificar como SEARCH. Nunca los trates como fuera de alcance.\n";
   prompt = prompt + "- Si el usuario saluda, agradece o pregunta algo general → responde con {\"answer\": \"...\"}.\n";
-  prompt = prompt + "- Los temas VÁLIDOS de esta agencia son: paquetería, rastreo de envíos, remesas, recargas telefónicas, cobertura, oficinas y contactos. Si el usuario pregunta sobre algo DISTINTO a esa lista (por ejemplo Bitcoin, clima, noticias) → devuelve {\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, remesas y recargas. ¿En qué puedo asistirte?\"}.\n";
+  prompt = prompt + "- Los temas VÁLIDOS de esta agencia son: paquetería, rastreo de envíos, remesas, recargas telefónicas, cobertura, oficinas y contactos, y los métodos de pago. Si el usuario pregunta sobre algo DISTINTO a esa lista (por ejemplo clima, noticias, deportes) → devuelve {\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, remesas y recargas. ¿En qué puedo asistirte?\"}.\n";
+  prompt = prompt + "- Si el usuario pregunta por métodos de pago (Bitcoin, transferencia, efectivo, tarjeta, cómo pagar) → responde SOLO con {\"answer\": \"Nuestra agencia acepta transferencia bancaria, efectivo y tarjeta de crédito/débito.\"} — NUNCA lo trates como fuera de alcance.\n";
   prompt = prompt + "- Si la consulta es ambigua entre categorías → devuelve {\"clarify\": \"<pregunta breve>\"}.\n";
   prompt = prompt + "- NUNCA devuelvas texto fuera del JSON.\n\n";
   if(history != null && history.size() > 0)
@@ -227,7 +228,7 @@ map chat_intent.normalize_category(map ziaResponse)
 {
   if(ziaResponse == null)
   {
-    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
   }
   if(ziaResponse.get("status") == true && ziaResponse.get("data") != null)
   {
@@ -258,7 +259,7 @@ map chat_intent.normalize_category(map ziaResponse)
   {
     if(parsed.containKey("parse_error"))
     {
-      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
     }
     if(parsed.containKey("category"))
     {
@@ -272,7 +273,7 @@ map chat_intent.normalize_category(map ziaResponse)
       {
         return {"category":cat};
       }
-      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
     }
     if(parsed.containKey("answer"))
     {
@@ -286,13 +287,13 @@ map chat_intent.normalize_category(map ziaResponse)
   {
     // JSON válido pero con otra forma
   }
-  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
 }
 map chat_intent.normalize_tool(map ziaResponse, string category)
 {
   if(ziaResponse == null)
   {
-    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
   }
   config = thisapp.chat_config.chat_config();
   toolsByCategory = config.get("toolsByCategory");
@@ -325,7 +326,7 @@ map chat_intent.normalize_tool(map ziaResponse, string category)
   {
     if(parsed.containKey("parse_error"))
     {
-      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
     }
     if(parsed.containKey("tool"))
     {
@@ -335,7 +336,7 @@ map chat_intent.normalize_tool(map ziaResponse, string category)
       {
         return {"tool":toolName,"params":Map()};
       }
-      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
     }
     if(parsed.containKey("clarify"))
     {
@@ -345,13 +346,13 @@ map chat_intent.normalize_tool(map ziaResponse, string category)
   {
     // JSON válido pero con otra forma
   }
-  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
 }
 map chat_intent.normalize_params(map ziaResponse, string toolName)
 {
   if(ziaResponse == null)
   {
-    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
   }
   if(ziaResponse.get("status") == true && ziaResponse.get("data") != null)
   {
@@ -382,7 +383,7 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
   {
     if(parsed.containKey("parse_error"))
     {
-      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+      return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
     }
     if(parsed.containKey("clarify"))
     {
@@ -516,7 +517,7 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
   {
     // JSON válido pero con otra forma
   }
-  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+  return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
 }
 // --------------------------------------------------------------------------
 // Hierarchical intent routing — resolvers (Zia call wrappers)
@@ -525,7 +526,7 @@ map chat_intent.resolve_category(string userPrompt, list history)
 {
   config = thisapp.chat_config.chat_config();
   context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Ayudas a clientes y agentes a consultar " + "datos de la aplicación. Debes responder ÚNICAMENTE con JSON válido, " + "sin texto adicional ni markdown.";
-  context = context + " Los temas VÁLIDOS de esta agencia son: paquetería, rastreo " + "de envíos, remesas, recargas telefónicas, cobertura, oficinas y contactos. " + "Si el usuario pregunta sobre algo DISTINTO a esa lista (por ejemplo Bitcoin, " + "clima, noticias), responde SOLO con: " + "{\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, " + "remesas y recargas. ¿En qué puedo asistirte?\"}";
+  context = context + " Los temas VÁLIDOS de esta agencia son: paquetería, rastreo " + "de envíos, remesas, recargas telefónicas, cobertura, oficinas, contactos y " + "métodos de pago. Si el usuario pregunta sobre algo DISTINTO a esa lista " + "(por ejemplo clima, noticias, deportes), responde SOLO con: " + "{\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, " + "remesas y recargas. ¿En qué puedo asistirte?\"}";
   context = context + " Cuando el usuario pregunte por servicios, cobertura, oficinas " + "o contactos, DEBES usar la herramienta correspondiente. Nunca respondas " + "directamente.";
   context = context + " INFORMACIÓN COMERCIAL:\n" + "- Métodos de pago aceptados: transferencia bancaria, efectivo, tarjeta de crédito/débito\n" + "- Servicios: paquetería internacional, remesas, recargas telefónicas\n" + "- Cobertura: Latinoamérica, España, Estados Unidos";
   context = context + " Para consultas sobre métodos de pago, responde directamente " + "con la información comercial proporcionada. Ejemplo: si preguntan por Bitcoin, " + "responde que los métodos aceptados son transferencia bancaria, efectivo y tarjeta.";
@@ -625,7 +626,7 @@ map chat_intent.chat_intent(string userPrompt, list history)
   category = intent.get("category");
   if(category == null || category == "")
   {
-    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
   }
   // Stage 2: pick tool within category
   toolsTextByCategory = config.get("toolsTextByCategory");
@@ -643,7 +644,7 @@ map chat_intent.chat_intent(string userPrompt, list history)
   toolName = toolResult.get("tool");
   if(toolName == null || toolName == "")
   {
-    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"};
+    return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
   }
   // Stage 3: extract exact params
   paramSchema = config.get("paramSchema");
