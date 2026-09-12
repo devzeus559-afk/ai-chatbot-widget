@@ -90,9 +90,16 @@ map chat_tools.report_monthly_comparison(map params)
     }
   }
   // Construir la secuencia de meses de startDate a endDate
-  monthList = List();
+  // Deluge no soporta while: se recorre un span exacto con loopRange + for each
   cursor = thisapp.chat_common.first_of_month(startDate);
-  while(cursor <= endDate)
+  lastCursor = thisapp.chat_common.first_of_month(endDate);
+  monthSpan = (lastCursor.getYear() * 12 + lastCursor.getMonth()) - (cursor.getYear() * 12 + cursor.getMonth()) + 1;
+  if(monthSpan < 1)
+  {
+    monthSpan = 1;
+  }
+  monthList = List();
+  for each  idx in loopRange(monthSpan)
   {
     label = "" + cursor.getYear() + "-" + cursor.getMonth();
     monthList.add(label);
