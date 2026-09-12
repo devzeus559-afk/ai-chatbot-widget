@@ -90,7 +90,8 @@ map chat_tools.report_monthly_comparison(map params)
     }
   }
   // Construir la secuencia de meses de startDate a endDate
-  // Deluge no soporta while: se recorre un span exacto con loopRange + for each
+  // Deluge no soporta while: se genera una lista contadora con leftpad/toList
+  // (idiom recomendado por Zoho) y se recorre con for each + break.
   cursor = thisapp.chat_common.first_of_month(startDate);
   lastCursor = thisapp.chat_common.first_of_month(endDate);
   monthSpan = (lastCursor.getYear() * 12 + lastCursor.getMonth()) - (cursor.getYear() * 12 + cursor.getMonth()) + 1;
@@ -99,8 +100,13 @@ map chat_tools.report_monthly_comparison(map params)
     monthSpan = 1;
   }
   monthList = List();
-  for each  idx in loopRange(monthSpan)
+  counter = leftpad("1",monthSpan + 1).replaceAll(" ","1,").toList(",");
+  for each  idx in counter
   {
+    if(cursor > endDate)
+    {
+      break;
+    }
     label = "" + cursor.getYear() + "-" + cursor.getMonth();
     monthList.add(label);
     cursor = cursor.addMonth(1);
