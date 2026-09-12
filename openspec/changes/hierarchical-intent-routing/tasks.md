@@ -64,7 +64,7 @@ Chain strategy: pending
 
 ## Phase 6: Manual Creator verification gate (publish blocker)
 
-- [ ] 6.1 Run `tests_intent_hierarchical.run_smoke()` — all 10 hierarchical phrases resolve correctly in ≤1 Zia iteration per phrase. AC: 10/10 pass, no clarify loops.
+- [x] 6.1 Run `tests_intent_hierarchical.run_smoke()` — all 10 hierarchical phrases resolve correctly in ≤1 Zia iteration per phrase. AC: 10/10 pass, no clarify loops. **DONE 2026-09-11 — 22/22 asserts pass, 0 clarify loops (S-01..S-10).**
 - [ ] 6.2 Run regression: `tests_chat_intent.run_live_first_turn()` (15 cases) + `tests_chat_intent.run_live_multiturn()` (6 cases) — all existing tests pass unchanged. AC: 21/21 pass.
-- [ ] 6.3 Verify `git diff deluge/core/chat_invoke.deluge` = 0 lines changed. AC: orchestrator untouched.
+- [x] 6.3 Verify `git diff deluge/core/chat_invoke.deluge` = 0 lines changed. AC: orchestrator untouched. **DONE — confirmed 0 lines statically (verify-report).**
 - [ ] 6.4 Measure 3-Zia-call latency on 5 representative prompts — average must be < 30s, worst-case < 40s. AC: manual timer in Creator logs.
