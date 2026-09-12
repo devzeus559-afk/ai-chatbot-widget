@@ -127,8 +127,6 @@ map chat_intent.normalize_zia_response(map response)
 // --------------------------------------------------------------------------
 // Hierarchical intent routing — prompt builders
 // --------------------------------------------------------------------------
-// Hierarchical intent routing — prompt builders
-// --------------------------------------------------------------------------
 string chat_intent.build_category_prompt(string userPrompt, list history)
 {
   prompt = "CONTRATO DE SALIDA: Devuelve SOLO JSON válido con UNO de estos tres formatos:\n";
@@ -142,8 +140,9 @@ string chat_intent.build_category_prompt(string userPrompt, list history)
   prompt = prompt + "- PACKAGE_ANALYSIS: análisis de paquetes (libras, promedio diario, comparación mensual).\n";
   prompt = prompt + "- OTHER_ANALYSIS: reportes de frecuencia de envío, tipo de mercancía, demorados, sin escanear.\n\n";
   prompt = prompt + "REGLAS:\n";
+  prompt = prompt + "- Cuando el usuario pregunte por servicios, oficinas, cobertura o contactos DEBES clasificar como SEARCH. Nunca los trates como fuera de alcance.\n";
   prompt = prompt + "- Si el usuario saluda, agradece o pregunta algo general → responde con {\"answer\": \"...\"}.\n";
-  prompt = prompt + "- Si la consulta NO está relacionada con paquetería, remesas, recargas, cobertura, oficinas o contactos → devuelve {\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, remesas y recargas. ¿En qué puedo asistirte?\"}.\n";
+  prompt = prompt + "- Los temas VÁLIDOS de esta agencia son: paquetería, rastreo de envíos, remesas, recargas telefónicas, cobertura, oficinas y contactos. Si el usuario pregunta sobre algo DISTINTO a esa lista (por ejemplo Bitcoin, clima, noticias) → devuelve {\"clarify\": \"Lo siento, solo puedo ayudarte con temas de paquetería, remesas y recargas. ¿En qué puedo asistirte?\"}.\n";
   prompt = prompt + "- Si la consulta es ambigua entre categorías → devuelve {\"clarify\": \"<pregunta breve>\"}.\n";
   prompt = prompt + "- NUNCA devuelvas texto fuera del JSON.\n\n";
   if(history != null && history.size() > 0)
