@@ -711,7 +711,7 @@ date chat_common.first_of_month(date d)
     return zoho.currentdate;
   }
   y = d.getYear();
-  m = d.getMonth() + 1;
+  m = d.getMonth();
   return date(y,m,1);
 }
 int chat_common.days_in_month_range(int year, int month, date rangeStart, date rangeEnd)

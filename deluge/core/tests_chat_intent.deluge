@@ -461,8 +461,10 @@ map tests_chat_intent.run_live_multiturn(map counters)
 
 // --------------------------------------------------------------------------
 // UNIT — normalize_category (Task 3.11) — mock sin Zia
-// Valida que normalize_zia_response reconoce la key "category" y devuelve
-// {status:ok, kind:category, category:<value>} para los 5 enums válidos.
+// Valida el contrato BARE de chat_intent.normalize_category (la pipeline
+// jerárquica): {"category":<enum>} | {"answer":...} | {"clarify":...} |
+// {"status":"error","kind":"clarify","text":...}. La fachada chat_intent()
+// re-envuelve al contrato externo {status,kind,...}.
 // --------------------------------------------------------------------------
 map tests_chat_intent.run_unit_normalize_category(map counters)
 {
@@ -472,26 +474,28 @@ map tests_chat_intent.run_unit_normalize_category(map counters)
     resp = Map();
     resp.put("status",true);
     resp.put("data","{\"category\":\"" + cat + "\"}");
-    result = thisapp.chat_intent.normalize_zia_response(resp);
-    counters = thisapp.tests_common.assert_equals("normalize_category " + cat + ": status ok",result.get("status"),"ok",counters);
-    counters = thisapp.tests_common.assert_equals("normalize_category " + cat + ": kind",result.get("kind"),"category",counters);
-    counters = thisapp.tests_common.assert_equals("normalize_category " + cat + ": category",result.get("category"),cat,counters);
+    result = thisapp.chat_intent.normalize_category(resp);
+    hasCat = result.containKey("category");
+    counters = thisapp.tests_common.assert_true("normalize_category " + cat + ": has category key",hasCat == true,counters,"resp=" + result.toString());
+    counters = thisapp.tests_common.assert_equals("normalize_category " + cat + ": category",cat,result.get("category"),counters);
   }
-  // answer → kind answer
+  // answer → bare {"answer":...}
   respA = Map();
   respA.put("status",true);
   respA.put("data","{\"answer\":\"Hola\"}");
-  resA = thisapp.chat_intent.normalize_zia_response(respA);
-  counters = thisapp.tests_common.assert_equals("normalize_category answer: kind",resA.get("kind"),"answer",counters);
-  // clarify → kind clarify
+  resA = thisapp.chat_intent.normalize_category(respA);
+  aHasAnswer = resA.containKey("answer");
+  counters = thisapp.tests_common.assert_true("normalize_category answer: has answer key",aHasAnswer == true,counters,"resp=" + resA.toString());
+  // clarify → bare {"clarify":...}
   respC = Map();
   respC.put("status",true);
   respC.put("data","{\"clarify\":\"¿Qué necesitas?\"}");
-  resC = thisapp.chat_intent.normalize_zia_response(respC);
-  counters = thisapp.tests_common.assert_equals("normalize_category clarify: kind",resC.get("kind"),"clarify",counters);
-  // null → kind clarify + texto genérico
-  resN = thisapp.chat_intent.normalize_zia_response(null);
-  counters = thisapp.tests_common.assert_equals("normalize_category null: kind",resN.get("kind"),"clarify",counters);
+  resC = thisapp.chat_intent.normalize_category(respC);
+  cHasClarify = resC.containKey("clarify");
+  counters = thisapp.tests_common.assert_true("normalize_category clarify: has clarify key",cHasClarify == true,counters,"resp=" + resC.toString());
+  // null → {status:error, kind:clarify, text: genérico}
+  resN = thisapp.chat_intent.normalize_category(null);
+  counters = thisapp.tests_common.assert_equals("normalize_category null: kind","clarify",resN.get("kind"),counters);
   counters = thisapp.tests_common.assert_contains("normalize_category null: texto genérico",resN.get("text"),"No pude interpretar",counters);
   info "run_unit_normalize_category done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
   return counters;
@@ -501,6 +505,10 @@ map tests_chat_intent.run_unit_normalize_category(map counters)
 // UNIT — resolve_period — fecha conocida 2025-03-15
 // Valida que chat_common.resolve_period devuelve las ventanas correctas
 // para cada enum sobre una fecha fija (endDate = 2025-03-15).
+// Compara con formato "yyyy-MM-dd" porque zoho.date(...).toString() y un
+// date calculado (subDay/addMonth) pueden renderizar distinto el mismo día
+// ("2025-02-13" vs "13-Feb-2025") — comparar toString() crudo da falsos
+// negativos.
 // --------------------------------------------------------------------------
 map tests_chat_intent.run_unit_resolve_period(map counters)
 {
@@ -508,24 +516,24 @@ map tests_chat_intent.run_unit_resolve_period(map counters)
   info "resolve_period endDate: " + endDate.toString();
   // ultimo_mes: startDate = endDate - 30 = 2025-02-13
   r1 = thisapp.chat_common.resolve_period("ultimo_mes",endDate);
-  counters = thisapp.tests_common.assert_equals("resolve_period ultimo_mes start",r1.get(0).toString(),zoho.date(year:2025,month:2,day:13).toString(),counters);
-  counters = thisapp.tests_common.assert_equals("resolve_period ultimo_mes end",r1.get(1).toString(),endDate.toString(),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period ultimo_mes start",r1.get(0).toString("yyyy-MM-dd"),zoho.date(year:2025,month:2,day:13).toString("yyyy-MM-dd"),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period ultimo_mes end",r1.get(1).toString("yyyy-MM-dd"),endDate.toString("yyyy-MM-dd"),counters);
   // mes_anterior: startDate = 2025-02-01, endDate = 2025-02-28
   r2 = thisapp.chat_common.resolve_period("mes_anterior",endDate);
-  counters = thisapp.tests_common.assert_equals("resolve_period mes_anterior start",r2.get(0).toString(),zoho.date(year:2025,month:2,day:1).toString(),counters);
-  counters = thisapp.tests_common.assert_equals("resolve_period mes_anterior end",r2.get(1).toString(),zoho.date(year:2025,month:2,day:28).toString(),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period mes_anterior start",r2.get(0).toString("yyyy-MM-dd"),zoho.date(year:2025,month:2,day:1).toString("yyyy-MM-dd"),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period mes_anterior end",r2.get(1).toString("yyyy-MM-dd"),zoho.date(year:2025,month:2,day:28).toString("yyyy-MM-dd"),counters);
   // este_mes: startDate = 2025-03-01, endDate = 2025-03-15
   r3 = thisapp.chat_common.resolve_period("este_mes",endDate);
-  counters = thisapp.tests_common.assert_equals("resolve_period este_mes start",r3.get(0).toString(),zoho.date(year:2025,month:3,day:1).toString(),counters);
-  counters = thisapp.tests_common.assert_equals("resolve_period este_mes end",r3.get(1).toString(),endDate.toString(),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period este_mes start",r3.get(0).toString("yyyy-MM-dd"),zoho.date(year:2025,month:3,day:1).toString("yyyy-MM-dd"),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period este_mes end",r3.get(1).toString("yyyy-MM-dd"),endDate.toString("yyyy-MM-dd"),counters);
   // ultimos_7_dias: startDate = 2025-03-08, endDate = 2025-03-15
   r4 = thisapp.chat_common.resolve_period("ultimos_7_dias",endDate);
-  counters = thisapp.tests_common.assert_equals("resolve_period ultimos_7_dias start",r4.get(0).toString(),zoho.date(year:2025,month:3,day:8).toString(),counters);
-  counters = thisapp.tests_common.assert_equals("resolve_period ultimos_7_dias end",r4.get(1).toString(),endDate.toString(),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period ultimos_7_dias start",r4.get(0).toString("yyyy-MM-dd"),zoho.date(year:2025,month:3,day:8).toString("yyyy-MM-dd"),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period ultimos_7_dias end",r4.get(1).toString("yyyy-MM-dd"),endDate.toString("yyyy-MM-dd"),counters);
   // default (desconocido): same as ultimo_mes
   r5 = thisapp.chat_common.resolve_period("periodo_inventado",endDate);
-  counters = thisapp.tests_common.assert_equals("resolve_period default start",r5.get(0).toString(),zoho.date(year:2025,month:2,day:13).toString(),counters);
-  counters = thisapp.tests_common.assert_equals("resolve_period default end",r5.get(1).toString(),endDate.toString(),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period default start",r5.get(0).toString("yyyy-MM-dd"),zoho.date(year:2025,month:2,day:13).toString("yyyy-MM-dd"),counters);
+  counters = thisapp.tests_common.assert_equals("resolve_period default end",r5.get(1).toString("yyyy-MM-dd"),endDate.toString("yyyy-MM-dd"),counters);
   info "run_unit_resolve_period done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
   return counters;
 }
@@ -546,7 +554,7 @@ map tests_chat_intent.run_unit_normalize_tool_params(map counters)
   respToolOk = Map();
   respToolOk.put("status",true);
   respToolOk.put("data","{\"tool\":\"track_package\"}");
-  rToolOk = thisapp.chat_intent.normalize_tool(respToolOk,"TRACKING",null);
+  rToolOk = thisapp.chat_intent.normalize_tool(respToolOk,"TRACKING","");
   counters = thisapp.tests_common.assert_equals("normalize_tool valid: tool","track_package",rToolOk.get("tool"),counters);
   toolOkHasTool = rToolOk.containKey("tool");
   counters = thisapp.tests_common.assert_true("normalize_tool valid: has tool key",toolOkHasTool == true,counters,"resp=" + rToolOk.toString());
@@ -554,7 +562,7 @@ map tests_chat_intent.run_unit_normalize_tool_params(map counters)
   respToolBad = Map();
   respToolBad.put("status",true);
   respToolBad.put("data","{\"tool\":\"find_offices\"}");
-  rToolBad = thisapp.chat_intent.normalize_tool(respToolBad,"TRACKING",null);
+  rToolBad = thisapp.chat_intent.normalize_tool(respToolBad,"TRACKING","");
   counters = thisapp.tests_common.assert_equals("normalize_tool wrong cat: kind clarify","clarify",rToolBad.get("kind"),counters);
   // --- normalize_tool: SEARCH clarify con keyword → fallback determinista a find_contacts ---
   respToolSearch = Map();
@@ -571,7 +579,7 @@ map tests_chat_intent.run_unit_normalize_tool_params(map counters)
   rKwContacto = thisapp.chat_intent.keyword_search_tool("Busca el contacto Juan Pérez");
   counters = thisapp.tests_common.assert_equals("keyword_search_tool contacto","find_contacts",rKwContacto,counters);
   rKwNada = thisapp.chat_intent.keyword_search_tool("¿Quién ganó el mundial?");
-  counters = thisapp.tests_common.assert_equals("keyword_search_tool sin keyword",null,rKwNada,counters);
+  counters = thisapp.tests_common.assert_true("keyword_search_tool sin keyword",rKwNada == null,counters,"esperado null, obtenido: " + rKwNada);
   // --- normalize_params: Zia devuelve clarify y normalize lo pasa (bare {"clarify"}) ---
   // normalize_params también valida requireds determinísticamente (no solo vía Prompt 3).
   respNoReq = Map();

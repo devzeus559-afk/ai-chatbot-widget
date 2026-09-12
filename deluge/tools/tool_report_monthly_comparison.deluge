@@ -68,7 +68,7 @@ map chat_tools.report_monthly_comparison(map params)
     {
       continue;
     }
-    mKey = "" + rd.getYear() + "-" + (rd.getMonth() + 1);
+    mKey = "" + rd.getYear() + "-" + rd.getMonth();
     w = p.get("totalWeight");
     if(w == null || w == "")
     {
@@ -80,7 +80,7 @@ map chat_tools.report_monthly_comparison(map params)
       e = Map();
       e.put("key",mKey);
       e.put("year",rd.getYear());
-      e.put("month",rd.getMonth() + 1);
+      e.put("month",rd.getMonth());
       e.put("pounds",w);
       monthMap.put(mKey,e);
     }
@@ -94,7 +94,7 @@ map chat_tools.report_monthly_comparison(map params)
   cursor = thisapp.chat_common.first_of_month(startDate);
   while(cursor <= endDate)
   {
-    label = "" + cursor.getYear() + "-" + (cursor.getMonth() + 1);
+    label = "" + cursor.getYear() + "-" + cursor.getMonth();
     monthList.add(label);
     cursor = cursor.addMonth(1);
   }
@@ -110,7 +110,7 @@ map chat_tools.report_monthly_comparison(map params)
     {
       pounds = me.get("pounds");
     }
-    daysInMonth = thisapp.chat_common.days_in_month_range(cursor2.getYear(),cursor2.getMonth() + 1,startDate,endDate);
+    daysInMonth = thisapp.chat_common.days_in_month_range(cursor2.getYear(),cursor2.getMonth(),startDate,endDate);
     if(daysInMonth == null || daysInMonth < 1)
     {
       daysInMonth = 1;
