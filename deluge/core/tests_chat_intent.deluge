@@ -546,7 +546,7 @@ map tests_chat_intent.run_unit_normalize_tool_params(map counters)
   respToolOk = Map();
   respToolOk.put("status",true);
   respToolOk.put("data","{\"tool\":\"track_package\"}");
-  rToolOk = thisapp.chat_intent.normalize_tool(respToolOk,"TRACKING");
+  rToolOk = thisapp.chat_intent.normalize_tool(respToolOk,"TRACKING",null);
   counters = thisapp.tests_common.assert_equals("normalize_tool valid: tool","track_package",rToolOk.get("tool"),counters);
   toolOkHasTool = rToolOk.containKey("tool");
   counters = thisapp.tests_common.assert_true("normalize_tool valid: has tool key",toolOkHasTool == true,counters,"resp=" + rToolOk.toString());
@@ -554,8 +554,24 @@ map tests_chat_intent.run_unit_normalize_tool_params(map counters)
   respToolBad = Map();
   respToolBad.put("status",true);
   respToolBad.put("data","{\"tool\":\"find_offices\"}");
-  rToolBad = thisapp.chat_intent.normalize_tool(respToolBad,"TRACKING");
+  rToolBad = thisapp.chat_intent.normalize_tool(respToolBad,"TRACKING",null);
   counters = thisapp.tests_common.assert_equals("normalize_tool wrong cat: kind clarify","clarify",rToolBad.get("kind"),counters);
+  // --- normalize_tool: SEARCH clarify con keyword → fallback determinista a find_contacts ---
+  respToolSearch = Map();
+  respToolSearch.put("status",true);
+  respToolSearch.put("data","{\"clarify\":\"¿Buscas el contacto de Juan Pérez para enviar un paquete?\"}");
+  rToolSearch = thisapp.chat_intent.normalize_tool(respToolSearch,"SEARCH","Busca el contacto Juan Pérez teléfono 5551234");
+  counters = thisapp.tests_common.assert_equals("normalize_tool SEARCH keyword fallback: tool","find_contacts",rToolSearch.get("tool"),counters);
+  rKwCobertura = thisapp.chat_intent.keyword_search_tool("¿Tienen cobertura en Colombia?");
+  counters = thisapp.tests_common.assert_equals("keyword_search_tool cobertura","check_coverage",rKwCobertura,counters);
+  rKwOficina = thisapp.chat_intent.keyword_search_tool("¿Tienen oficinas en Miami?");
+  counters = thisapp.tests_common.assert_equals("keyword_search_tool oficina","find_offices",rKwOficina,counters);
+  rKwServicios = thisapp.chat_intent.keyword_search_tool("¿Qué servicios tienen?");
+  counters = thisapp.tests_common.assert_equals("keyword_search_tool servicios","search_services",rKwServicios,counters);
+  rKwContacto = thisapp.chat_intent.keyword_search_tool("Busca el contacto Juan Pérez");
+  counters = thisapp.tests_common.assert_equals("keyword_search_tool contacto","find_contacts",rKwContacto,counters);
+  rKwNada = thisapp.chat_intent.keyword_search_tool("¿Quién ganó el mundial?");
+  counters = thisapp.tests_common.assert_equals("keyword_search_tool sin keyword",null,rKwNada,counters);
   // --- normalize_params: Zia devuelve clarify y normalize lo pasa (bare {"clarify"}) ---
   // normalize_params también valida requireds determinísticamente (no solo vía Prompt 3).
   respNoReq = Map();

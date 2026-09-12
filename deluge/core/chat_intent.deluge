@@ -289,7 +289,7 @@ map chat_intent.normalize_category(map ziaResponse)
   }
   return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
 }
-map chat_intent.normalize_tool(map ziaResponse, string category)
+map chat_intent.normalize_tool(map ziaResponse, string category, string userPrompt)
 {
   if(ziaResponse == null)
   {
@@ -340,13 +340,50 @@ map chat_intent.normalize_tool(map ziaResponse, string category)
     }
     if(parsed.containKey("clarify"))
     {
+      toolFromKeyword = thisapp.chat_intent.keyword_search_tool(userPrompt);
+      if(toolFromKeyword != null)
+      {
+        return {"tool":toolFromKeyword,"params":Map()};
+      }
       return {"clarify":parsed.get("clarify")};
     }
   } catch (e)
   {
     // JSON válido pero con otra forma
   }
+  toolFromKeyword = thisapp.chat_intent.keyword_search_tool(userPrompt);
+  if(toolFromKeyword != null)
+  {
+    return {"tool":toolFromKeyword,"params":Map()};
+  }
   return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
+}
+// Deterministic fallback for SEARCH: if Zia could not pick a tool but the
+// user message carries a category keyword, map it directly. Precedence
+// matches build_tool_prompt; null means no keyword matched, so no mapping.
+string chat_intent.keyword_search_tool(string userPrompt)
+{
+  if(userPrompt == null)
+  {
+    return null;
+  }
+  if(userPrompt.contains("cobertura"))
+  {
+    return "check_coverage";
+  }
+  if(userPrompt.contains("oficina") || userPrompt.contains("sucursal"))
+  {
+    return "find_offices";
+  }
+  if(userPrompt.contains("servicios"))
+  {
+    return "search_services";
+  }
+  if(userPrompt.contains("contacto"))
+  {
+    return "find_contacts";
+  }
+  return null;
 }
 map chat_intent.normalize_params(map ziaResponse, string toolName)
 {
@@ -560,13 +597,13 @@ map chat_intent.resolve_tool(string userPrompt, string category, string filtered
   ];
   if(zia_response == null)
   {
-    return thisapp.chat_intent.normalize_tool(null,category);
+    return thisapp.chat_intent.normalize_tool(null,category,userPrompt);
   }
   response = Map();
   response.put("status",zia_response.status);
   response.put("data",zia_response.data);
   response.put("error",zia_response.error);
-  return thisapp.chat_intent.normalize_tool(response,category);
+  return thisapp.chat_intent.normalize_tool(response,category,userPrompt);
 }
 map chat_intent.resolve_params(string userPrompt, string toolName, string paramSchema)
 {
