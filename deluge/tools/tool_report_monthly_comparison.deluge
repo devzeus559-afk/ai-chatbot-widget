@@ -121,13 +121,14 @@ map chat_tools.report_monthly_comparison(map params)
     pounds = 0;
     if(me != null && me.get("pounds") != null)
     {
-      pounds = me.get("pounds");
+      pounds = toNumber(me.get("pounds"));
     }
     daysInMonth = thisapp.chat_common.days_in_month_range(cursor2.getYear(),cursor2.getMonth(),startDate,endDate);
     if(daysInMonth == null || daysInMonth < 1)
     {
       daysInMonth = 1;
     }
+    daysInMonth = toNumber(daysInMonth);
     monthlyAvg = round(pounds / daysInMonth,1);
     out = Map();
     out.put("monthLabel",label);
@@ -137,7 +138,7 @@ map chat_tools.report_monthly_comparison(map params)
     delta = null;
     if(prevAvg != null && prevAvg > 0)
     {
-      delta = round(((monthlyAvg - prevAvg) / prevAvg) * 100,1);
+      delta = round(((toNumber(monthlyAvg) - toNumber(prevAvg)) / toNumber(prevAvg)) * 100,1);
     }
     out.put("deltaPct",delta);
     out.put("monthlyAverageLabel","" + monthlyAvg + " lbs/día");
