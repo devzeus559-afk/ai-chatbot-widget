@@ -96,7 +96,7 @@ map chat_tools.report_merchandise_type(map params)
     share = 0;
     if(total > 0)
     {
-      share = e.get("count") * 100.0 / total;
+      share = toNumber(e.get("count")) * 100.0 / toNumber(total);
       share = round(share,1);
     }
     e.put("sharePct",share);
