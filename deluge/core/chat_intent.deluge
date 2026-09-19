@@ -158,7 +158,7 @@ string chat_intent.build_category_prompt(string userPrompt, list history)
   prompt = prompt + "MENSAJE ACTUAL DEL USUARIO:\n" + userPrompt;
   return prompt;
 }
-string chat_intent.build_tool_prompt(string userPrompt, string category, string filteredCatalog)
+string chat_intent.build_tool_prompt(string userPrompt, string category, string filteredCatalog, list history)
 {
   prompt = "CONTRATO DE SALIDA: Devuelve SOLO JSON válido con UNO de estos dos formatos:\n";
   prompt = prompt + "1) {\"tool\": \"<nombre_tool>\"} para seleccionar la herramienta exacta.\n";
@@ -168,14 +168,23 @@ string chat_intent.build_tool_prompt(string userPrompt, string category, string 
   prompt = prompt + filteredCatalog + "\n";
 prompt = prompt + "REGLAS:\n";
   prompt = prompt + "- Elige SOLO una herramienta de la lista de arriba.\n";
-  prompt = prompt + "- Si el usuario menciona paquetería → considera tools con "paquete" o "package" en el nombre.\n";
-  prompt = prompt + "- Si el usuario menciona remesas → considera tools con "remittance" en el nombre.\n";
+  prompt = prompt + "- Si el usuario menciona paquetería → considera tools con 'paquete' o 'package' en el nombre.\n";
+  prompt = prompt + "- Si el usuario menciona remesas → considera tools con 'remittance' en el nombre.\n";
   if(category == "SEARCH")
   {
-    prompt = prompt + "- SEARCH: si el usuario menciona "cobertura" → check_coverage. Si menciona "oficina"/"sucursal" → find_offices. Si menciona "servicios" → search_services. Si menciona "contacto" → find_contacts. NUNCA clarifiques para elegir entre estas: usa la palabra clave.\n";
+    prompt = prompt + "- SEARCH: si el usuario menciona 'cobertura' → check_coverage. Si menciona 'oficina'/'sucursal' → find_offices. Si menciona 'servicios' → search_services. Si menciona 'contacto' → find_contacts. NUNCA clarifiques para elegir entre estas: usa la palabra clave.\n";
   }
   prompt = prompt + "- Si falta un parámetro OBLIGATORIO (trackingNumber, serviceType como lista ≥1), AÚN ASÍ elige la herramienta. No pidas clarify aquí.\n";
   prompt = prompt + "- NUNCA devuelvas texto fuera del JSON.\n\n";
+  if(history != null && history.size() > 0)
+  {
+    prompt = prompt + "HISTORIAL RECIENTE:\n";
+    for each  m in history
+    {
+      prompt = prompt + m.get("role") + ": " + m.get("content") + "\n";
+    }
+    prompt = prompt + "\n";
+  }
   prompt = prompt + "MENSAJE ACTUAL DEL USUARIO:\n" + userPrompt;
   return prompt;
 }
@@ -198,12 +207,12 @@ string chat_intent.build_params_prompt(string userPrompt, string toolName, strin
   }
   if(!hasPeriod)
   {
-    prompt = prompt + "- IMPORTANTE: esta herramienta NO usa period ni fechas. Ignora cualquier mención de "último mes", "marzo" o period en el contexto.\n";
+    prompt = prompt + "- IMPORTANTE: esta herramienta NO usa period ni fechas. Ignora cualquier mención de 'último mes', 'marzo' o period en el contexto.\n";
   }
   else
   {
-    prompt = prompt + "- Si el usuario menciona "último mes", "últimos 30 días" → period: \"ultimo_mes\". Si dice "mes anterior"/"mes pasado" → \"mes_anterior\". Si dice "esta semana" → \"ultimos_7_dias\". Si dice "este mes" → \"este_mes\".\n";
-    prompt = prompt + "- Si el usuario menciona un MES CONCRETO distinto (ej. "marzo" sin ser el mes previo), NO calcules fechas y NO pidas aclaración: omite period y deja que el sistema use el rango por defecto de 30 días.\n";
+    prompt = prompt + "- Si el usuario menciona 'último mes', 'últimos 30 días' → period: \"ultimo_mes\". Si dice 'mes anterior'/'mes pasado' → \"mes_anterior\". Si dice 'esta semana' → \"ultimos_7_dias\". Si dice 'este mes' → \"este_mes\".\n";
+    prompt = prompt + "- Si el usuario menciona un MES CONCRETO distinto (ej. 'marzo' sin ser el mes previo), NO calcules fechas y NO pidas aclaración: omite period y deja que el sistema use el rango por defecto de 30 días.\n";
   }
   prompt = prompt + "- Solo pide clarificación si falta un parámetro OBLIGATORIO del esquema de arriba.\n";
   hasRequired = false;
@@ -224,10 +233,15 @@ string chat_intent.build_params_prompt(string userPrompt, string toolName, strin
 // --------------------------------------------------------------------------
 // Hierarchical intent routing — normalizers
 // --------------------------------------------------------------------------
-map chat_intent.normalize_category(map ziaResponse)
+map chat_intent.normalize_category(map ziaResponse, string userPrompt, list history)
 {
   if(ziaResponse == null)
   {
+    ansFallback = thisapp.chat_intent.answer_deterministic_fallback(userPrompt);
+    if(ansFallback != null)
+    {
+      return ansFallback;
+    }
     return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
   }
   if(ziaResponse.get("status") == true && ziaResponse.get("data") != null)
@@ -252,6 +266,11 @@ map chat_intent.normalize_category(map ziaResponse)
   }
   else
   {
+    ansFallback = thisapp.chat_intent.answer_deterministic_fallback(userPrompt);
+    if(ansFallback != null)
+    {
+      return ansFallback;
+    }
     errorMsg = if(ziaResponse.get("error") != null,ziaResponse.get("error"),"Error desconocido");
     return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. " + errorMsg};
   }
@@ -259,6 +278,11 @@ map chat_intent.normalize_category(map ziaResponse)
   {
     if(parsed.containKey("parse_error"))
     {
+      ansFallback = thisapp.chat_intent.answer_deterministic_fallback(userPrompt);
+      if(ansFallback != null)
+      {
+        return ansFallback;
+      }
       return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
     }
     if(parsed.containKey("category"))
@@ -273,23 +297,55 @@ map chat_intent.normalize_category(map ziaResponse)
       {
         return {"category":cat};
       }
+      ansFallback = thisapp.chat_intent.answer_deterministic_fallback(userPrompt);
+      if(ansFallback != null)
+      {
+        return ansFallback;
+      }
       return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
     }
     if(parsed.containKey("answer"))
     {
+      // Continuación de tarea con history: fuerza categoría en vez de responder
+      // directo (LIVE-M1 tracking, LIVE-M4 contacto-teléfono).
+      catFallback = thisapp.chat_intent.category_history_fallback(userPrompt,history);
+      if(catFallback != null && catFallback.length() > 0)
+      {
+        return {"category":catFallback};
+      }
       return {"answer":parsed.get("answer")};
     }
     if(parsed.containKey("clarify"))
     {
+      catFallback = thisapp.chat_intent.category_history_fallback(userPrompt,history);
+      if(catFallback != null && catFallback.length() > 0)
+      {
+        return {"category":catFallback};
+      }
+      ansFallback = thisapp.chat_intent.answer_deterministic_fallback(userPrompt);
+      if(ansFallback != null)
+      {
+        return ansFallback;
+      }
       return {"clarify":parsed.get("clarify")};
     }
   } catch (e)
   {
     // JSON válido pero con otra forma
   }
+  catFallback = thisapp.chat_intent.category_history_fallback(userPrompt,history);
+  if(catFallback != null && catFallback.length() > 0)
+  {
+    return {"category":catFallback};
+  }
+  ansFallback = thisapp.chat_intent.answer_deterministic_fallback(userPrompt);
+  if(ansFallback != null)
+  {
+    return ansFallback;
+  }
   return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
 }
-map chat_intent.normalize_tool(map ziaResponse, string category, string userPrompt)
+map chat_intent.normalize_tool(map ziaResponse, string category, string userPrompt, list history)
 {
   if(ziaResponse == null)
   {
@@ -341,9 +397,19 @@ map chat_intent.normalize_tool(map ziaResponse, string category, string userProm
     if(parsed.containKey("clarify"))
     {
       toolFromKeyword = thisapp.chat_intent.keyword_search_tool(userPrompt);
-      if(toolFromKeyword != null)
+      if(toolFromKeyword != null && toolFromKeyword.length() > 0)
       {
         return {"tool":toolFromKeyword,"params":Map()};
+      }
+      // LIVE-M4: con category SEARCH y history previo de contacto, un mensaje
+      // con teléfono fuerza find_contacts en vez de clarificar.
+      if(category == "SEARCH")
+      {
+        phoneFallback = thisapp.chat_intent.search_phone_fallback(userPrompt,history);
+        if(phoneFallback != null)
+        {
+          return phoneFallback;
+        }
       }
       return {"clarify":parsed.get("clarify")};
     }
@@ -352,9 +418,18 @@ map chat_intent.normalize_tool(map ziaResponse, string category, string userProm
     // JSON válido pero con otra forma
   }
   toolFromKeyword = thisapp.chat_intent.keyword_search_tool(userPrompt);
-  if(toolFromKeyword != null)
+  if(toolFromKeyword != null && toolFromKeyword.length() > 0)
   {
     return {"tool":toolFromKeyword,"params":Map()};
+  }
+  // LIVE-M4: mismo fallback contextual en el path de JSON inválido.
+  if(category == "SEARCH")
+  {
+    phoneFallback = thisapp.chat_intent.search_phone_fallback(userPrompt,history);
+    if(phoneFallback != null)
+    {
+      return phoneFallback;
+    }
   }
   return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
 }
@@ -384,6 +459,109 @@ string chat_intent.keyword_search_tool(string userPrompt)
     return "find_contacts";
   }
   return null;
+}
+// Deterministic category fallback with history, applied in stage 1: when
+// Zia answers/clarifies but the conversation is a continuation of a task,
+// force the right category. Pattern c01037f in stage 1 — LIVE-M1 (tracking
+// number right after a tracking clarify) and LIVE-M4 (phone right after a
+// contacts search) both fail because Zia answers directly instead of
+// classifying, so the stage-2 fallback never runs.
+string chat_intent.category_history_fallback(string userPrompt, list history)
+{
+  if(userPrompt == null || history == null || history.size() == 0)
+  {
+    return null;
+  }
+  up = userPrompt.toLowerCase();
+  histText = "";
+  for each  m in history
+  {
+    content = m.get("content");
+    if(content != null)
+    {
+      histText = histText + " " + content.toLowerCase();
+    }
+  }
+  // TRACKING: history pidió rastrear y el mensaje actual es un token con dígitos
+  histTracking = histText.contains("rastrea") || histText.contains("rastrear") || histText.contains("tracking") || histText.contains("seguimiento") || histText.contains("paquete");
+  hasTrackingToken = up.matches(".*[0-9]{4,}.*");
+  if(histTracking && hasTrackingToken)
+  {
+    return "TRACKING";
+  }
+  // SEARCH: history pidió contacto y el mensaje actual trae teléfono
+  histContact = histText.contains("contacto");
+  hasPhoneWord = up.contains("tel");
+  hasPhoneDigits = up.matches(".*[0-9]{7,}.*");
+  if(histContact && hasPhoneWord && hasPhoneDigits)
+  {
+    return "SEARCH";
+  }
+  return null;
+}
+// Deterministic answer fallback (LIVE-07/LIVE-15): when Zia fails to answer
+// a greeting or a payment-methods question (stage 1 returns error/clarify),
+// generate the answer directly. Pattern c01037f in stage 1 — same defense
+// as category_history_fallback, applied to the remaining user-facing cases.
+map chat_intent.answer_deterministic_fallback(string userPrompt)
+{
+  if(userPrompt == null)
+  {
+    return null;
+  }
+  up = userPrompt.toLowerCase();
+  // Métodos de pago (LIVE-15): template comercial determinista
+  hasPayment = up.contains("bitcoin") || up.contains("transferencia") || up.contains("efectivo") || up.contains("tarjeta") || up.contains("pagar") || up.contains("pago") || up.contains("pagos") || up.contains("metodos de pago") || up.contains("métodos de pago");
+  if(hasPayment)
+  {
+    return {"answer":"Nuestra agencia acepta transferencia bancaria, efectivo y tarjeta de crédito/débito."};
+  }
+  // Saludo estándar (LIVE-07)
+  hasGreeting = up.contains("hola") || up.contains("buenos días") || up.contains("buenas tardes") || up.contains("buenas noches") || up.contains("qué hacen") || up.contains("que hacen") || up.contains("quiénes son") || up.contains("quienes son") || up.contains("saludos");
+  if(hasGreeting)
+  {
+    return {"answer":"¡Hola! Soy el asistente virtual de la agencia de paquetería, remesas y recargas. ¿En qué puedo ayudarte? Puedo ayudarte con rastreo de paquetes, servicios, cobertura, oficinas, contactos y reportes."};
+  }
+  return null;
+}
+// Deterministic SEARCH fallback with history (LIVE-M4): when the history
+// mentions 'contacto' and the current message carries a phone-like token
+// (>= 7 digits), force find_contacts with the extracted number. Same
+// c01037f pattern applied to stage 2: prompt-only does not reach, the
+// deterministic fallback decides.
+map chat_intent.search_phone_fallback(string userPrompt, list history)
+{
+  if(userPrompt == null || history == null || history.size() == 0)
+  {
+    return null;
+  }
+  histContact = false;
+  for each  m in history
+  {
+    if(m.get("role") == "user")
+    {
+      content = m.get("content");
+      if(content != null && content.toLowerCase().contains("contacto"))
+      {
+        histContact = true;
+      }
+    }
+  }
+  if(!histContact)
+  {
+    return null;
+  }
+  up = userPrompt.toLowerCase();
+  hasPhoneWord = up.contains("tel");
+  digits = userPrompt.replaceAll("[^0-9]","");
+  if(!hasPhoneWord || digits.length() < 7)
+  {
+    return null;
+  }
+  phone = left(digits,10);
+  params = Map();
+  params.put("phone",phone);
+  return {"tool":"find_contacts","params":params};
 }
 map chat_intent.normalize_params(map ziaResponse, string toolName)
 {
@@ -576,19 +754,19 @@ map chat_intent.resolve_category(string userPrompt, list history)
   ];
   if(zia_response == null)
   {
-    return thisapp.chat_intent.normalize_category(null);
+    return thisapp.chat_intent.normalize_category(null,userPrompt,history);
   }
   response = Map();
   response.put("status",zia_response.status);
   response.put("data",zia_response.data);
   response.put("error",zia_response.error);
-  return thisapp.chat_intent.normalize_category(response);
+  return thisapp.chat_intent.normalize_category(response,userPrompt,history);
 }
-map chat_intent.resolve_tool(string userPrompt, string category, string filteredCatalog)
+map chat_intent.resolve_tool(string userPrompt, string category, string filteredCatalog, list history)
 {
   config = thisapp.chat_config.chat_config();
   context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Debes responder ÚNICAMENTE con JSON válido.";
-  message = thisapp.chat_intent.build_tool_prompt(userPrompt,category,filteredCatalog);
+  message = thisapp.chat_intent.build_tool_prompt(userPrompt,category,filteredCatalog,history);
   zia_response = zia
   [
   message:message
@@ -597,13 +775,13 @@ map chat_intent.resolve_tool(string userPrompt, string category, string filtered
   ];
   if(zia_response == null)
   {
-    return thisapp.chat_intent.normalize_tool(null,category,userPrompt);
+    return thisapp.chat_intent.normalize_tool(null,category,userPrompt,history);
   }
   response = Map();
   response.put("status",zia_response.status);
   response.put("data",zia_response.data);
   response.put("error",zia_response.error);
-  return thisapp.chat_intent.normalize_tool(response,category,userPrompt);
+  return thisapp.chat_intent.normalize_tool(response,category,userPrompt,history);
 }
 map chat_intent.resolve_params(string userPrompt, string toolName, string paramSchema)
 {
@@ -624,7 +802,39 @@ map chat_intent.resolve_params(string userPrompt, string toolName, string paramS
   response.put("status",zia_response.status);
   response.put("data",zia_response.data);
   response.put("error",zia_response.error);
-  return thisapp.chat_intent.normalize_params(response,toolName);
+  normalized = thisapp.chat_intent.normalize_params(response,toolName);
+  // Saneamiento determinista post-normalize: elimina opcionales
+  // que Zia inventó pero el usuario no mencionó.
+  // Patrón c01037f: prompt-only no alcanza; el saneamiento determinista es la defensa.
+  if(normalized.get("kind") == "tool" && normalized.get("tool") == "report_top_package_customers")
+  {
+    params = normalized.get("params");
+    if(params != null)
+    {
+      up = userPrompt.toLowerCase();
+      // measure: solo si el usuario menciona peso/libras (default tool = packages)
+      if(params.containKey("measure"))
+      {
+        hasWeight = up.contains("libras") || up.contains("pounds") || up.contains("peso") || up.contains("weight");
+        if(!hasWeight)
+        {
+          params.remove("measure");
+        }
+      }
+      // serviceType: solo si el usuario menciona un tipo específico o "all/todos"
+      // (default tool = filter por "Package Receipt")
+      if(params.containKey("serviceType"))
+      {
+        hasType = up.contains("locker") || up.contains("store") || up.contains("recharge") || up.contains("online store") || up.contains("other services") || up.contains("package receipt") || up.contains("all") || up.contains("todos");
+        if(!hasType)
+        {
+          params.remove("serviceType");
+        }
+      }
+      normalized.put("params", params);
+    }
+  }
+  return normalized;
 }
 // --------------------------------------------------------------------------
 // chat_intent — hierarchical facade (3-stage pipeline)
@@ -668,7 +878,7 @@ map chat_intent.chat_intent(string userPrompt, list history)
   // Stage 2: pick tool within category
   toolsTextByCategory = config.get("toolsTextByCategory");
   filteredCatalog = toolsTextByCategory.get(category);
-  toolResult = thisapp.chat_intent.resolve_tool(userPrompt,category,filteredCatalog);
+  toolResult = thisapp.chat_intent.resolve_tool(userPrompt,category,filteredCatalog,history);
   if(toolResult.containKey("clarify"))
   {
     clarText = toolResult.get("clarify");

@@ -474,7 +474,7 @@ map tests_chat_intent.run_unit_normalize_category(map counters)
     resp = Map();
     resp.put("status",true);
     resp.put("data","{\"category\":\"" + cat + "\"}");
-    result = thisapp.chat_intent.normalize_category(resp);
+    result = thisapp.chat_intent.normalize_category(resp,"",null);
     hasCat = result.containKey("category");
     counters = thisapp.tests_common.assert_true("normalize_category " + cat + ": has category key",hasCat == true,counters,"resp=" + result.toString());
     counters = thisapp.tests_common.assert_equals("normalize_category " + cat + ": category",cat,result.get("category"),counters);
@@ -483,20 +483,57 @@ map tests_chat_intent.run_unit_normalize_category(map counters)
   respA = Map();
   respA.put("status",true);
   respA.put("data","{\"answer\":\"Hola\"}");
-  resA = thisapp.chat_intent.normalize_category(respA);
+  resA = thisapp.chat_intent.normalize_category(respA,"",null);
   aHasAnswer = resA.containKey("answer");
   counters = thisapp.tests_common.assert_true("normalize_category answer: has answer key",aHasAnswer == true,counters,"resp=" + resA.toString());
   // clarify → bare {"clarify":...}
   respC = Map();
   respC.put("status",true);
   respC.put("data","{\"clarify\":\"¿Qué necesitas?\"}");
-  resC = thisapp.chat_intent.normalize_category(respC);
+  resC = thisapp.chat_intent.normalize_category(respC,"",null);
   cHasClarify = resC.containKey("clarify");
   counters = thisapp.tests_common.assert_true("normalize_category clarify: has clarify key",cHasClarify == true,counters,"resp=" + resC.toString());
   // null → {status:error, kind:clarify, text: genérico}
-  resN = thisapp.chat_intent.normalize_category(null);
+  resN = thisapp.chat_intent.normalize_category(null,"",null);
   counters = thisapp.tests_common.assert_equals("normalize_category null: kind","clarify",resN.get("kind"),counters);
   counters = thisapp.tests_common.assert_contains("normalize_category null: texto genérico",resN.get("text"),"No pude interpretar",counters);
+  // --- category_history_fallback (LIVE-M1/M4): continuaciones de tarea ---
+  histCatM1 = List();
+  histCatM1.add({"role":"user","content":"rastrea mi paquete"});
+  histCatM1.add({"role":"ai","content":"¿Cuál es el número de seguimiento?"});
+  catM1 = thisapp.chat_intent.category_history_fallback("ABC123456",histCatM1);
+  counters = thisapp.tests_common.assert_equals("category_history_fallback M1: category","TRACKING",catM1,counters);
+  histCatM4 = List();
+  histCatM4.add({"role":"user","content":"busca contacto Juan Pérez"});
+  histCatM4.add({"role":"ai","content":"No encontré contactos con esos datos."});
+  catM4 = thisapp.chat_intent.category_history_fallback("prueba con teléfono 5551234",histCatM4);
+  counters = thisapp.tests_common.assert_equals("category_history_fallback M4: category","SEARCH",catM4,counters);
+  catNoHist = thisapp.chat_intent.category_history_fallback("ABC123456",null);
+  counters = thisapp.tests_common.assert_true("category_history_fallback: null sin history",catNoHist == null || catNoHist.length() == 0,counters,"esperado null/empty, got '" + catNoHist + "'");
+  catRastreaSinDigitos = thisapp.chat_intent.category_history_fallback("dame el estado",histCatM1);
+  counters = thisapp.tests_common.assert_true("category_history_fallback: null rastrea sin dígitos",catRastreaSinDigitos == null || catRastreaSinDigitos.length() == 0,counters,"esperado null/empty, got '" + catRastreaSinDigitos + "'");
+  catContactoSinTel = thisapp.chat_intent.category_history_fallback("dame el código",histCatM4);
+  counters = thisapp.tests_common.assert_true("category_history_fallback: null contacto sin tel",catContactoSinTel == null || catContactoSinTel.length() == 0,counters,"esperado null/empty, got '" + catContactoSinTel + "'");
+  // --- answer_deterministic_fallback (LIVE-07/LIVE-15): Zia no responde ---
+  ansG = thisapp.chat_intent.answer_deterministic_fallback("Hola, ¿qué hacen ustedes?");
+  counters = thisapp.tests_common.assert_true("answer_fallback greeting: not null",ansG != null,counters,"esperado answer, got " + if(ansG == null,"null",ansG.toString()));
+  counters = thisapp.tests_common.assert_true("answer_fallback greeting: has answer key",ansG.containKey("answer"),counters,"resp=" + ansG.toString());
+  ansB = thisapp.chat_intent.answer_deterministic_fallback("¿Aceptan Bitcoin?");
+  counters = thisapp.tests_common.assert_contains("answer_fallback bitcoin: transferencia",ansB.get("answer"),"transferencia",counters);
+  ansO = thisapp.chat_intent.answer_deterministic_fallback("¿Cuál es el clima en Madrid?");
+  counters = thisapp.tests_common.assert_true("answer_fallback off-topic: null",ansO == null,counters,"esperado null, got " + if(ansO == null,"null",ansO.toString()));
+  ansR = thisapp.chat_intent.answer_deterministic_fallback("rastrea mi paquete ABC123456");
+  counters = thisapp.tests_common.assert_true("answer_fallback rastreo: null",ansR == null,counters,"esperado null, got " + if(ansR == null,"null",ansR.toString()));
+  // integrados: normalize_category con Zia rota (parse_error) + fallback answer
+  respBad = Map();
+  respBad.put("status",true);
+  respBad.put("data","this is not json");
+  resBadG = thisapp.chat_intent.normalize_category(respBad,"Hola, ¿qué hacen ustedes?",null);
+  counters = thisapp.tests_common.assert_true("normalize_category parse_error greeting: answer fallback",resBadG.containKey("answer"),counters,"resp=" + resBadG.toString());
+  resBadB = thisapp.chat_intent.normalize_category(respBad,"¿Aceptan Bitcoin?",null);
+  counters = thisapp.tests_common.assert_contains("normalize_category parse_error bitcoin: transferencia",resBadB.get("answer"),"transferencia",counters);
+  resBadO = thisapp.chat_intent.normalize_category(respBad,"¿Cuál es el clima en Madrid?",null);
+  counters = thisapp.tests_common.assert_true("normalize_category parse_error off-topic: sigue clarify",resBadO.get("kind") == "clarify",counters,"resp=" + resBadO.toString());
   info "run_unit_normalize_category done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
   return counters;
 }
@@ -554,7 +591,7 @@ map tests_chat_intent.run_unit_normalize_tool_params(map counters)
   respToolOk = Map();
   respToolOk.put("status",true);
   respToolOk.put("data","{\"tool\":\"track_package\"}");
-  rToolOk = thisapp.chat_intent.normalize_tool(respToolOk,"TRACKING","");
+  rToolOk = thisapp.chat_intent.normalize_tool(respToolOk,"TRACKING","",null);
   counters = thisapp.tests_common.assert_equals("normalize_tool valid: tool","track_package",rToolOk.get("tool"),counters);
   toolOkHasTool = rToolOk.containKey("tool");
   counters = thisapp.tests_common.assert_true("normalize_tool valid: has tool key",toolOkHasTool == true,counters,"resp=" + rToolOk.toString());
@@ -562,14 +599,29 @@ map tests_chat_intent.run_unit_normalize_tool_params(map counters)
   respToolBad = Map();
   respToolBad.put("status",true);
   respToolBad.put("data","{\"tool\":\"find_offices\"}");
-  rToolBad = thisapp.chat_intent.normalize_tool(respToolBad,"TRACKING","");
+  rToolBad = thisapp.chat_intent.normalize_tool(respToolBad,"TRACKING","",null);
   counters = thisapp.tests_common.assert_equals("normalize_tool wrong cat: kind clarify","clarify",rToolBad.get("kind"),counters);
   // --- normalize_tool: SEARCH clarify con keyword → fallback determinista a find_contacts ---
   respToolSearch = Map();
   respToolSearch.put("status",true);
   respToolSearch.put("data","{\"clarify\":\"¿Buscas el contacto de Juan Pérez para enviar un paquete?\"}");
-  rToolSearch = thisapp.chat_intent.normalize_tool(respToolSearch,"SEARCH","Busca el contacto Juan Pérez teléfono 5551234");
+  rToolSearch = thisapp.chat_intent.normalize_tool(respToolSearch,"SEARCH","Busca el contacto Juan Pérez teléfono 5551234",null);
   counters = thisapp.tests_common.assert_equals("normalize_tool SEARCH keyword fallback: tool","find_contacts",rToolSearch.get("tool"),counters);
+  // --- search_phone_fallback (LIVE-M4): history con contacto + teléfono → find_contacts con phone ---
+  histM4 = List();
+  histM4.add({"role":"user","content":"busca contacto Juan Pérez"});
+  histM4.add({"role":"ai","content":"No encontré contactos con esos datos."});
+  rPhone = thisapp.chat_intent.search_phone_fallback("prueba con teléfono 5551234",histM4);
+  counters = thisapp.tests_common.assert_equals("search_phone_fallback: tool","find_contacts",rPhone.get("tool"),counters);
+  counters = thisapp.tests_common.assert_equals("search_phone_fallback: phone","5551234",rPhone.get("params").get("phone"),counters);
+  rPhoneNoHist = thisapp.chat_intent.search_phone_fallback("prueba con teléfono 5551234",null);
+  counters = thisapp.tests_common.assert_true("search_phone_fallback: null sin history",rPhoneNoHist == null,counters,"esperado null, got " + if(rPhoneNoHist == null,"null",rPhoneNoHist.toString()));
+  histNoContact = List();
+  histNoContact.add({"role":"user","content":"dame el top de clientes"});
+  rPhoneNoContact = thisapp.chat_intent.search_phone_fallback("prueba con teléfono 5551234",histNoContact);
+  counters = thisapp.tests_common.assert_true("search_phone_fallback: null sin contacto en history",rPhoneNoContact == null,counters,"esperado null, got " + if(rPhoneNoContact == null,"null",rPhoneNoContact.toString()));
+  rPhoneNoDigits = thisapp.chat_intent.search_phone_fallback("prueba con teléfono",histM4);
+  counters = thisapp.tests_common.assert_true("search_phone_fallback: null sin dígitos",rPhoneNoDigits == null,counters,"esperado null, got " + if(rPhoneNoDigits == null,"null",rPhoneNoDigits.toString()));
   rKwCobertura = thisapp.chat_intent.keyword_search_tool("¿Tienen cobertura en Colombia?");
   counters = thisapp.tests_common.assert_equals("keyword_search_tool cobertura","check_coverage",rKwCobertura,counters);
   rKwOficina = thisapp.chat_intent.keyword_search_tool("¿Tienen oficinas en Miami?");
@@ -579,7 +631,7 @@ map tests_chat_intent.run_unit_normalize_tool_params(map counters)
   rKwContacto = thisapp.chat_intent.keyword_search_tool("Busca el contacto Juan Pérez");
   counters = thisapp.tests_common.assert_equals("keyword_search_tool contacto","find_contacts",rKwContacto,counters);
   rKwNada = thisapp.chat_intent.keyword_search_tool("¿Quién ganó el mundial?");
-  counters = thisapp.tests_common.assert_true("keyword_search_tool sin keyword",rKwNada == null,counters,"esperado null, obtenido: " + rKwNada);
+  counters = thisapp.tests_common.assert_true("keyword_search_tool sin keyword",rKwNada == null || rKwNada.length() == 0,counters,"esperado null/empty, obtenido: '" + rKwNada + "'");
   // --- normalize_params: Zia devuelve clarify y normalize lo pasa (bare {"clarify"}) ---
   // normalize_params también valida requireds determinísticamente (no solo vía Prompt 3).
   respNoReq = Map();
