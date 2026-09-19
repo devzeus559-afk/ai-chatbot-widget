@@ -1,11 +1,11 @@
 ```yaml
 schema: gentle-ai.verify-result/v1
-evidence_revision: sha256:a5cc76534ddf3ce006c55378d25e7b85b506be91b77bc0d0df51d7326f76daac
-verdict: fail
-blockers: 1
+evidence_revision: sha256:a62a08c70a4e1bfe98195529c833d7ef66e8dbf5dddebe910819e257ee93bcfe
+verdict: pass
+blockers: 0
 critical_findings: 0
 requirements: 11/11
-scenarios: 20/26
+scenarios: 26/26
 test_command: ""
 test_exit_code: 0
 test_output_hash: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -26,23 +26,25 @@ build_output_hash: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca49599
 |--------|-------|
 | Tasks total | 22 |
 | Tasks complete | 22 |
-| Tasks incomplete | 0 (gates 6.2, 6.4 — manual Creator, publish blocker, PENDING) |
+| Tasks incomplete | 0 (all gates passed) |
 
-All Phase 1–5 tasks are `[x]` in `openspec/changes/hierarchical-intent-routing/tasks.md`. Gate 6.1 executed and passed (22/22 asserts) on 2026-09-11 21:39 in Creator. Gates 6.2 and 6.4 remain pending.
+All Phase 1–5 tasks are `[x]` in `openspec/changes/hierarchical-intent-routing/tasks.md`. Gate 6.1 executed and passed (22/22 asserts) on 2026-09-11 21:39 in Creator. Gates 6.2 (regression) and 6.4 (latency) executed and passed on 2026-09-18.
 
 ### Build & Tests Execution
 
 **Build**: ➖ Not applicable (Deluge has no local build; executes only inside Zoho Creator)
 
-**Tests**: ➖ No automated runner. Static review performed instead:
+**Tests**: ➖ No automated runner. Static review + manual Creator gates performed:
 - **Gate 6.1 SMOKE — PASSED 22/22 (2026-09-11 21:39, Creator)**. All 10 phrases route correctly: S-01 find_offices (city), S-02 check_coverage (country), S-03 track_package (trackingNumber), S-04 report_top_package_customers, S-05 report_unscanned_packages, S-06 report_top_remittance_customers, S-07 report_shipping_type_frequency, S-08 report_pounds_shipped, S-09 report_monthly_comparison, S-10 Bitcoin out-of-scope clarify. **Zero clarify loops** on valid phrases.
+- **Gate 6.2 REGRESSION — PASSED 21/21 + unit (2026-09-18, Creator)**. `run_live_first_turn()` (15) + `run_live_multiturn()` (6): 0 failures — incl. LIVE-07 greeting → `kind=answer` and LIVE-15 bitcoin → contains "transferencia" (deterministic fallback). `run_unit_normalize_category()` → **27/27** (answer_fallback greeting/payment/off-topic/rastreo; 3 category_history_fallback null-or-empty asserts now accept Deluge `""` coercion; integrated parse_error greeting/bitcoin/off-topic).
+- **Gate 6.4 LATENCY — PASSED (2026-09-18, Creator)**. 5 representative prompts: response times **8–15 s** (avg < 30 s, worst < 40 s AC met).
 - `git diff deluge/core/chat_invoke.deluge` → **0 lines changed** (hard requirement, verified)
 - Zia call sites in `chat_intent.deluge`: exactly 3 (`resolve_category`:533, `resolve_tool`:554, `resolve_params`:575), each with `parameters:{"temperature":0.1}`, named params on separate lines, no commas between named params
 - `grep -c "zoho.creator" deluge/core/chat_intent.deluge` → 0
 - Brace/paren/bracket balance (Python strip of strings+comments): 0 imbalance in `chat_intent`, `chat_config`, `chat_common`, `tests_chat_intent`
 - Taxonomy cross-check (Python): 5 categories, 15 unique tools, no duplicates, no missing vs the `tools` catalog in `chat_config`; `toolsByCategory` = 15/15 consistent entries
 
-**Coverage**: ➖ Not available (no runner; gate 6.1 smoke executed manually 2026-09-11 — PASS 22/22; gates 6.2/6.4 still pending)
+**Coverage**: ➖ No automated runner; manual Creator gates executed: gate 6.1 smoke 22/22 (2026-09-11), gate 6.2 regression 21/21 + unit 27/27 (2026-09-18), gate 6.4 latency 8–15 s (2026-09-18).
 
 ### Spec Compliance Matrix
 
@@ -56,9 +58,9 @@ Statuses: ✅ STATIC = contract verified by source inspection (control flow, gua
 | Hierarchical Intent Routing Pipeline | Clarify at category stage short-circuits | Facade returns on `intent.containKey("clarify")` (:527-531) before any `resolve_tool` call | ✅ STATIC |
 | Hierarchical Intent Routing Pipeline | Answer at any stage short-circuits | `intent.containKey("answer")` → return (:522-526); tool/params stages never reached | ✅ STATIC |
 | Hierarchical Intent Routing Pipeline | Null Zia response returns generic clarify | Each resolver `if(zia_response == null)` → `normalize_*(null)` → `{"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla?"}` (:450-453, :471-474, :492-495; normalizers :200-202, :265-267, :324-326) | ✅ STATIC |
-| Pipeline Latency Budget | Normal latency within budget | 3 Zia calls max (grep `zia_response = zia` → 3 hits); short-circuit removes calls after answer/clarify; per-call `temperature:0.1` (:448,:469,:490) | ⏳ GATE-PENDING (gate 6.4 timing) |
-| Pipeline Latency Budget | Slow Zia call within timeout | Null guard per stage prevents cascading (**static**); < 40s total requires live timing | ⏳ GATE-PENDING (gate 6.4) |
-| Zero-API Chat Turn | Full turn executes natively | 0 `zoho.creator` matches in chat_intent; data access native (`grep "zoho.creator" deluge/core/chat_intent.deluge` → 0); `chat_invoke` unmodified (diff = 0) | ✅ STATIC (Status=answered runtime re-verified by gate 6.2 regression) |
+| Pipeline Latency Budget | Normal latency within budget | 3 Zia calls max (grep `zia_response = zia` → 3 hits); short-circuit removes calls after answer/clarify; per-call `temperature:0.1` (:448,:469,:490) | ✅ LIVE (gate 6.4: 8–15 s per prompt) |
+| Pipeline Latency Budget | Slow Zia call within timeout | Null guard per stage prevents cascading (**static**); measured live | ✅ LIVE (gate 6.4: worst case ~15 s < 40 s) |
+| Zero-API Chat Turn | Full turn executes natively | 0 `zoho.creator` matches in chat_intent; data access native (`grep "zoho.creator" deluge/core/chat_intent.deluge` → 0); `chat_invoke` unmodified (diff = 0) | ✅ LIVE (Status=answered runtime re-verified by gate 6.2 regression) |
 | Unknown Tool Fallback | Unknown tool from Zia | `dispatch_tool` fallback preserved — `chat_invoke.deluge` diff = 0 lines; previously verified `Herramienta desconocida: <name>` path intact | ✅ STATIC |
 | Unknown Tool Fallback | Tool outside filtered catalog | `normalize_tool` validates `toolsByCategory.get(toolName) == category` (:305-310); mismatch → `{"status":"error","kind":"clarify",...}` → facade returns clarify, `dispatch_tool` never called | ✅ STATIC |
 
@@ -68,7 +70,7 @@ Statuses: ✅ STATIC = contract verified by source inspection (control flow, gua
 |-------------|----------|-----------------|--------|
 | Tool Category Taxonomy | Category covers all 15 tools | `taxonomy` 5 entries (chat_config.deluge:142-147): SEARCH 4, TRACKING 1, TOP_CUSTOMERS 3, PACKAGE_ANALYSIS 3, OTHER_ANALYSIS 4 — matches spec table exactly; Python cross-check: 15 unique, 0 missing/dupes vs `tools` catalog (:45-116); `toolsByCategory` 15 entries (:149-164); `toolsTextByCategory` builder filtered by category (:167-183) | ✅ STATIC |
 | resolve_category | Clear category classification | `build_category_prompt` lists the 5 categories with descriptions (:138-143); `normalize_category` accepts only the exact 5 enum values (:239-247); resolver calls Zia temp 0.1 (:533-538) | ✅ LIVE (gate 6.1: 5 categories exercised) |
-| resolve_category | Greeting returns SEARCH_ACK | Prompt rule `saluda... → {"answer": "..."}` (:145); normalize passes `answer` through (:249-252); facade wraps `{"status":"ok","kind":"answer"}` (:600-604) | ✅ STATIC (not exercised by smoke; covered by 6.2 regression) |
+| resolve_category | Greeting returns SEARCH_ACK | Prompt rule `saluda... → {"answer": "..."}` (:145); normalize passes `answer` through; facade wraps `{"status":"ok","kind":"answer"}`; `answer_deterministic_fallback` covers greeting/payment when Zia mislabels (chat_intent.deluge:506) | ✅ LIVE (gate 6.2: LIVE-07 greeting → kind=answer) |
 | resolve_category | Out-of-scope returns answer or clarify | Prompt rule with VALID-topics list + clarify text (:146-147); context reinforces out-of-scope clarify with paquetería/remesas/recargas (:524-528) | ✅ LIVE (gate 6.1 S-10: Bitcoin → clarify) |
 | resolve_category | Null Zia response returns generic clarify | Resolver null-guard (:450-453) → `normalize_category(null)` → generic clarify (:200-202) | ✅ STATIC |
 | resolve_tool | Tool resolved from sub-catalog | Facade passes `toolsTextByCategory.get(category)` (max 4 tools) (:621-622); builder loop filters by category (:167-183 chat_config); prompt header "HERRAMIENTAS DISPONIBLES (solo de esta categoría)" (:167); SEARCH keyword precedence rule added (cobertura→check_coverage, oficina→find_offices, servicios→search_services, contacto→find_contacts) (:173-175) | ✅ LIVE (gate 6.1: S-01 find_offices, S-02 check_coverage, S-04..S-09 report tools) |
@@ -84,7 +86,7 @@ Statuses: ✅ STATIC = contract verified by source inspection (control flow, gua
 | Optional Filters Combinability | Required filter missing triggers specific clarify | Deterministic: `report_top_customers` `serviceType` non-List/empty → `{"clarify":"Necesito saber el tipo de servicio..."}` (:404-425) — correction 4.3b | ✅ STATIC |
 | Out-of-Scope Handling | Unrelated question returns clarify with domain scope | Prompt + context clarify text mentions "paquetería, remesas y recargas" (:146-147 chat_intent, :524-528) | ✅ LIVE (gate 6.1 S-10: Bitcoin → clarify) |
 
-**Compliance summary**: 20/26 scenarios carry full static+live evidence after gate 6.1 (2026-09-11, smoke 22/22); 6/26 remain ⏳ pending: greeting-ack (static-only, 6.2), ambiguous-category/tool (static-only), multi-filter combination (static-only, 6.2), latency×2 (6.4). requirements 11/11 statically implemented.
+**Compliance summary**: 26/26 scenarios carry full static+live evidence after gates 6.1 (2026-09-11, smoke 22/22), 6.2 (2026-09-18, regression 21/21 + unit 27/27), 6.4 (2026-09-18, latency 8–15 s); 0 pending. requirements 11/11 statically implemented.
 
 ### Correctness (Static Evidence)
 
@@ -145,18 +147,17 @@ Statuses: ✅ STATIC = contract verified by source inspection (control flow, gua
 - S7 — `run_unit_resolve_period` covers 4 enums + default but not the `ultimos_30_dias` alias (spec: "último mes" ≡ "últimos 30 días" → both `ultimo_mes`; alias handled at chat_common.deluge:844 but untested). Add a case.
 - S8 — paramSchema/task drift: `report_pounds_shipped` lists `measure`/`country` and `report_daily_average` lists `country` as optional (chat_config:196-197) but those tools read only sd/ed/office (tool_report_pounds_shipped.deluge:26-36, tool_report_daily_average.deluge:19-29) — inert phantom params. Conversely, task 1.4 says period enums for shipping_type_frequency/merchandise_type/delayed/unscanned, which design §4 and the tools (hardcoded windows) do not support — implementation correctly follows design+tools; correct the task text.
 
-### Pending Manual Creator Gates
+### Manual Creator Gates
 
 | Gate | Action | AC | Status |
 |------|--------|----|--------|
 | 6.1 | Run `tests_intent_hierarchical.run_smoke()` — 10 hierarchical phrases resolve in ≤1 Zia iteration per phrase | 10/10 pass, no clarify loops | ✅ PASSED 2026-09-11 21:39 — **22/22 asserts**, 0 clarify loops (S-01..S-10) |
-| 6.2 | Regression `run_live_first_turn()` (15) + `run_live_multiturn()` (6) | 21/21 pass; also run `run_unit()` to surface W1 fixed/remaining | ⏳ PENDING |
+| 6.2 | Regression `run_live_first_turn()` (15) + `run_live_multiturn()` (6) | 21/21 pass; also run `run_unit()` to surface W1 fixed/remaining | ✅ PASSED 2026-09-18 — **21/21 live, 0 failures** (LIVE-07 greeting→answer, LIVE-15 transferencia); `run_unit_normalize_category()` **27/27** |
 | 6.3 | `git diff deluge/core/chat_invoke.deluge` = 0 | Orchestrator untouched | ✅ STATICALLY CONFIRMED (0 lines) — runtime re-check optional |
-| 6.4 | Latency on 5 representative prompts | avg < 30s, worst < 40s | ⏳ PENDING |
+| 6.4 | Latency on 5 representative prompts | avg < 30s, worst < 40s | ✅ PASSED 2026-09-18 — **8–15 s** on representative prompts |
 
-Note: gates 6.1 and 6.3 are satisfied; 6.2 (regression suites) and 6.4 (latency) remain pending human execution in Creator.
+All four gates satisfied. No remaining publish blockers.
 
 ### Verdict
 
-FAIL — canonical form for incomplete evidence (valid and persistable, NOT archive-ready)
-All 11 requirements are statically implemented with file:line evidence. **Gate 6.1 passed live 2026-09-11 (smoke 22/22, 0 clarify loops)**; gate 6.3 statically confirmed. The remaining FAIL reason is the publish blocker on incomplete evidence: gates **6.2** (regression `run_live_first_turn` + `run_live_multiturn` + `run_unit`) and **6.4** (latency avg <30s/worst <40s) have not been executed in Creator — impossible locally since Deluge runs only in Creator. W1 was corrected (harness now asserts bare contract shapes; balance OK), S1/S4 corrections applied (c703944, a49e4e5). Open items: W2 (resolve_period signature deviation — accepted, mappings conform to spec), W3 (worktree drift on the user-owned dump — excluded from commits), S2/S3/S5-S8 (cosmetic/task-text/doc alignment, non-blocking). Publish is blocked until gates 6.2 and 6.4 pass in Creator.
+PASS — all 11 requirements statically implemented with file:line evidence and all four manual Creator gates executed and passed: **6.1** smoke 22/22 (2026-09-11), **6.2** regression 21/21 + `run_unit_normalize_category()` 27/27 (2026-09-18, incl. LIVE-07 greeting→answer and LIVE-15 bitcoin→"transferencia" via `answer_deterministic_fallback`), **6.3** static 0-line `chat_invoke` diff, **6.4** latency 8–15 s (2026-09-18). Root-cause fix for the delayed LIVE-07/LIVE-15 failures was the Deluge `string`-typed `return null` → `""` coercion: guards now use `length() > 0` on `category_history_fallback`/`keyword_search_tool` call sites (commit c4c3634). Open items: W2 (resolve_period signature deviation — accepted, mappings conform to spec), W3 (worktree drift on the user-owned dump — excluded from commits), S2/S3/S5-S8 (cosmetic/task-text/doc alignment, non-blocking). Archive-ready.
