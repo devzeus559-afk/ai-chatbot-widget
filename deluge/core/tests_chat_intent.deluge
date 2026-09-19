@@ -627,7 +627,13 @@ map tests_chat_intent.run_unit_normalize_tool_params(map counters)
   rKwOficina = thisapp.chat_intent.keyword_search_tool("¿Tienen oficinas en Miami?");
   counters = thisapp.tests_common.assert_equals("keyword_search_tool oficina","find_offices",rKwOficina,counters);
   rKwServicios = thisapp.chat_intent.keyword_search_tool("¿Qué servicios tienen?");
-  counters = thisapp.tests_common.assert_equals("keyword_search_tool servicios","search_services",rKwServicios,counters);
+  counters = thisapp.tests_common.assert_equals("keyword_search_tool servicios","list_service_types",rKwServicios,counters);
+  rKwTipos = thisapp.chat_intent.keyword_search_tool("¿Qué tipos de servicio ofrecen?");
+  counters = thisapp.tests_common.assert_equals("keyword_search_tool tipos servicio","list_service_types",rKwTipos,counters);
+  rKwServeConFiltro = thisapp.chat_intent.keyword_search_tool("¿Qué servicios de paquetería hay a Madrid?");
+  counters = thisapp.tests_common.assert_equals("keyword_search_tool servicios con filtro","search_services",rKwServeConFiltro,counters);
+  rKwSingularTipo = thisapp.chat_intent.keyword_search_tool("¿Qué servicio tienen para remesas a Colombia?");
+  counters = thisapp.tests_common.assert_equals("keyword_search_tool servicio singular con tipo","search_services",rKwSingularTipo,counters);
   rKwContacto = thisapp.chat_intent.keyword_search_tool("Busca el contacto Juan Pérez");
   counters = thisapp.tests_common.assert_equals("keyword_search_tool contacto","find_contacts",rKwContacto,counters);
   rKwNada = thisapp.chat_intent.keyword_search_tool("¿Quién ganó el mundial?");

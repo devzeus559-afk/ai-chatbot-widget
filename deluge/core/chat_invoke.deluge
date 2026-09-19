@@ -180,6 +180,10 @@ map chat_invoke.dispatch_tool(string toolName, map params)
   {
     return thisapp.chat_tools.search_services(params);
   }
+  if(toolName == "list_service_types")
+  {
+    return thisapp.chat_tools.list_service_types(params);
+  }
   if(toolName == "find_offices")
   {
     return thisapp.chat_tools.find_offices(params);
