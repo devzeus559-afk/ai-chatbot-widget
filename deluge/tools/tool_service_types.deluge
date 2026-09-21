@@ -1,0 +1,24 @@
+/**
+* tool_service_types.deluge
+*
+* Catálogo determinista de TIPOS de servicio que ofrece la agencia.
+* Devuelve: {"ok": true, "data": [{type, label}]}
+*
+* NO consulta base de datos ni Zia: catálogo estático por diseño.
+* Distinto de search_services (que busca servicios puntuales con filtros).
+* Tipos reales del picklist del módulo Service (dump).
+*/
+
+map chat_tools.list_service_types(map params)
+{
+  config = thisapp.chat_config.chat_config();
+  catalog = List();
+  catalog.add({"type":"Package Receipt","label":"Paquetería"});
+  catalog.add({"type":"Locker","label":"Locker"});
+  catalog.add({"type":"Store","label":"Store"});
+  catalog.add({"type":"Remittance","label":"Remesa"});
+  catalog.add({"type":"Recharge","label":"Recarga"});
+  catalog.add({"type":"Online Store","label":"Tienda Online"});
+  catalog.add({"type":"Other Services","label":"Otros Servicios"});
+  return {"ok":true,"data":catalog};
+}

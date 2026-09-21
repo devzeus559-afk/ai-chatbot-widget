@@ -117,6 +117,11 @@ map chat_config.chat_config()
   tool.put("description","Informe de cajas que no han sido escaneadas (Pkg_Tracking.Scanned == false), con su último estado, fecha de escaneo y oficina. Params opcionales: limit, office (nombre de oficina).");
   tool.put("params",{"limit":"string opcional","office":"string opcional"});
   tools.add(tool);
+  tool = Map();
+  tool.put("name","list_service_types");
+  tool.put("description","Lista los TIPOS de servicio que ofrece la agencia (catálogo: Paquetería, Locker, Store, Remesa, Recarga, Tienda Online, Otros Servicios). SIN parámetros. Úsalo cuando el usuario pregunte qué servicios ofrecen, qué servicios tienen, tipos de servicio o servicios disponibles. NO es para buscar servicios puntuales con tipo/destino (eso es search_services). Si el usuario no menciona tipo ni destino, usa este tool — NO pidas aclaración.");
+  tool.put("params",{});
+  tools.add(tool);
   /**
   * SUGERENCIAS UI — NO viven en el backend.
   * El Widget SDK v1 NO expone ZOHO.CREATOR.API.invoke, así que el widget no
@@ -141,7 +146,7 @@ map chat_config.chat_config()
   config.put("toolsText",toolsText);
   // --- Hierarchical intent routing: taxonomy + param schemas ---
   taxonomy = Map();
-  taxonomy.put("SEARCH",{"search_services","find_offices","check_coverage","find_contacts"});
+  taxonomy.put("SEARCH",{"search_services","list_service_types","find_offices","check_coverage","find_contacts"});
   taxonomy.put("TRACKING",{"track_package"});
   taxonomy.put("TOP_CUSTOMERS",{"report_top_customers","report_top_package_customers","report_top_remittance_customers"});
   taxonomy.put("PACKAGE_ANALYSIS",{"report_pounds_shipped","report_daily_average","report_monthly_comparison"});
@@ -149,6 +154,7 @@ map chat_config.chat_config()
   config.put("taxonomy",taxonomy);
   toolsByCategory = Map();
   toolsByCategory.put("search_services","SEARCH");
+  toolsByCategory.put("list_service_types","SEARCH");
   toolsByCategory.put("find_offices","SEARCH");
   toolsByCategory.put("check_coverage","SEARCH");
   toolsByCategory.put("find_contacts","SEARCH");
@@ -196,6 +202,7 @@ map chat_config.chat_config()
   paramSchema = Map();
   paramSchema.put("track_package","REQUIRED: trackingNumber (string — número de seguimiento del paquete)");
   paramSchema.put("search_services","OPTIONAL: serviceType (string), destination (string)");
+  paramSchema.put("list_service_types","OPTIONAL: (ninguno — catálogo estático, sin parámetros)");
   paramSchema.put("find_offices","OPTIONAL: city (string), country (string), phone (string), document (string)");
   paramSchema.put("check_coverage","OPTIONAL: country (string), city (string), vendor (string)");
   paramSchema.put("find_contacts","OPTIONAL: name (string), phone (string), document (string)");

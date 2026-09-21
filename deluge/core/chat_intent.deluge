@@ -172,7 +172,7 @@ prompt = prompt + "REGLAS:\n";
   prompt = prompt + "- Si el usuario menciona remesas → considera tools con 'remittance' en el nombre.\n";
   if(category == "SEARCH")
   {
-    prompt = prompt + "- SEARCH: si el usuario menciona 'cobertura' → check_coverage. Si menciona 'oficina'/'sucursal' → find_offices. Si menciona 'servicios' → search_services. Si menciona 'contacto' → find_contacts. NUNCA clarifiques para elegir entre estas: usa la palabra clave.\n";
+    prompt = prompt + "- SEARCH: si el usuario pregunta por los servicios que ofrece la agencia (catálogo, ej. 'qué servicios ofrecen', 'tipos de servicio') → list_service_types. Si menciona 'cobertura' → check_coverage. Si menciona 'oficina'/'sucursal' → find_offices. Si menciona 'servicios' con tipo o destino puntual → search_services. Si menciona 'contacto' → find_contacts. NUNCA clarifiques para elegir entre estas: usa la palabra clave.\n";
   }
   prompt = prompt + "- Si falta un parámetro OBLIGATORIO (trackingNumber, serviceType como lista ≥1), AÚN ASÍ elige la herramienta. No pidas clarify aquí.\n";
   prompt = prompt + "- NUNCA devuelvas texto fuera del JSON.\n\n";
@@ -450,7 +450,15 @@ string chat_intent.keyword_search_tool(string userPrompt)
   {
     return "find_offices";
   }
-  if(userPrompt.contains("servicios"))
+  up = userPrompt.toLowerCase();
+  // Si menciona un tipo de servicio específico o "servicios de X" → búsqueda
+  // filtrada (search_services), NUNCA catálogo.
+  hasSpecificType = up.contains("paqueter") || up.contains("package") || up.contains("locker") || up.contains("store") || up.contains("remesa") || up.contains("remittance") || up.contains("recarga") || up.contains("recharge") || up.contains("online") || up.contains("other services") || up.contains("servicios de");
+  if((up.contains("servicios") || up.contains("servicio")) && !hasSpecificType && (up.contains("ofrecen") || up.contains("ofrece") || up.contains("tienen") || up.contains("tiene") || up.contains("tipos de servicio") || up.contains("tipo de servicio") || up.contains("servicios disponibles")))
+  {
+    return "list_service_types";
+  }
+  if((up.contains("servicios") || up.contains("servicio")) && (hasSpecificType || !(up.contains("ofrecen") || up.contains("ofrece") || up.contains("tienen") || up.contains("tiene") || up.contains("tipos de servicio") || up.contains("tipo de servicio") || up.contains("servicios disponibles"))))
   {
     return "search_services";
   }
@@ -785,6 +793,10 @@ map chat_intent.resolve_tool(string userPrompt, string category, string filtered
 }
 map chat_intent.resolve_params(string userPrompt, string toolName, string paramSchema)
 {
+  if(toolName == "list_service_types")
+  {
+    return {"status":"ok","kind":"tool","params":Map()};
+  }
   config = thisapp.chat_config.chat_config();
   context = "Eres un asistente virtual de una agencia internacional de paquetería, " + "remesas y recargas telefónicas. Debes responder ÚNICAMENTE con JSON válido. " + "NUNCA calcules fechas tú mismo — usa el enum de periodo o las fechas que el usuario dio.";
   message = thisapp.chat_intent.build_params_prompt(userPrompt,toolName,paramSchema);

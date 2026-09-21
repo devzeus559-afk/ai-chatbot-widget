@@ -435,6 +435,15 @@ map tests_native_data_access.test_services_type_and_destination(map counters)
   }
   return counters;
 }
+map tests_native_data_access.test_list_service_types(map counters)
+{
+  result = thisapp.chat_tools.list_service_types({});
+  counters = thisapp.tests_common.assert_true("list_service_types: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
+  data = result.get("data");
+  counters = thisapp.tests_common.assert_true("list_service_types: 7 tipos",data != null && data.size() == 7,counters,"data=" + if(data == null,"null",data.size().toString()));
+  counters = thisapp.tests_common.assert_true("list_service_types: primero Package Receipt",data != null && data.size() > 0 && data.get(0).get("type") == "Package Receipt",counters,"data=" + if(data == null,"null",data.toString()));
+  return counters;
+}
 
 // --- find_offices ---
 map tests_native_data_access.test_offices_no_filter(map counters)
@@ -801,6 +810,7 @@ map tests_native_data_access.run_tools_services()
   counters = thisapp.tests_native_data_access.test_services_by_type_real(counters);
   counters = thisapp.tests_native_data_access.test_services_type_not_found(counters);
   counters = thisapp.tests_native_data_access.test_services_type_and_destination(counters);
+  counters = thisapp.tests_native_data_access.test_list_service_types(counters);
   info "=== run_tools_services done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
   return counters;
 }

@@ -81,6 +81,10 @@ map chat_common.compose_reply(map toolResult, map intent)
   {
     return {"text":thisapp.chat_common.format_services(data),"visualization":viz};
   }
+  if(toolName == "list_service_types")
+  {
+    return {"text":thisapp.chat_common.format_service_types(data),"visualization":viz};
+  }
   if(toolName == "find_offices")
   {
     return {"text":thisapp.chat_common.format_offices(data),"visualization":viz};
@@ -304,6 +308,26 @@ string chat_common.format_services(list services)
 		index = index + 1;
 	}
 	return text;
+}
+string chat_common.format_service_types(list types)
+{
+  if(types == null || types.size() == 0)
+  {
+    return "No pude recuperar el catálogo de servicios.";
+  }
+  text = "Ofrecemos estos tipos de servicio:\n";
+  index = 1;
+  for each  t in types
+  {
+    line = index + ". " + t.get("label");
+    if(t.get("type") != null && t.get("type") != t.get("label"))
+    {
+      line = line + " (" + t.get("type") + ")";
+    }
+    text = text + line + "\n";
+    index = index + 1;
+  }
+  return text;
 }
 string chat_common.format_top_customers(map data)
 {
