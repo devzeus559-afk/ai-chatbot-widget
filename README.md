@@ -8,7 +8,7 @@ con la tarea `Zia`, y el widget se comunica por la Client API con un patrón de 
 
 ## Quick path
 
-1. Reemplazar los link names reales en `LM2Chatbot/app/widget.html` (`CONFIG`, solo para
+1. Reemplazar los link names reales en `chatbot-widget/app/widget.html` (`CONFIG`, solo para
    la Client API del widget). El widget distingue **report link names** (para
    `getAllRecords`) y **form link names** (para `addRecord`/`deleteRecord`):
    - `chatSessionsReport` / `chatMessagesReport` / `chatRequestsReport` → report link names
@@ -21,7 +21,7 @@ con la tarea `Zia`, y el widget se comunica por la Client API con un patrón de 
    según el esquema del README del backend.
 4. Pegar las funciones Deluge (una por cada definición de `deluge/`) y crear el workflow
    On Submit de `ChatRequests`.
-5. Embeber `LM2Chatbot/app/widget.html` en la app y probar un mensaje de seguimiento.
+5. Embeber `chatbot-widget/app/widget.html` en la app y probar un mensaje de seguimiento.
 
 ## Arquitectura
 
@@ -49,7 +49,7 @@ Principios de diseño:
 - **Job asíncrono**: el widget crea `ChatRequests`; el workflow On Submit ejecuta
   `chat_invoke`; el widget hace polling del `Status` (timeout 45 s).
 - **Zia como router, no como clasificador**: la tarea Zia devuelve JSON estricto
-  (`{"tool","params"}` / `{"answer"}` / `{"clarify"}`) y Deluge hace el `switch`.
+  (`{"tool","params"}` / `{"answer"}` / `{"clarify"}`) y Deluge hace el `if-chain` en `dispatch_tool`.
 - **Composición por plantilla por defecto**: `composeWithAI: false` → respuestas
   deterministas baratas (el timeout de Zia es 40 s).
 - **Filtrado nativo sin builders de criterios**: `Form[criteriaVar]` es inválido en Creator
@@ -61,12 +61,12 @@ Principios de diseño:
 
 | Ruta | Contenido |
 |---|---|
-| `LM2Chatbot/app/widget.html` | Widget completo (UI + sidebar de historial + adapter Client API) |
-| `LM2Chatbot/` | Paquete de la extensión Zoho (app, server, manifest) — sin scripts Deluge |
+| `chatbot-widget/app/widget.html` | Widget completo (UI + sidebar de historial + adapter Client API) |
+| `chatbot-widget/` | Paquete de la extensión Zoho (app, server, manifest) — sin scripts Deluge |
 | `deluge/README.md` | Setup del backend: esquema de módulos, funciones, mapeo de campos |
-| `deluge/config/chat_config.deluge` | Configuración central: link names, campos, catálogo de 5 tools |
-| `deluge/core/` | `data_access` (acceso nativo tipado: helpers por forma/condición con campos literales), `chat_common` (helpers), `chat_intent` (router Zia), `chat_invoke` (orquestador), `chat_list` (índice server-side) |
-| `deluge/tools/` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts` |
+| `deluge/config/chat_config.deluge` | Configuración central: link names, campos, catálogo de 16 tools (5 lookup + 10 reporting + catálogo) |
+| `deluge/core/` | `data_access` (acceso nativo tipado: helpers por forma/condición con campos literales), `chat_common` (helpers + `format_service_types`), `chat_intent` (router Zia jerárquico + `keyword_search_tool`), `chat_invoke` (orquestador), `chat_list` (índice server-side) |
+| `deluge/tools/` | 16 tools: `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts`, `tool_service_types` (catálogo estático 7 tipos) + 10 de reportes (`report_top_*`, `report_*_frequency`, `report_*_type`, `report_pounds/daily/monthly`, `report_delayed/unscanned`) |
 | `deluge/workflow/` | `on_submit_chatrequests.deluge` (script del workflow) |
 
 ## Flujo del widget (historyStore)
@@ -109,9 +109,9 @@ queda como helper server-side para otros consumidores.
 | Pieza | Estado |
 |---|---|
 | Widget frontend (sidebar + thinking + adapter) | ✅ committeado en `develop` |
-| Backend Deluge (config, core, tools, workflow) | ✅ committeado en `develop` (3 commits por capa) |
-| Review externo de fiabilidad del backend | ⏭️ omitido por decisión del usuario (riesgo asumido) |
-| Prueba dentro de Zoho Creator | 🔲 pendiente — valida supuestos de Client API y sintaxis Deluge |
+| Backend Deluge (config, core, tools, workflow — 16 tools) | ✅ committeado en `develop` (`c978d39` merge `list_service_types` — catálogo determinista 7 tipos) |
+| Review nativo de fiabilidad (RDD) | ✅ `APPROVED` — lens `review-reliability`, 3 findings no-bloqueantes (R3-001/002/003) |
+| Prueba en Zoho Creator | ✅ verificado: Q1/Q2 → catálogo 7 tipos, Q3 → search filtrado sin datos, `run_tools_services()` passing |
 
 ## Next step
 

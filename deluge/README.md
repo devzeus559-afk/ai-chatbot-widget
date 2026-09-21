@@ -21,17 +21,17 @@ invoca con la sintaxis oficial SIN comas (cada parámetro nombrado en su propia 
 ```
 Widget (Client API)                Creator (server-side)
 ───────────────────                ─────────────────────
-createRecord(ChatRequests)  ───▶   On Submit workflow
+addRecord(ChatRequests)     ───▶   On Submit workflow
    { Session_ID, Prompt }            │
                                      ├─ chat_invoke(requestId)
                                      │     ├─ get_or_create_session()
                                      │     ├─ create_message(user)
                                      │     ├─ chat_intent()          ← Zia task (sin API Creator)
                                      │     │     └─ {tool,params} | {answer} | {clarify}
-                                     │     ├─ dispatch_tool()        ← switch a tool_*
-                                     │     │     └─ data_access (fetch/insert nativo server-side)
-                                     │     ├─ compose_reply()        ← plantilla o Zia
-                                     │     └─ create_message(ai) + update_session()
+│     ├─ dispatch_tool()        ← if-chain a tool_*
+│     │     └─ data_access (fetch/insert nativo server-side)
+│     ├─ compose_reply()        ← plantilla (`format_*`) o Zia (`composeWithAI: true`)
+│     └─ create_message(ai) + update_session()
                                      │
 poll(getRecord: Status)  ◀───   Status: pending → answered | failed
 ```
@@ -74,7 +74,8 @@ deluge/
 │   ├── tool_report_daily_average.deluge ← promedio diario de libras
 │   ├── tool_report_monthly_comparison.deluge ← comparativa mensual
 │   ├── tool_report_delayed_packages.deluge ← paquetes demorados
-│   └── tool_report_unscanned_packages.deluge ← cajas sin escanear
+│   ├── tool_report_unscanned_packages.deluge ← cajas sin escanear
+│   └── tool_service_types.deluge           ← catálogo determinista de tipos de servicio (7 tipos estáticos, sin Zia/DB)
 └── workflow/
     └── on_submit_chatrequests.deluge  ← script del workflow On Submit de ChatRequests
 ```
@@ -84,12 +85,12 @@ deluge/
 | Archivo | Funciones |
 |---|---|
 | `chat_config.deluge` | `chat_config` |
-| `chat_common.deluge` | `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_offices`, `format_coverage`, `format_contacts`, `format_top_customers`, `format_top_package_customers`, `format_top_remittance_customers`, `format_shipping_type_frequency`, `format_merchandise_type`, `format_pounds_shipped`, `format_daily_average`, `format_monthly_comparison`, `format_delayed_packages`, `format_unscanned_packages` (+ helpers `insert_ranked_entry`, `build_empty_*`, `build_breakdown_list`, `decidirVisualizacion`, `build_viz`) |
+| `chat_common.deluge` | `parse_json_strict`, `compose_reply`, `format_tracking`, `format_services`, `format_service_types`, `format_offices`, `format_coverage`, `format_contacts`, `format_top_customers`, `format_top_package_customers`, `format_top_remittance_customers`, `format_shipping_type_frequency`, `format_merchandise_type`, `format_pounds_shipped`, `format_daily_average`, `format_monthly_comparison`, `format_delayed_packages`, `format_unscanned_packages` (+ helpers `insert_ranked_entry`, `build_empty_*`, `build_breakdown_list`, `decidirVisualizacion`, `build_viz`) |
 | `data_access.deluge` | `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_session_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_user`, `insert_chat_session`, `fetch_chat_messages_by_session`, `insert_chat_message`, `insert_unanswered_query`, `fetch_packages_by_tracking`, `fetch_services_ids_by_type/_by_destination`, `fetch_services_by_ids`, `fetch_services_all`, `fetch_services_count_by_date_window/_ids_by_date_window/_by_date_window`, `fetch_services_report_by_date_window/_by_ids`, `materialize_service_report`, `fetch_offices_by_ids`, `fetch_offices_all`, `fetch_coverage_by_ids`, `fetch_coverage_all`, `fetch_vendors_ids_by_type/_by_name`, `fetch_vendors_by_ids`, `fetch_vendors_all`, `fetch_contacts_ids_by_full_name/phone/document`, `fetch_contacts_by_ids`, `fetch_contacts_all`, `fetch_office_id_by_name`, `fetch_packages_report_by_window_office`, `materialize_package_report`, `fetch_pkg_tracking_scanned_all`, `fetch_pkg_tracking_unscanned`, `materialize_pkg_tracking_report` |
 | `chat_intent.deluge` | `chat_intent`, `build_intent_prompt`, `build_category_prompt`, `build_tool_prompt`, `build_params_prompt`, `normalize_category`, `normalize_tool`, `normalize_params`, `resolve_category`, `resolve_tool`, `resolve_params`, `normalize_zia_response` |
 | `chat_invoke.deluge` | `chat_invoke`, `resolve_reply`, `dispatch_tool`, `compose_with_ai`, `get_or_create_session`, `create_message`, `get_recent_history`, `update_session` |
 | `chat_list.deluge` | `chat_list` |
-| `tools/*.deluge` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts`, `tool_report_top_customers`, `tool_report_top_package_customers`, `tool_report_top_remittance_customers`, `tool_report_shipping_type_frequency`, `tool_report_merchandise_type`, `tool_report_pounds_shipped`, `tool_report_daily_average`, `tool_report_monthly_comparison`, `tool_report_delayed_packages`, `tool_report_unscanned_packages` |
+| `tools/*.deluge` | `tool_track_package`, `tool_services`, `tool_offices`, `tool_coverage`, `tool_contacts`, `tool_service_types` (catálogo estático), `tool_report_top_customers`, `tool_report_top_package_customers`, `tool_report_top_remittance_customers`, `tool_report_shipping_type_frequency`, `tool_report_merchandise_type`, `tool_report_pounds_shipped`, `tool_report_daily_average`, `tool_report_monthly_comparison`, `tool_report_delayed_packages`, `tool_report_unscanned_packages` |
 
 > El nombre de la función en el editor de Creator debe coincidir EXACTAMENTE con el nombre
 > definido en el archivo (por ejemplo, crear la función `chat_invoke`, no `chat_invoke.deluge`).
@@ -182,7 +183,7 @@ en AMBOS sitios (el literal de la consulta en `data_access` y el mapa `*Fields`)
 
 ## Conexión con el widget (implementada)
 
-El widget (`LM2Chatbot/app/widget.html`) tiene el adapter `historyStore` con dos capas:
+El widget (`chatbot-widget/app/widget.html`) tiene el adapter `historyStore` con dos capas:
 
 - **server** (default cuando corre dentro de Creator): usa la **Client API** (`ZOHO.CREATOR.API`)
   para leer `ChatSessions`/`ChatMessages` y crear `ChatRequests` con polling de `Status`
@@ -194,7 +195,7 @@ funciones custom; lee `ChatSessions` directamente (el scoping por usuario lo apl
 permisos de Creator, no una consulta). `chat_list()` queda como helper server-side para
 otros consumidores (páginas de Creator, integraciones).
 
-**Configuración en el widget**: en `LM2Chatbot/app/widget.html` → `CONFIG`:
+**Configuración en el widget**: en `chatbot-widget/app/widget.html` → `CONFIG`:
 `appName` ya está configurado con el link name real de la app
 (`copy-1-of-logistic-management-ii`; solo lo usa la Client API del widget — el backend
 ya NO usa `appName`). Si la app de destino difiere, reemplázalo por el link name real
