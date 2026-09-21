@@ -137,7 +137,72 @@ map chat_common.compose_reply(map toolResult, map intent)
   {
     return {"text":thisapp.chat_common.format_unscanned_packages(data),"visualization":viz};
   }
-  return {"text":"Datos obtenidos: " + data.toString(),"visualization":viz};
+  // Fallback robusto: si toolName no matchea pero data tiene reportType, intenta formatear por ese
+  rpt = data.get("reportType");
+  if(rpt != null)
+  {
+    if(rpt == "top_package_customers")
+    {
+      return {"text":thisapp.chat_common.format_top_package_customers(data),"visualization":viz};
+    }
+    if(rpt == "top_remittance_customers")
+    {
+      return {"text":thisapp.chat_common.format_top_remittance_customers(data),"visualization":viz};
+    }
+    if(rpt == "top_customers")
+    {
+      return {"text":thisapp.chat_common.format_top_customers(data),"visualization":viz};
+    }
+    if(rpt == "shipping_type_frequency")
+    {
+      return {"text":thisapp.chat_common.format_shipping_type_frequency(data),"visualization":viz};
+    }
+    if(rpt == "merchandise_type")
+    {
+      return {"text":thisapp.chat_common.format_merchandise_type(data),"visualization":viz};
+    }
+    if(rpt == "pounds_shipped")
+    {
+      return {"text":thisapp.chat_common.format_pounds_shipped(data),"visualization":viz};
+    }
+    if(rpt == "daily_average")
+    {
+      return {"text":thisapp.chat_common.format_daily_average(data),"visualization":viz};
+    }
+    if(rpt == "monthly_comparison")
+    {
+      return {"text":thisapp.chat_common.format_monthly_comparison(data),"visualization":viz};
+    }
+    if(rpt == "delayed_packages")
+    {
+      return {"text":thisapp.chat_common.format_delayed_packages(data),"visualization":viz};
+    }
+    if(rpt == "unscanned_packages")
+    {
+      return {"text":thisapp.chat_common.format_unscanned_packages(data),"visualization":viz};
+    }
+  }
+  // Último recurso: resumen legible en lugar de JSON crudo
+  summary = "Resultado: ";
+  if(data.containKey("totalPackages") || data.containKey("totalPounds"))
+  {
+    summary = summary + "Total: ";
+    if(data.containKey("totalPackages")) { summary = summary + data.get("totalPackages") + " paquetes"; }
+    if(data.containKey("totalPounds")) { summary = summary + " " + data.get("totalPounds") + " lbs"; }
+  }
+  else if(data.containKey("customers") && data.get("customers") != null)
+  {
+    summary = summary + data.get("customers").size() + " clientes";
+  }
+  else
+  {
+    summary = summary + data.size() + " registros";
+  }
+  if(data.get("truncated") == true)
+  {
+    summary = summary + " (truncado a 200)";
+  }
+  return {"text":summary,"visualization":viz};
 }
 string chat_common.decidirVisualizacion(List labels, Bool esSerieTiempo)
 {
