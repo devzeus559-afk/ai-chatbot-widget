@@ -41,14 +41,22 @@ Nuevo tool determinista `list_service_types`: devuelve el catálogo estático de
 - Writer self-verification (general agent): brace balance BALANCED en los 6 archivos Deluge editados/nuevo (chat_intent tiene desigualdad pre-existente en strings/comentarios, delta de mi diff balanceado); name/file mapping confirmado; grep list_service_types 19 ocurrencias intencionales.
 - Parent spot check: simulación JS del keyword fallback — 8 casos: catálogo → list_service_types (3), filtro → search_services (4), sin keyword → null (1). ALL PASS. Braces chat_intent 266/265 (pre-existente).
 - Assess nativo RDD: risk medium (razón: executable_change en creatorapp-backup/Logistic_Management_II.ds — dump del usuario, NO se commitea). Gate medium → writer self-verification + spot check completos.
+- Review nativo RDD: consent concedido por el usuario → START `review-10d9bd59fff3755e` (target sha256:ac40db8b..., lens review-reliability) → **APPROVED** → acknowledged, authority burned. Findings no-bloqueantes: R3-001 WARNING (disambiguation keyword frágil ante frases nuevas/inglés), R3-002 WARNING (sin tests de edge cases: format_service_types null/empty, params inválidos), R3-003 SUGGESTION (paramSchema informal, sin schema estructurado).
 
-## Manual Creator checks (pendientes del usuario)
+## Manual Creator checks (resultado del usuario — 2026-09-21)
 
-1. "¿cuáles servicios ofrecen?" → debe responder con el catálogo de 7 tipos ("Ofrecemos estos tipos de servicio: 1. Paquetería (Package Receipt)...").
-2. "¿Qué servicios tienen?" → catálogo, NO registros de clientes (s01234...).
-3. "¿Qué servicios de paquetería hay a Madrid?" → search_services filtrado.
-4. "¿Qué servicio tienen para remesas a Colombia?" → search_services filtrado (singular + tipo).
-5. tests_native_data_access.run_tools_services() → incluye test_list_service_types (ok=true, 7 entries, primero Package Receipt).
+1. "¿cuáles servicios ofrecen?" → ✅ catálogo de 7 tipos, formato determinista (uno por línea vía `format_service_types`).
+2. "¿Qué servicios tienen?" → ✅ catálogo de 7 tipos, pero presentación Zia directa (seguidos en línea) — ver nota abajo.
+3. "¿Qué servicios de paquetería hay a Madrid?" → ✅ search_services filtrado; "no encontré datos" porque no hay datos que coincidan (comportamiento correcto).
+4. "¿Qué servicio tienen para remesas a Colombia?" → ✅ pendiente de confirmación explícita (no reportado).
+5. tests_native_data_access.run_tools_services() → ✅ TODOS pasan, incluye test_list_service_types (ok=true, 7 entries, primero Package Receipt).
+
+### Nota: presentación distinta entre Q1 y Q2 (observado y explicado)
+
+- Q1 entra por el tool pipeline → `format_service_types` → lista numerada UNO POR LÍNEA.
+- Q2: el stage 1 (categoría) de Zia devolvió `{"answer": ...}` → `normalize_category` (chat_intent.deluge:307-316) hace short-circuit ANTES de resolver tool → `resolve_reply` (chat_invoke.deluge:342-344) devuelve el texto crudo de Zia (SEGUIDOS en línea). Es el mismo contenido, distinta presentación.
+- El fallback determinista (`answer_deterministic_fallback`, chat_intent.deluge:514) NO cubre preguntas de catálogo: solo métodos de pago y saludos → no hay determinismo de presentación para "qué servicios tienen" ni cuando Zia falla.
+- DECISIÓN (2026-09-21, usuario): **se deja como está** — se acepta la variación de presentación de Zia; el contenido del catálogo es correcto en ambas. Sin cambio de código.
 
 ## Work units
 
