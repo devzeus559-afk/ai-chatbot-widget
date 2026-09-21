@@ -729,7 +729,25 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
         if(!hasExplicitDates)
         {
           periodEnum = params.get("period");
-          datePair = thisapp.chat_common.resolve_period(periodEnum,zoho.currentdate);
+          // Validar que period sea un enum string válido (defensa contra Zia que pasa número u otro tipo)
+          validPeriods = List({"ultimo_mes","mes_anterior","este_mes","ultimos_7_dias","ultimos_30_dias"});
+          isValidPeriod = false;
+          if(periodEnum != null)
+          {
+            periodStr = periodEnum.toString();
+            for each  vp in validPeriods
+            {
+              if(vp == periodStr)
+              {
+                isValidPeriod = true;
+              }
+            }
+          }
+          if(!isValidPeriod)
+          {
+            return {"clarify":"Periodo inválido. Usá uno de: 'ultimo_mes' (default), 'mes_anterior', 'este_mes', 'ultimos_7_dias'."};
+          }
+          datePair = thisapp.chat_common.resolve_period(periodStr,zoho.currentdate);
           params.put("startDate",datePair.get(0));
           params.put("endDate",datePair.get(1));
         }
