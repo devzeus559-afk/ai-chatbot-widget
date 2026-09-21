@@ -433,15 +433,66 @@ map chat_intent.normalize_tool(map ziaResponse, string category, string userProm
   }
   return {"status":"error","kind":"clarify","text":"No pude interpretar tu solicitud. ¿Puedes reformularla? Puedo ayudarte con temas de paquetería, remesas, recargas, cobertura, oficinas o contactos."};
 }
-// Deterministic fallback for SEARCH: if Zia could not pick a tool but the
-// user message carries a category keyword, map it directly. Precedence
+// Deterministic fallback for SEARCH + REPORTING: if Zia could not pick a tool
+// but the user message carries a category keyword, map it directly. Precedence
 // matches build_tool_prompt; null means no keyword matched, so no mapping.
+// REPORTING KEYWORDS CHECKED FIRST so queries like "cuantos paquetes por oficina"
+// don't get misrouted to find_offices.
 string chat_intent.keyword_search_tool(string userPrompt)
 {
   if(userPrompt == null)
   {
     return null;
   }
+  up = userPrompt.toLowerCase();
+  // --- REPORTING KEYWORDS (checked FIRST) ---
+  // Paquetes por vía aérea/marítima → frecuencia de tipo de envío
+  if((up.contains("paquetes") || up.contains("paquete") || up.contains("enviaron") || up.contains("envio") || up.contains("envíos") || up.contains("cajas")) &&
+     (up.contains("aerea") || up.contains("aérea") || up.contains("aereo") || up.contains("aereo") || up.contains("air") || up.contains("maritima") || up.contains("marítima") || up.contains("maritimo") || up.contains("maritimo") || up.contains("maritimo") || up.contains("sea") || up.contains("mar")))
+  {
+    return "report_shipping_type_frequency";
+  }
+  // Cuantos paquetes/libras/envios + oficina + periodo → pounds_shipped
+  hasPackageWord = up.contains("paquetes") || up.contains("paquete") || up.contains("enviaron") || up.contains("envio") || up.contains("envíos") || up.contains("cajas") || up.contains("libras") || up.contains("pounds") || up.contains("peso");
+  hasOfficeWord = up.contains("oficina") || up.contains("sucursal");
+  hasPeriodWord = up.contains("mes pasado") || up.contains("mes anterior") || up.contains("ultimo mes") || up.contains("último mes") || up.contains("este mes") || up.contains("mes actual") || up.contains("ultimos 30") || up.contains("últimos 30") || up.contains("ultimos 7") || up.contains("últimos 7") || up.contains("semana pasada") || up.contains("año pasado") || up.contains("año anterior");
+  hasReportWord = up.contains("cuantos") || up.contains("cuántos") || up.contains("reporte") || up.contains("reporte") || up.contains("estadistica") || up.contains("estadística") || up.contains("resumen") || up.contains("total");
+  if(hasPackageWord && hasOfficeWord && (hasPeriodWord || hasReportWord))
+  {
+    return "report_pounds_shipped";
+  }
+  // Cuantos servicios de paqueteria por oficina + periodo → top_package_customers
+  hasServiceWord = up.contains("servicios") || up.contains("servicio");
+  hasPaqueteria = up.contains("paqueter") || up.contains("package");
+  if(hasServiceWord && hasPaqueteria && hasOfficeWord && (hasPeriodWord || hasReportWord))
+  {
+    return "report_top_package_customers";
+  }
+  // Cuantos clientes top + tipo servicio → top_customers
+  hasClientWord = up.contains("clientes") || up.contains("cliente");
+  hasTopWord = up.contains("top") || up.contains("mas frecuent") || up.contains("más frecuent") || up.contains("principales");
+  if(hasClientWord && hasTopWord && (up.contains("paqueter") || up.contains("package") || up.contains("remesa") || up.contains("remittance") || up.contains("recarga") || up.contains("recharge") || up.contains("locker") || up.contains("store") || up.contains("online") || up.contains("other")))
+  {
+    if(up.contains("paqueter") || up.contains("package"))
+    {
+      return "report_top_package_customers";
+    }
+    if(up.contains("remesa") || up.contains("remittance"))
+    {
+      return "report_top_remittance_customers";
+    }
+    return "report_top_customers";
+  }
+  // Demorados / sin escanear
+  if(up.contains("demorad") || up.contains("atrasad") || up.contains("retrasad"))
+  {
+    return "report_delayed_packages";
+  }
+  if(up.contains("sin escaner") || up.contains("sin escanear") || up.contains("no escanead"))
+  {
+    return "report_unscanned_packages";
+  }
+  // --- SEARCH KEYWORDS (original, after reporting) ---
   if(userPrompt.contains("cobertura"))
   {
     return "check_coverage";
@@ -450,7 +501,6 @@ string chat_intent.keyword_search_tool(string userPrompt)
   {
     return "find_offices";
   }
-  up = userPrompt.toLowerCase();
   // Si menciona un tipo de servicio específico o "servicios de X" → búsqueda
   // filtrada (search_services), NUNCA catálogo.
   hasSpecificType = up.contains("paqueter") || up.contains("package") || up.contains("locker") || up.contains("store") || up.contains("remesa") || up.contains("remittance") || up.contains("recarga") || up.contains("recharge") || up.contains("online") || up.contains("other services") || up.contains("servicios de");
