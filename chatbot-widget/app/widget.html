@@ -451,6 +451,72 @@
         color: var(--text-dark);
       }
 
+      /* 1.8c  JSON toggle button + collapsible panel (AI messages only) */
+      .message-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 4px;
+      }
+      .message-header .role-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-gray);
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+      }
+      .json-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-white);
+        color: var(--text-gray);
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+        font-family: monospace;
+        transition: all 0.15s;
+        opacity: 0.7;
+      }
+      .json-toggle:hover {
+        opacity: 1;
+        background: var(--bg-light);
+        border-color: var(--primary-blue);
+        color: var(--primary-blue);
+      }
+      .json-toggle[aria-expanded="true"] {
+        background: var(--primary-blue);
+        border-color: var(--primary-blue);
+        color: #fff;
+        opacity: 1;
+      }
+      .json-panel {
+        display: none;
+        margin-top: 8px;
+        padding: 10px 12px;
+        background: #1e1e1e;
+        border-radius: 4px;
+        font-family: "SF Mono", "Fira Code", "Monaco", monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        color: #d4d4d4;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border: 1px solid #333;
+      }
+      .json-panel.open {
+        display: block;
+        animation: jsonSlide 0.15s ease-out;
+      }
+      @keyframes jsonSlide {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
       /* 1.8b  Visualización (tablas y gráficas de barras) */
       .zc-viz-container {
         margin-top: 8px;
@@ -2127,12 +2193,14 @@
         // Intentar parsear JSON envelope (text + visualization) de mensajes AI
         let text = content;
         let viz = null;
+        let rawJson = null;
         if (role === "ai" && typeof content === "string") {
           try {
             const parsed = JSON.parse(content);
             if (parsed && typeof parsed === "object" && parsed.text != null) {
               text = parsed.text;
               viz = parsed.visualization || null;
+              rawJson = parsed; // Guardar el JSON completo (text + visualization)
             }
           } catch (e) {
             // Fallback: reparar JSON con newlines literales (mensajes de DB)
@@ -2142,6 +2210,7 @@
               if (parsed && typeof parsed === "object" && parsed.text != null) {
                 text = parsed.text;
                 viz = parsed.visualization || null;
+                rawJson = parsed;
               }
             } catch (e2) {
               // Texto plano — respuesta de answer/clarify/error (sin viz)
@@ -2150,8 +2219,61 @@
         }
         const div = document.createElement("div");
         div.className = `message ${role}`;
-        div.textContent = text;
+
+        // Header con label de rol + botón JSON (solo AI)
+        const header = document.createElement("div");
+        header.className = "message-header";
+        const roleLabel = document.createElement("span");
+        roleLabel.className = "role-label";
+        roleLabel.textContent = role === "ai" ? "Assistant" : "You";
+        header.appendChild(roleLabel);
+
+        if (role === "ai" && rawJson) {
+          // Guardar el JSON crudo en el elemento para acceso posterior
+          div.dataset.rawJson = JSON.stringify(rawJson);
+          const jsonToggle = document.createElement("button");
+          jsonToggle.className = "json-toggle";
+          jsonToggle.setAttribute("aria-label", "Toggle raw JSON");
+          jsonToggle.setAttribute("aria-expanded", "false");
+          jsonToggle.title = "Show raw JSON";
+          jsonToggle.textContent = "JSON";
+          jsonToggle.addEventListener("click", () => {
+            const panel = div.querySelector(".json-panel");
+            const isOpen = panel.classList.toggle("open");
+            jsonToggle.setAttribute("aria-expanded", isOpen);
+            jsonToggle.title = isOpen ? "Hide raw JSON" : "Show raw JSON";
+            if (isOpen) {
+              // Pretty-print JSON solo al abrir (cache en data-pretty)
+              if (!panel.dataset.pretty) {
+                try {
+                  const raw = JSON.parse(div.dataset.rawJson);
+                  panel.textContent = JSON.stringify(raw, null, 2);
+                  panel.dataset.pretty = "1";
+                } catch (e) {
+                  panel.textContent = div.dataset.rawJson;
+                }
+              }
+            }
+          });
+          header.appendChild(jsonToggle);
+        }
+        div.appendChild(header);
+
+        // Texto del mensaje
+        const textDiv = document.createElement("div");
+        textDiv.textContent = text;
+        div.appendChild(textDiv);
+
+        // Panel JSON colapsable (solo AI con rawJson)
+        if (role === "ai" && rawJson) {
+          const jsonPanel = document.createElement("pre");
+          jsonPanel.className = "json-panel";
+          jsonPanel.setAttribute("aria-hidden", "true");
+          div.appendChild(jsonPanel);
+        }
+
         messageList.appendChild(div);
+
         if (viz && viz.type && viz.type !== "none") {
           renderVisualization(viz, messageList);
           scrollToBottom();
