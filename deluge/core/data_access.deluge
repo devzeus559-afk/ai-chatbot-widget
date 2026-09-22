@@ -628,6 +628,31 @@ list chat_data_access.fetch_services_ids_by_type(string serviceType)
   ids = Service[Service_Type == serviceType].ID.getAll();
   return ids;
 }
+list chat_data_access.fetch_services_ids_by_office(int officeZid)
+{
+  // Filtra servicios por oficina (lookup Office en módulo Service).
+  // Usa campo literal Office (lookup a Commercial_Office).
+  if(officeZid == null || officeZid <= 0)
+  {
+    return List();
+  }
+  ids = Service[Office == officeZid].ID.getAll();
+  return ids;
+}
+list chat_data_access.fetch_services_ids_by_type_and_destination(string serviceType, string destination)
+{
+  // Combina filtro por tipo de servicio + ciudad destino.
+  // typeIDs = Service[Service_Type == serviceType]
+  // destIDs = fetch_services_ids_by_destination(destination)
+  // Retorna intersección (AND).
+  typeIDs = thisapp.chat_data_access.fetch_services_ids_by_type(serviceType);
+  destIDs = thisapp.chat_data_access.fetch_services_ids_by_destination(destination);
+  if(typeIDs == null || typeIDs.size() == 0 || destIDs == null || destIDs.size() == 0)
+  {
+    return List();
+  }
+  return typeIDs.intersect(destIDs);
+}
 list chat_data_access.fetch_vendors_all()
 {
 	records = Vendor[Active == true] sort by Vendor_Name range from 0 to 199;

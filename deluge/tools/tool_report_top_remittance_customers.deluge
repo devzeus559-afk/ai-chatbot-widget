@@ -30,9 +30,40 @@ map chat_tools.report_top_remittance_customers(map params)
       limitNum = 10;
     }
   }
+  // --- Nuevos filtros: office, city, period/startDate/endDate ---
+  officeName = params.get("office");
+  officeZid = 0;
+  if(officeName != null && officeName != "")
+  {
+    officeZid = thisapp.chat_data_access.fetch_office_id_by_name(officeName);
+    if(officeZid == null || officeZid <= 0)
+    {
+      return {"ok":true,"data":{"reportType":"top_remittance_customers","empty":true,"message":"Oficina no encontrada."}};
+    }
+  }
+  city = params.get("city");
+  // Período: period enum O startDate/endDate explícitos
   endDate = zoho.currentdate;
-  startDate = endDate.subDay(30);
-  // Remittances: window ∩ Service_Type == "Remittance"
+  startDate = endDate.subDay(30); // default 30 días
+  periodEnum = params.get("period");
+  sd = params.get("startDate");
+  if(sd != null && sd != "")
+  {
+    startDate = toDate("" + sd);
+  }
+  ed = params.get("endDate");
+  if(ed != null && ed != "")
+  {
+    endDate = toDate("" + ed);
+  }
+  else if(periodEnum != null && periodEnum != "")
+  {
+    // Si no hay fechas explícitas pero sí period enum, resolverlo
+    datePair = thisapp.chat_common.resolve_period(periodEnum, zoho.currentdate);
+    startDate = datePair.get(0);
+    endDate = datePair.get(1);
+  }
+  // Ventana de fechas
   windowIDs = thisapp.chat_data_access.fetch_services_ids_by_date_window(startDate,endDate);
   typeIDs = thisapp.chat_data_access.fetch_services_ids_by_type("Remittance");
   if(windowIDs == null || windowIDs.size() == 0 || typeIDs == null || typeIDs.size() == 0)
@@ -40,6 +71,37 @@ map chat_tools.report_top_remittance_customers(map params)
     return thisapp.chat_common.build_empty_remittance_report(startDate,endDate);
   }
   targetIDs = windowIDs.intersect(typeIDs);
+  if(targetIDs == null || targetIDs.size() == 0)
+  {
+    return thisapp.chat_common.build_empty_remittance_report(startDate,endDate);
+  }
+  // Filtro por oficina (si se especificó)
+  if(officeZid > 0)
+  {
+    officeIDs = thisapp.chat_data_access.fetch_services_ids_by_office(officeZid);
+    if(officeIDs != null && officeIDs.size() > 0)
+    {
+      targetIDs = targetIDs.intersect(officeIDs);
+    }
+    else
+    {
+      targetIDs = List();
+    }
+  }
+  // Filtro por ciudad destino (si se especificó)
+  if(city != null && city != "")
+  {
+    cityIDs = thisapp.chat_data_access.fetch_services_ids_by_destination(city);
+    if(cityIDs != null && cityIDs.size() > 0)
+    {
+      targetIDs = targetIDs.intersect(cityIDs);
+    }
+    else
+    {
+      targetIDs = List();
+    }
+  }
+  // Guard final
   if(targetIDs == null || targetIDs.size() == 0)
   {
     return thisapp.chat_common.build_empty_remittance_report(startDate,endDate);
@@ -175,6 +237,8 @@ map chat_tools.report_top_remittance_customers(map params)
   data.put("reportType","top_remittance_customers");
   data.put("periodStart",startDate);
   data.put("periodEnd",endDate);
+  if(officeName != null && officeName != "") { data.put("office",officeName); }
+  if(city != null && city != "") { data.put("city",city); }
   data.put("totalServices",total);
   data.put("totalAmount",totalAmount);
   data.put("totalCustomers",ranking.size());
@@ -182,6 +246,9 @@ map chat_tools.report_top_remittance_customers(map params)
   data.put("customers",ranking);
   vizLabels = List();
   vizValues = List();
+  vizTitle = "Clientes de remesas más activos";
+  if(officeName != null && officeName != "") { vizTitle = vizTitle + " — " + officeName; }
+  if(city != null && city != "") { vizTitle = vizTitle + " — " + city; }
   for each  c in ranking
   {
     vizLabels.add(c.get("customerName"));
@@ -193,6 +260,6 @@ map chat_tools.report_top_remittance_customers(map params)
   s.put("name","Monto");
   s.put("values",vizValues);
   series.add(s);
-  viz = thisapp.chat_common.build_viz(vizType,"Clientes de remesas más activos",vizLabels,series);
+  viz = thisapp.chat_common.build_viz(vizType,vizTitle,vizLabels,series);
   return {"ok":true,"data":data,"visualization":viz};
 }

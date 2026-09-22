@@ -452,36 +452,56 @@ string chat_intent.keyword_search_tool(string userPrompt)
   {
     return "report_shipping_type_frequency";
   }
-  // Cuantos paquetes/libras/envios + oficina + periodo → pounds_shipped
+// Cuantos paquetes/libras/envios + oficina + periodo → pounds_shipped
   hasPackageWord = up.contains("paquetes") || up.contains("paquete") || up.contains("enviaron") || up.contains("envio") || up.contains("envíos") || up.contains("cajas") || up.contains("libras") || up.contains("pounds") || up.contains("peso");
   hasOfficeWord = up.contains("oficina") || up.contains("sucursal");
+  hasCityWord = up.contains("ciudad") || up.contains("city");
   hasPeriodWord = up.contains("mes pasado") || up.contains("mes anterior") || up.contains("ultimo mes") || up.contains("último mes") || up.contains("este mes") || up.contains("mes actual") || up.contains("ultimos 30") || up.contains("últimos 30") || up.contains("ultimos 7") || up.contains("últimos 7") || up.contains("semana pasada") || up.contains("año pasado") || up.contains("año anterior");
   hasReportWord = up.contains("cuantos") || up.contains("cuántos") || up.contains("reporte") || up.contains("reporte") || up.contains("estadistica") || up.contains("estadística") || up.contains("resumen") || up.contains("total");
-  if(hasPackageWord && hasOfficeWord && (hasPeriodWord || hasReportWord))
-  {
-    return "report_pounds_shipped";
-  }
-  // Cuantos servicios de paqueteria por oficina + periodo → top_package_customers
+  // --- TOP CUSTOMERS (con oficina/ciudad + periodo) ---
+  // Top clientes paquetería
   hasServiceWord = up.contains("servicios") || up.contains("servicio");
   hasPaqueteria = up.contains("paqueter") || up.contains("package");
-  if(hasServiceWord && hasPaqueteria && hasOfficeWord && (hasPeriodWord || hasReportWord))
+  hasClientWord = up.contains("clientes") || up.contains("cliente");
+  hasTopWord = up.contains("top") || up.contains("mas frecuent") || up.contains("más frecuent") || up.contains("principales");
+  hasRemesaWord = up.contains("remesa") || up.contains("remittance");
+  hasRecargaWord = up.contains("recarga") || up.contains("recharge");
+  hasLocationFilter = hasOfficeWord || hasCityWord;
+  hasPeriodOrReport = hasPeriodWord || hasReportWord;
+
+  if(hasClientWord && hasTopWord && hasPaqueteria && hasLocationFilter && hasPeriodOrReport)
   {
     return "report_top_package_customers";
   }
-  // Cuantos clientes top + tipo servicio → top_customers
-  hasClientWord = up.contains("clientes") || up.contains("cliente");
-  hasTopWord = up.contains("top") || up.contains("mas frecuent") || up.contains("más frecuent") || up.contains("principales");
-  if(hasClientWord && hasTopWord && (up.contains("paqueter") || up.contains("package") || up.contains("remesa") || up.contains("remittance") || up.contains("recarga") || up.contains("recharge") || up.contains("locker") || up.contains("store") || up.contains("online") || up.contains("other")))
+  // Top clientes remesas
+  if(hasClientWord && hasTopWord && hasRemesaWord && hasLocationFilter && hasPeriodOrReport)
   {
-    if(up.contains("paqueter") || up.contains("package"))
-    {
-      return "report_top_package_customers";
-    }
-    if(up.contains("remesa") || up.contains("remittance"))
-    {
-      return "report_top_remittance_customers";
-    }
+    return "report_top_remittance_customers";
+  }
+  // Top clientes general (otros tipos: locker, store, recharge, online, other)
+  if(hasClientWord && hasTopWord && (up.contains("locker") || up.contains("store") || up.contains("recarga") || up.contains("recharge") || up.contains("online") || up.contains("other")) && hasLocationFilter && hasPeriodOrReport)
+  {
     return "report_top_customers";
+  }
+  // Top clientes remesas (sin tipo específico pero con "remesa" en query)
+  if(hasClientWord && hasTopWord && hasRemesaWord)
+  {
+    return "report_top_remittance_customers";
+  }
+  // Top clientes paquetería (sin location/period pero con tipo)
+  if(hasClientWord && hasTopWord && hasPaqueteria)
+  {
+    return "report_top_package_customers";
+  }
+  // Top clientes general (otros tipos)
+  if(hasClientWord && hasTopWord && (up.contains("locker") || up.contains("store") || up.contains("recarga") || up.contains("recharge") || up.contains("online") || up.contains("other")))
+  {
+    return "report_top_customers";
+  }
+
+  if(hasPackageWord && hasLocationFilter && hasPeriodOrReport)
+  {
+    return "report_pounds_shipped";
   }
   // Demorados / sin escanear
   if(up.contains("demorad") || up.contains("atrasad") || up.contains("retrasad"))

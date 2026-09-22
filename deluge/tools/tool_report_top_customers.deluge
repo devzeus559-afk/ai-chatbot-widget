@@ -35,80 +35,132 @@
  * insert_ranked_entry (operaciones garantizadas: size/get/add).
  */
 
-  map chat_tools.report_top_customers(map params)
+map chat_tools.report_top_customers(map params)
+{
+  // serviceType es OBLIGATORIO y debe ser una List<string> con ≥1 elemento.
+  serviceType = params.get("serviceType");
+  validTypes = false;
+  try
   {
-    // serviceType es OBLIGATORIO y debe ser una List<string> con ≥1 elemento.
-    // Opción A: si falta, está vacío o no es una lista => clarify.
-    // try/catch: .get() sobre un String (contrato roto) lanzaría error en
-    // Deluge, así que se normaliza a clarify sin excepción.
-    serviceType = params.get("serviceType");
+    if(serviceType != null && serviceType.size() > 0 && serviceType.get(0) != null && serviceType.get(0) != "")
+    {
+      validTypes = true;
+    }
+  }
+  catch(e)
+  {
     validTypes = false;
-    try
+  }
+  if(!validTypes)
+  {
+    return {"ok":false,"kind":"clarify","message":"Debes especificar al menos un tipo de servicio."};
+  }
+  reportedType = "";
+  for each  st in serviceType
+  {
+    if(reportedType == "")
     {
-      if(serviceType != null && serviceType.size() > 0 && serviceType.get(0) != null && serviceType.get(0) != "")
-      {
-        validTypes = true;
-      }
+      reportedType = "" + st;
     }
-    catch(e)
+    else
     {
-      validTypes = false;
+      reportedType = reportedType + ", " + st;
     }
-    if(!validTypes)
+  }
+  // limit: Zia puede enviarlo como string; toNumber + default 10
+  limitNum = 10;
+  limit = params.get("limit");
+  if(limit != null && limit != "")
+  {
+    limitNum = toNumber("" + limit);
+    if(limitNum == null || limitNum <= 0)
     {
-      return {"ok":false,"kind":"clarify","message":"Debes especificar al menos un tipo de servicio."};
+      limitNum = 10;
     }
-    reportedType = "";
-    for each  st in serviceType
+  }
+  // --- Nuevos filtros: office, city, period/startDate/endDate ---
+  officeName = params.get("office");
+  officeZid = 0;
+  if(officeName != null && officeName != "")
+  {
+    officeZid = thisapp.chat_data_access.fetch_office_id_by_name(officeName);
+    if(officeZid == null || officeZid <= 0)
     {
-      if(reportedType == "")
-      {
-        reportedType = "" + st;
-      }
-      else
-      {
-        reportedType = reportedType + ", " + st;
-      }
+      return {"ok":true,"data":{"reportType":"top_customers","empty":true,"message":"Oficina no encontrada."}};
     }
-    // limit: Zia puede enviarlo como string; toNumber + default 10
-    limitNum = 10;
-    limit = params.get("limit");
-    if(limit != null && limit != "")
+  }
+  city = params.get("city");
+  // Período: period enum O startDate/endDate explícitos
+  endDate = zoho.currentdate;
+  startDate = endDate.subDay(30); // default 30 días
+  periodEnum = params.get("period");
+  sd = params.get("startDate");
+  if(sd != null && sd != "")
+  {
+    startDate = toDate("" + sd);
+  }
+  ed = params.get("endDate");
+  if(ed != null && ed != "")
+  {
+    endDate = toDate("" + ed);
+  }
+  else if(periodEnum != null && periodEnum != "")
+  {
+    // Si no hay fechas explícitas pero sí period enum, resolverlo
+    datePair = thisapp.chat_common.resolve_period(periodEnum, zoho.currentdate);
+    startDate = datePair.get(0);
+    endDate = datePair.get(1);
+  }
+  // Unión de IDs por tipo (addAll) → intersección con la ventana.
+  windowIDs = thisapp.chat_data_access.fetch_services_ids_by_date_window(startDate,endDate);
+  typeIDs = List();
+  for each  st in serviceType
+  {
+    ids = thisapp.chat_data_access.fetch_services_ids_by_type(st);
+    if(ids != null)
     {
-      limitNum = toNumber("" + limit);
-      if(limitNum == null || limitNum <= 0)
-      {
-        limitNum = 10;
-      }
+      typeIDs.addAll(ids);
     }
-    // Ventana FIJA de 30 días (no configurable este slice)
-    endDate = zoho.currentdate;
-    startDate = endDate.subDay(30);
-    // Unión de IDs por tipo (addAll) → intersección con la ventana.
-    // serviceType ya es una lista válida (≥1 elemento) por la validación.
-    windowIDs = thisapp.chat_data_access.fetch_services_ids_by_date_window(startDate,endDate);
-    typeIDs = List();
-    for each  st in serviceType
+  }
+  // Filtro por oficina (si se especificó)
+  if(officeZid > 0)
+  {
+    officeIDs = thisapp.chat_data_access.fetch_services_ids_by_office(officeZid);
+    if(officeIDs != null && officeIDs.size() > 0)
     {
-      ids = thisapp.chat_data_access.fetch_services_ids_by_type(st);
-      if(ids != null)
-      {
-        typeIDs.addAll(ids);
-      }
+      typeIDs = typeIDs.intersect(officeIDs);
     }
-    // Guard: Form[ID in []] tiene comportamiento desconocido en Creator
-    if(windowIDs == null || windowIDs.size() == 0 || typeIDs.size() == 0)
+    else
     {
-      return thisapp.chat_common.build_empty_report(startDate,endDate,reportedType);
+      typeIDs = List();
     }
-    targetIDs = windowIDs.intersect(typeIDs);
-    if(targetIDs == null || targetIDs.size() == 0)
+  }
+  // Filtro por ciudad destino (si se especificó)
+  if(city != null && city != "")
+  {
+    cityIDs = thisapp.chat_data_access.fetch_services_ids_by_destination(city);
+    if(cityIDs != null && cityIDs.size() > 0)
     {
-      return thisapp.chat_common.build_empty_report(startDate,endDate,reportedType);
+      typeIDs = typeIDs.intersect(cityIDs);
     }
-    total = targetIDs.size();
-    truncated = total > 200;
-    records = thisapp.chat_data_access.fetch_services_by_ids(targetIDs);
+    else
+    {
+      typeIDs = List();
+    }
+  }
+  // Guard: Form[ID in []] tiene comportamiento desconocido en Creator
+  if(windowIDs == null || windowIDs.size() == 0 || typeIDs == null || typeIDs.size() == 0)
+  {
+    return thisapp.chat_common.build_empty_report(startDate,endDate,reportedType);
+  }
+  targetIDs = windowIDs.intersect(typeIDs);
+  if(targetIDs == null || targetIDs.size() == 0)
+  {
+    return thisapp.chat_common.build_empty_report(startDate,endDate,reportedType);
+  }
+  total = targetIDs.size();
+  truncated = total > 200;
+  records = thisapp.chat_data_access.fetch_services_by_ids(targetIDs);
     // Agregación por remitente (Map clave = "" + senderId normalizado)
     senderMap = Map();
     if(records == null)
@@ -272,6 +324,8 @@
     data.put("periodStart",startDate);
     data.put("periodEnd",endDate);
     data.put("serviceType",reportedType);
+    if(officeName != null && officeName != "") { data.put("office",officeName); }
+    if(city != null && city != "") { data.put("city",city); }
     data.put("totalServices",total);
     data.put("totalCustomers",ranking.size());
     data.put("truncated",truncated);
@@ -280,6 +334,8 @@
     vizLabels = List();
     vizValues = List();
     vizTitle = "Clientes más frecuentes (" + reportedType + ")";
+    if(officeName != null && officeName != "") { vizTitle = vizTitle + " — " + officeName; }
+    if(city != null && city != "") { vizTitle = vizTitle + " — " + city; }
     for each  c in ranking
     {
       vizLabels.add(c.get("customerName"));

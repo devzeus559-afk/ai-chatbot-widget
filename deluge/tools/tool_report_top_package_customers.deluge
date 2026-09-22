@@ -67,9 +67,40 @@ map chat_tools.report_top_package_customers(map params)
   {
     reportedType = serviceType;
   }
-  // Ventana FIJA de 30 días
+  // --- Nuevos filtros: office, city, period/startDate/endDate ---
+  officeName = params.get("office");
+  officeZid = 0;
+  if(officeName != null && officeName != "")
+  {
+    officeZid = thisapp.chat_data_access.fetch_office_id_by_name(officeName);
+    if(officeZid == null || officeZid <= 0)
+    {
+      return {"ok":true,"data":{"reportType":"top_package_customers","empty":true,"message":"Oficina no encontrada."}};
+    }
+  }
+  city = params.get("city");
+  // Período: period enum O startDate/endDate explícitos
   endDate = zoho.currentdate;
-  startDate = endDate.subDay(30);
+  startDate = endDate.subDay(30); // default 30 días
+  periodEnum = params.get("period");
+  sd = params.get("startDate");
+  if(sd != null && sd != "")
+  {
+    startDate = toDate("" + sd);
+  }
+  ed = params.get("endDate");
+  if(ed != null && ed != "")
+  {
+    endDate = toDate("" + ed);
+  }
+  else if(periodEnum != null && periodEnum != "")
+  {
+    // Si no hay fechas explícitas pero sí period enum, resolverlo
+    datePair = thisapp.chat_common.resolve_period(periodEnum, zoho.currentdate);
+    startDate = datePair.get(0);
+    endDate = datePair.get(1);
+  }
+  // Ventana de fechas
   windowIDs = thisapp.chat_data_access.fetch_services_ids_by_date_window(startDate,endDate);
   if(windowIDs == null)
   {
@@ -118,6 +149,37 @@ map chat_tools.report_top_package_customers(map params)
     {
       return thisapp.chat_common.build_empty_package_customers_report(startDate,endDate,measure,reportedType);
     }
+  }
+  // Filtro por oficina (si se especificó)
+  if(officeZid > 0)
+  {
+    officeIDs = thisapp.chat_data_access.fetch_services_ids_by_office(officeZid);
+    if(officeIDs != null && officeIDs.size() > 0)
+    {
+      targetIDs = targetIDs.intersect(officeIDs);
+    }
+    else
+    {
+      targetIDs = List();
+    }
+  }
+  // Filtro por ciudad destino (si se especificó)
+  if(city != null && city != "")
+  {
+    cityIDs = thisapp.chat_data_access.fetch_services_ids_by_destination(city);
+    if(cityIDs != null && cityIDs.size() > 0)
+    {
+      targetIDs = targetIDs.intersect(cityIDs);
+    }
+    else
+    {
+      targetIDs = List();
+    }
+  }
+  // Guard final
+  if(targetIDs == null || targetIDs.size() == 0)
+  {
+    return thisapp.chat_common.build_empty_package_customers_report(startDate,endDate,measure,reportedType);
   }
   total = targetIDs.size();
   truncated = total > 200;
@@ -271,6 +333,8 @@ map chat_tools.report_top_package_customers(map params)
   data.put("periodStart",startDate);
   data.put("periodEnd",endDate);
   data.put("serviceType",reportedType);
+  if(officeName != null && officeName != "") { data.put("office",officeName); }
+  if(city != null && city != "") { data.put("city",city); }
   data.put("totalPackages",total);
   data.put("totalPounds",totalWeightSum);
   data.put("totalCustomers",ranking.size());
@@ -288,6 +352,8 @@ map chat_tools.report_top_package_customers(map params)
   {
     vizTitle = vizTitle + " (" + reportedType + ")";
   }
+  if(officeName != null && officeName != "") { vizTitle = vizTitle + " — " + officeName; }
+  if(city != null && city != "") { vizTitle = vizTitle + " — " + city; }
   for each  c in ranking
   {
     vizLabels.add(c.get("customerName"));
