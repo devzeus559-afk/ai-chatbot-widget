@@ -930,6 +930,8 @@ list chat_common.resolve_period(string periodEnum, date endDate)
   // Resuelve un enum de periodo a un par [startDate, endDate].
   // endDate se pasa explícitamente (normalmente zoho.currentdate) para que los
   // tests unitarios puedan verificar ventanas sobre una fecha conocida.
+  // DEFENSIVO: coaccionar a string para evitar "Comparison of non numeric"
+  periodEnum = periodEnum.toString();
   if(endDate == null)
   {
     endDate = zoho.currentdate;
