@@ -90,26 +90,25 @@ map chat_tools.report_top_customers(map params)
     }
   }
   city = params.get("city");
-  // Período: period enum O startDate/endDate explícitos
-  endDate = zoho.currentdate;
-  startDate = endDate.subDay(30); // default 30 días
-  periodEnum = params.get("period");
+  // Período: startDate/endDate ya vienen convertidos de normalize_params.
+  // Fallback: si no vienen, default 30 días.
   sd = params.get("startDate");
   if(sd != null && sd != "")
   {
     startDate = toDate("" + sd);
+  }
+  else
+  {
+    startDate = zoho.currentdate.subDay(30);
   }
   ed = params.get("endDate");
   if(ed != null && ed != "")
   {
     endDate = toDate("" + ed);
   }
-  else if(periodEnum != null && periodEnum != "")
+  else
   {
-    // Si no hay fechas explícitas pero sí period enum, resolverlo
-    datePair = thisapp.chat_common.resolve_period(periodEnum, zoho.currentdate);
-    startDate = datePair.get(0);
-    endDate = datePair.get(1);
+    endDate = zoho.currentdate;
   }
   // Unión de IDs por tipo (addAll) → intersección con la ventana.
   windowIDs = thisapp.chat_data_access.fetch_services_ids_by_date_window(startDate,endDate);
