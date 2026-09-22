@@ -77,7 +77,7 @@ map chat_tools.report_delayed_packages(map params)
     item = Map();
     item.put("packageId",r.get("packageId"));
     item.put("shippingTypeName",shipName);
-    item.put("class",className == "air" ? "air" : "maritime");
+    item.put("class",if(className == "air","air","maritime"));
     item.put("destination",destination);
     item.put("daysSinceScan",daysSinceScan);
     item.put("threshold",threshold);

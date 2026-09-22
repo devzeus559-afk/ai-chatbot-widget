@@ -371,7 +371,7 @@ map chat_tools.report_top_package_customers(map params)
   vizType = thisapp.chat_common.decidirVisualizacion(vizLabels,false);
   series = List();
   s = Map();
-  s.put("name",(measure == "pounds") ? "Libras" : "Paquetes");
+  s.put("name",if(measure == "pounds","Libras","Paquetes"));
   s.put("values",vizValues);
   series.add(s);
   viz = thisapp.chat_common.build_viz(vizType,vizTitle,vizLabels,series);
