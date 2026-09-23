@@ -750,13 +750,46 @@ int chat_data_access.insert_chat_session(map data)
 // --------------------------------------------------------------------------
 int chat_data_access.fetch_office_id_by_name(string officeName)
 {
-  records = Commercial_Office[Office_Name == officeName] range from 0 to 199;
+  // Buscar oficina por nombre base (primer substring antes de la primera coma).
+  // Los nombres en Office_Name tienen formato: "Nombre, Ciudad, País, País"
+  // Ej: "Elizabeth, New Jersey,United States, United States" -> nombre base "Elizabeth"
+  // Evita colisiones como "New York" vs "West New York".
+  if(officeName == null || officeName == "")
+  {
+    return 0;
+  }
+  // Normalizar input: tomar solo la parte antes de la primera coma si la hay
+  inputBase = officeName;
+  commaIdx = officeName.indexOf(",");
+  if(commaIdx > 0)
+  {
+    inputBase = officeName.substring(0, commaIdx).trim();
+  }
+  // Buscar todos los registros y comparar por nombre base
+  records = Commercial_Office[Office_Name != ""] range from 0 to 199;
   if(records == null || records.size() == 0)
   {
     return 0;
   }
-  rec = records.get(0);
-  return rec.ID;
+  for each  rec in records
+  {
+    fullName = rec.Office_Name;
+    if(fullName == null || fullName == "")
+    {
+      continue;
+    }
+    recBase = fullName;
+    commaIdx = fullName.indexOf(",");
+    if(commaIdx > 0)
+    {
+      recBase = fullName.substring(0, commaIdx).trim();
+    }
+    if(recBase == inputBase)
+    {
+      return rec.ID;
+    }
+  }
+  return 0;
 }
 list chat_data_access.materialize_service_report(list records)
 {
