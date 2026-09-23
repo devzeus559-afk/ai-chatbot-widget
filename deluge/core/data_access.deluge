@@ -322,8 +322,15 @@ list chat_data_access.fetch_offices_all()
   for each  r in records
   {
     officeFields = Map();
-    // text (único)
-    officeFields.put("name",r.Office_Name);
+    // text (único): usar solo el nombre base (antes de la primera coma)
+    fullName = r.Office_Name;
+    baseName = fullName;
+    commaIdx = fullName.indexOf(",");
+    if(commaIdx > 0)
+    {
+      baseName = fullName.substring(0, commaIdx).trim();
+    }
+    officeFields.put("name",baseName);
     // campo compuesto (address)
     officeFields.put("address",r.Address);
     // subfield de Address
@@ -346,8 +353,15 @@ list chat_data_access.fetch_offices_by_ids(list ids)
   for each  r in records
   {
     officeFields = Map();
-    // text (único)
-    officeFields.put("name",r.Office_Name);
+    // text (único): usar solo el nombre base (antes de la primera coma)
+    fullName = r.Office_Name;
+    baseName = fullName;
+    commaIdx = fullName.indexOf(",");
+    if(commaIdx > 0)
+    {
+      baseName = fullName.substring(0, commaIdx).trim();
+    }
+    officeFields.put("name",baseName);
     // campo compuesto (address)
     officeFields.put("address",r.Address);
     // subfield de Address
