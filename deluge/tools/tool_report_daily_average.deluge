@@ -55,7 +55,7 @@ map chat_tools.report_daily_average(map params)
     totalPounds = totalPounds + w;
   }
   // Días del período (inclusive)
-  daysInPeriod = endDate.daysBetween(startDate) + 1;
+  daysInPeriod = (((endDate - startDate) / 86400000)).toLong() + 1;
   if(daysInPeriod == null || daysInPeriod < 1)
   {
     daysInPeriod = 1;

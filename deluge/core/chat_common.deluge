@@ -801,12 +801,12 @@ date chat_common.first_of_month(date d)
   }
   y = d.getYear();
   m = d.getMonth();
-  return date(y,m,1);
+  return (y + "-" + m + "-01").toDate();
 }
 int chat_common.days_in_month_range(int year, int month, date rangeStart, date rangeEnd)
 {
   // Días del mes (año/mes) que caen dentro de [rangeStart, rangeEnd], inclusive.
-  monthStart = date(year,month,1);
+  monthStart = (year + "-" + month + "-01").toDate();
   monthEnd = monthStart.addMonth(1).subDay(1);
   oStart = monthStart;
   if(rangeStart != null && rangeStart > monthStart)
@@ -822,7 +822,7 @@ int chat_common.days_in_month_range(int year, int month, date rangeStart, date r
   {
     return 0;
   }
-  days = oEnd.daysBetween(oStart) + 1;
+  days = (((oEnd - oStart) / 86400000)).toLong() + 1;
   if(days == null || days < 1)
   {
     return 1;

@@ -45,7 +45,7 @@ map chat_tools.report_delayed_packages(map params)
     {
       continue;
     }
-    daysSinceScan = today.daysBetween(scanDate);
+    daysSinceScan = (((today - scanDate) / 86400000)).toLong();
     if(daysSinceScan == null)
     {
       continue;
