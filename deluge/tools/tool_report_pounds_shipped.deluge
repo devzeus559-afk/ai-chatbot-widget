@@ -62,7 +62,7 @@ map chat_tools.report_pounds_shipped(map params)
   for each  p in records
   {
     w = p.get("totalWeight");
-    if(w == null || w == "")
+    if(w == null)
     {
       w = 0;
     }

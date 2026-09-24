@@ -216,10 +216,6 @@ map chat_tools.report_top_package_customers(map params)
     {
       w = 0;
     }
-    if(w == "")
-    {
-      w = 0;
-    }
     totalWeightSum = totalWeightSum + w;
     serviceDate = s.get("date");
     entry = senderMap.get(key);

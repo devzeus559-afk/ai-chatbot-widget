@@ -70,7 +70,7 @@ map chat_tools.report_monthly_comparison(map params)
     }
     mKey = "" + rd.getYear() + "-" + rd.getMonth();
     w = p.get("totalWeight");
-    if(w == null || w == "")
+    if(w == null)
     {
       w = 0;
     }
