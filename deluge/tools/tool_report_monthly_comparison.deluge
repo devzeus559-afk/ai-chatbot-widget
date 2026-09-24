@@ -42,6 +42,13 @@ map chat_tools.report_monthly_comparison(map params)
   {
     endDate = toDate("" + ed);
   }
+  // La ventana del período (p. ej. "mes pasado") no debe colapsar el span:
+  // extiende startDate hacia atrás hasta cubrir monthNum meses.
+  minStart = thisapp.chat_common.first_of_month(endDate).subMonth(monthNum - 1);
+  if(startDate > minStart)
+  {
+    startDate = minStart;
+  }
   officeName = params.get("office");
   officeZid = 0;
   reportedOffice = null;
