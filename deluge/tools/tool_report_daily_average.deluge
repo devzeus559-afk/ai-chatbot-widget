@@ -60,7 +60,7 @@ map chat_tools.report_daily_average(map params)
   {
     daysInPeriod = 1;
   }
-  dailyAverage = totalPounds / daysInPeriod;
+  dailyAverage = round(totalPounds / daysInPeriod,1);
   data = Map();
   data.put("reportType","daily_average");
   data.put("periodStart",startDate);
