@@ -691,6 +691,8 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
       }
       // Saneamiento determinista: elimina claves con null o string vacío
       // (Zia puede violar la regla del prompt "omite opcionales ausentes").
+      // v.toString() en vez de v == "": NUMBER/LIST contra TEXT es inválido
+      // en Deluge y lanzaría "Comparison of non numeric expression...".
       cleanedParams = Map();
       keysToRemove = params.keys();
       for each  k in keysToRemove
@@ -704,7 +706,7 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
         {
           continue;
         }
-        if(v == "")
+        if(v.toString() == "")
         {
           continue;
         }
@@ -727,6 +729,12 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
           if(!limitText.matches("[0-9]+"))
           {
             params.remove("limit");
+          }
+          else
+          {
+            // Persistir como string: los tools comparan `limit != ""`
+            // (inválido NUMBER==TEXT si Zia envía number).
+            params.put("limit",limitText);
           }
         }
       }
@@ -807,7 +815,6 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
           if(periodEnum != null)
           {
             periodStr = periodEnum.toString().toLowerCase();
-            info "DEBUG normalize_params: periodEnum raw=" + periodEnum + " -> periodStr=" + periodStr;
             // Normalizar alias comunes
             if(periodStr == "mes pasado" || periodStr == "mes anterior" || periodStr == "mes_pasado")
             {
@@ -825,7 +832,6 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
             {
               periodStr = "ultimos_7_dias";
             }
-            info "DEBUG normalize_params: periodStr normalizado=" + periodStr;
             for each  vp in validPeriods
             {
               if(vp == periodStr)
@@ -839,8 +845,10 @@ map chat_intent.normalize_params(map ziaResponse, string toolName)
             return {"clarify":"Periodo inválido. Usá uno de: 'ultimo_mes' (default), 'mes_anterior', 'este_mes', 'ultimos_7_dias'."};
           }
           datePair = thisapp.chat_common.resolve_period(periodStr,zoho.currentdate);
-          params.put("startDate",datePair.get(0));
-          params.put("endDate",datePair.get(1));
+          // Como string ISO: los tools hacen `if(sd != ""` + toDate(...);
+          // con DATE esa comparación da false y el period se ignoraría.
+          params.put("startDate",datePair.get(0).toString("yyyy-MM-dd"));
+          params.put("endDate",datePair.get(1).toString("yyyy-MM-dd"));
         }
       }
       return {"kind":"tool","tool":toolName,"params":params};
