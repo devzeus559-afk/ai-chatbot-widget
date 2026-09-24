@@ -2,7 +2,7 @@
  * tool_report_monthly_comparison.deluge
  *
  * Reporte métrico: comparación de promedios mensuales de libras (Package.
- * Total_Weight) a lo largo de los últimos N meses (default 3), con variación
+ * Total_Weight) a lo largo de los últimos N meses (default 2), con variación
  * (% delta) vs el mes anterior.
  *
  * Recibe: {"months"?: string|number (default 2),
