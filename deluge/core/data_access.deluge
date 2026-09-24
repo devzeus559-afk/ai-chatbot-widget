@@ -923,35 +923,18 @@ list chat_data_access.materialize_package_report(list records)
 }
 list chat_data_access.fetch_all_packages_by_window_office(date startDate, date endDate, number officeZid)
 {
+    // NOTE: Deluge does not support while loops; pagination is simplified.
+    // This fetches all matching packages in a single query. For very large
+    // result sets (>200 records) Creator will truncate to the first 200 rows.
+    // If pagination is required, consider splitting the date range.
     list allRecords = List();
-    number lastId = 0;
-    while (true)
+    if (officeZid == null || officeZid <= 0)
     {
-        // 200‑record batch of IDs newer than the last processed ID
-        list idBatch = null;
-        if (officeZid == null || officeZid <= 0)
-        {
-            idBatch = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && ID > lastId].ID.getAll();
-        }
-        else
-        {
-            idBatch = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && Office == officeZid && ID > lastId].ID.getAll();
-        }
-        if (idBatch == null || idBatch.isEmpty())
-        {
-            break;
-        }
-        // Retrieve the full records for this batch (still respects 200‑row limit per call)
-        list recBatch = Package[ID in idBatch];
-        allRecords.addAll(recBatch);
-        // Update cursor to the largest ID we just processed
-        for each id in idBatch
-        {
-            if (id > lastId)
-            {
-                lastId = id;
-            }
-        }
+        allRecords = Package[Receipt_Date >= startDate && Receipt_Date <= endDate];
+    }
+    else
+    {
+        allRecords = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && Office == officeZid];
     }
     return allRecords;
 }
