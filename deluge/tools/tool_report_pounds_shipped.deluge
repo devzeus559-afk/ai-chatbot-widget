@@ -45,8 +45,16 @@ map chat_tools.report_pounds_shipped(map params)
     }
     reportedOffice = officeName;
   }
-  records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
-  if(records == null)
+  fullFlag = params.get("full");
+  boolean full = (fullFlag != null && fullFlag != "" && fullFlag != "false");
+  if (full)
+  {
+    records = thisapp.chat_data_access.fetch_all_packages_by_window_office(startDate,endDate,officeZid);
+  }
+  else
+  {
+    records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+  }  if(records == null)
   {
     records = List();
   }
