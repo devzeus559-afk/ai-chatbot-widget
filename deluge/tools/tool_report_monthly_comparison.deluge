@@ -5,7 +5,7 @@
  * Total_Weight) a lo largo de los últimos N meses (default 3), con variación
  * (% delta) vs el mes anterior.
  *
- * Recibe: {"months"?: string|number (default 3),
+ * Recibe: {"months"?: string|number (default 2),
  *          "startDate"?: date, "endDate"?: date,
  *          "office"?: string}
  * Devuelve: {"ok": true, "data": {
@@ -20,14 +20,14 @@
 map chat_tools.report_monthly_comparison(map params)
 {
   config = thisapp.chat_config.chat_config();
-  monthNum = 3;
+  monthNum = 2;
   monthsParam = params.get("months");
   if(monthsParam != null && monthsParam != "")
   {
     monthNum = toNumber("" + monthsParam);
     if(monthNum == null || monthNum <= 0)
     {
-      monthNum = 3;
+      monthNum = 2;
     }
   }
   endDate = zoho.currentdate;

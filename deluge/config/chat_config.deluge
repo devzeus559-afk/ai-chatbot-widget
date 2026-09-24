@@ -104,7 +104,7 @@ map chat_config.chat_config()
   tools.add(tool);
   tool = Map();
   tool.put("name","report_monthly_comparison");
-  tool.put("description","Reporte de comparación de promedios mensuales de libras a lo largo de los últimos N meses (default 3), con variación (%) vs el mes anterior. Params opcionales: months, startDate, endDate, office (nombre de oficina).");
+   tool.put("description","Reporte de comparación de promedios mensuales de libras a lo largo de los últimos N meses (default 2), con variación (%) vs el mes anterior. Params opcionales: months, startDate, endDate, office (nombre de oficina).");
   tool.put("params",{"months":"string opcional","startDate":"date opcional","endDate":"date opcional","office":"string opcional"});
   tools.add(tool);
   tool = Map();
