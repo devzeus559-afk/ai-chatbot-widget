@@ -210,7 +210,7 @@ map chat_config.chat_config()
   paramSchema.put("report_top_package_customers","OPTIONAL: measure (string: packages|pounds), limit (string), serviceType (string), office (string), city (string), period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias), startDate (date), endDate (date)");
   paramSchema.put("report_top_remittance_customers","OPTIONAL: limit (string), office (string), city (string), period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias), startDate (date), endDate (date)");
   paramSchema.put("report_pounds_shipped","OPTIONAL: period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias — NUNCA calcules fechas; devuelve el enum string), office (string), country (string), measure (string)");
-  paramSchema.put("report_daily_average","OPTIONAL: period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias — NUNCA calcules fechas; devuelve el enum string), office (string), country (string)");
+   paramSchema.put("report_daily_average","OPTIONAL: period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias — NUNCA calcules fechas; devuelve el enum string), office (string), country (string), full (boolean) – Si el usuario dice 'completo' o 'todos los paquetes' se interpreta como full=true.");
   paramSchema.put("report_monthly_comparison","OPTIONAL: period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias — NUNCA calcules fechas; devuelve el enum string), months (string), office (string)");
   paramSchema.put("report_shipping_type_frequency","OPTIONAL: limit (string), office (string)");
   paramSchema.put("report_merchandise_type","OPTIONAL: limit (string), office (string)");
