@@ -37,8 +37,32 @@ const DEFAULT_DUMP = path.join(
   'Logistic_Management_II.ds'
 );
 
-// Return types Deluge uses for function declarations.
-const RETURN_TYPES = 'map|list|boolean|string|void|number|collection|datatime';
+// Deluge return types observed in this project: map, list, string, void, number,
+// int, float, date, datatime, collection, boolean. NOTE: Creator's exporter
+// rewrites `boolean` as `bool` (and `datetime` as `date`), so the same function
+// can be declared with a different type token on each side. Accept any
+// identifier as the type rather than an allowlist, or a type name added by a
+// Zoho update makes whole functions silently invisible.
+const KNOWN_TYPES = new Set([
+  'map', 'list', 'string', 'void', 'number', 'int', 'float', 'decimal',
+  'date', 'datatime', 'datetime', 'collection', 'boolean', 'bool', 'json',
+]);
+
+/*
+ * Tokens that begin a line, are followed by a name and '(' , and are NOT
+ * function declarations. Without this filter a permissive matcher reads
+ * `return thisapp.x.y(` as a declaration named "thisapp.x.y" — there are
+ * hundreds of those in a Creator export.
+ *
+ * A keyword match must NOT consume the following block, or the scanner would
+ * skip past real functions declared after it.
+ */
+const NOT_TYPES = new Set([
+  'else', 'return', 'page', 'if', 'for', 'while', 'catch', 'insert', 'into',
+  'let', 'var', 'new', 'function', 'form', 'report', 'section', 'field',
+  'custom', 'displayname', 'record', 'sortorder', 'type', 'values', 'row',
+  'column', 'width', 'icon', 'openurl', 'open',
+]);
 
 // ── args ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +73,7 @@ function parseArgs(argv) {
     verbose: false,
     allowDrift: false,
     help: false,
+    badArg: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -60,6 +85,7 @@ function parseArgs(argv) {
     else {
       console.error(`Unknown argument: ${a}`);
       opts.help = true;
+      opts.badArg = true;
     }
   }
   return opts;
@@ -247,8 +273,67 @@ function collapseParens(text) {
  * and statement order are all preserved, so a genuine logic or text change
  * still registers as a difference.
  */
+/*
+ * Deluge type aliases: Creator's exporter abbreviates what you wrote, so the
+ * same function is exported as `bool` where the repo says `boolean`. These are
+ * the same type — without folding them, that function reports drift forever
+ * (deploy it, re-export, drift again), which trains people to ignore the tool.
+ *
+ * Rewritten only outside string literals: a message string containing the word
+ * "boolean" is data, not a type.
+ */
+const TYPE_ALIASES = new Map([['bool', 'boolean']]);
+
+function canonicalizeTypes(src) {
+  let out = '';
+  let i = 0;
+  while (i < src.length) {
+    const ch = src[i];
+    if (ch === '/' && (src[i + 1] === '/' || src[i + 1] === '*')) {
+      // Copy the comment verbatim; types inside comments are not types.
+      if (src[i + 1] === '/') {
+        const end = src.indexOf('\n', i);
+        const stop = end === -1 ? src.length : end;
+        out += src.slice(i, stop);
+        i = stop;
+      } else {
+        const end = src.indexOf('*/', i + 2);
+        const stop = end === -1 ? src.length : end + 2;
+        out += src.slice(i, stop);
+        i = stop;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      const s = readString(src, i);
+      out += s;
+      i += s.length;
+      continue;
+    }
+    if (/[A-Za-z_]/.test(ch)) {
+      let j = i;
+      while (j < src.length && /[A-Za-z_0-9]/.test(src[j])) j++;
+      const word = src.slice(i, j);
+      // After '.' this is a field or member name, not a type: `rec.bool` must
+      // stay `rec.bool`, otherwise the reference stops matching its field.
+      const prev = out.replace(/\s+$/, '').slice(-1);
+      const isMember = prev === '.';
+      out += !isMember && TYPE_ALIASES.has(word.toLowerCase())
+        ? TYPE_ALIASES.get(word.toLowerCase())
+        : word;
+      i = j;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
 function normalize(src) {
-  return collapseParens(stripComments(src).replace(/\s+/g, ''));
+  return collapseParens(
+    canonicalizeTypes(stripComments(src)).replace(/\s+/g, '')
+  );
 }
 
 /* Statement-level split for the segment diff, also string aware. */
@@ -286,8 +371,22 @@ function splitSegments(src) {
 
 // ── declaration extraction ──────────────────────────────────────────────────
 
+/*
+ * Matches the shape of a declaration line: a type token, a name, and '('.
+ * Group 1 is the type token, group 2 the qualified function name. Filtering
+ * NOT_TYPES is done in code, not in this pattern, so a keyword match can be
+ * skipped without consuming the body it appears in.
+ *
+ * Separators are [ \t], NOT \s: \s matches newlines, which would let a pattern
+ * span lines and read `unique Supplier_Label` followed by an unrelated line
+ * starting with '(' as a declaration. In a Creator export there are hundreds of
+ * such lines (`sort by`, `group by`, `on load`, `unique Label`).
+ *
+ * The type token allows '-' so hyphenated types such as `date-time` or
+ * `time-epoch` are not silently dropped.
+ */
 const DECL_RE = new RegExp(
-  '^[ \\t]*(?:' + RETURN_TYPES + ')\\s+([A-Za-z_][A-Za-z_0-9_.]*)\\s*\\(',
+  '^[ \\t]*([A-Za-z_][A-Za-z_0-9_-]*)[ \\t]+([A-Za-z_][A-Za-z_0-9_.]*)[ \\t]*\\(',
   'gm'
 );
 
@@ -298,14 +397,23 @@ function lineOf(text, index) {
 }
 
 /*
- * Walks a source text and returns every top-level function it declares.
- * `label` distinguishes the repo side from the dump side for reporting.
+ * Walks a source text and returns every function it declares.
+ *
+ * `stats.unknownTypes` accumulates any type token outside KNOWN_TYPES so the
+ * report can surface it. That is the guard against this class of bug
+ * recurring: an unrecognized type is never allowed to fail silently.
  */
-function extractFunctions(text, resolvePath) {
+function extractFunctions(text, resolvePath, stats) {
   const found = [];
+  if (stats) stats.unknownTypes = stats.unknownTypes || new Set();
   DECL_RE.lastIndex = 0;
   let m;
   while ((m = DECL_RE.exec(text)) !== null) {
+    const typeToken = m[1];
+    const lower = typeToken.toLowerCase();
+    if (NOT_TYPES.has(lower)) continue; // not a declaration; keep scanning
+    if (stats && !KNOWN_TYPES.has(lower)) stats.unknownTypes.add(lower);
+
     const declStart = m.index;
     const open = findBrace(text, DECL_RE.lastIndex);
     if (open === -1) break;
@@ -313,7 +421,8 @@ function extractFunctions(text, resolvePath) {
     if (close === -1) break;
     const raw = text.slice(declStart, close + 1);
     found.push({
-      name: m[1],
+      name: m[2],
+      type: lower,
       file: resolvePath(text, declStart),
       line: lineOf(text, declStart),
       raw,
@@ -363,22 +472,49 @@ function segmentDiff(repoRaw, liveRaw) {
   };
 }
 
+/*
+ * Resolves a repo function name to its live counterpart.
+ *
+ * Exact name always wins. The fallbacks exist because Creator wraps some
+ * standalone functions in a module named after them: the repo declares
+ * `chat_list()` while the export stores `chat_list.chat_list()`. The alias
+ * lookup is deterministic and unambiguous, and any fallback match is reported
+ * back to the caller so the naming discrepancy stays visible instead of being
+ * silently accepted as parity.
+ */
+function resolveLive(liveByName, name) {
+  const direct = liveByName.get(name);
+  if (direct) return { variants: direct, matchedName: name };
+  const bare = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : name;
+  const alias = bare + '.' + bare;
+  if (liveByName.has(alias)) {
+    return { variants: liveByName.get(alias), matchedName: alias };
+  }
+  if (liveByName.has(bare)) {
+    return { variants: liveByName.get(bare), matchedName: bare };
+  }
+  return { variants: null, matchedName: null };
+}
+
 function compare(repoFns, liveByName) {
   const same = [];
   const different = [];
   const missing = [];
+  const renamed = [];
   const sorted = [...repoFns].sort((x, y) => x.name.localeCompare(y.name));
 
   for (const fn of sorted) {
-    const variants = liveByName.get(fn.name);
+    const { variants, matchedName } = resolveLive(liveByName, fn.name);
     if (!variants) {
       missing.push(fn);
       continue;
     }
+    const aliasUsed = matchedName !== fn.name;
     // A function can appear in several app variants (desktop, tablet); parity
     // holds if any one of them matches.
     if (variants.some((v) => v.norm === fn.norm)) {
-      same.push(fn);
+      if (aliasUsed) renamed.push({ ...fn, matchedName });
+      else same.push(fn);
       continue;
     }
     let best = null;
@@ -387,21 +523,22 @@ function compare(repoFns, liveByName) {
       const cost = d.onlyRepo.length + d.onlyLive.length;
       if (!best || cost < best.cost) best = { v, d, cost };
     }
-    different.push({ ...fn, dumpLine: best.v.line, ...best.d });
+    different.push({ ...fn, dumpLine: best.v.line, matchedName, ...best.d });
   }
-  return { same, different, missing };
+  return { same, different, missing, renamed };
 }
 
 // ── reporting ───────────────────────────────────────────────────────────────
 
 const isTest = (name) => /\btests_[a-z_0-9]+\./.test(name);
 
-function report(opts, repoFns, liveByName, cmp, dumpPath) {
+function report(opts, repoFns, liveByName, cmp, dumpPath, stats) {
   const prodDifferent = cmp.different.filter((d) => !isTest(d.name));
   const prodMissing = cmp.missing.filter((d) => !isTest(d.name));
   const testDifferent = cmp.different.filter((d) => isTest(d.name));
-  const testMissing = cmp.missing.filter((d) => isTest(d.name));
+  const testMissing = cmp.missing.filter((d) => !isTest(d.name));
   const drift = prodDifferent.length + prodMissing.length;
+  const unknown = Array.from(stats.unknownTypes).sort();
 
   if (opts.json) {
     console.log(
@@ -412,6 +549,8 @@ function report(opts, repoFns, liveByName, cmp, dumpPath) {
           liveFunctions: liveByName.size,
           parity: cmp.same.length,
           drift: drift > 0,
+          unknownReturnTypes: unknown,
+          nameMismatches: cmp.renamed.map((r) => ({ name: r.name, matchedName: r.matchedName, file: r.file, line: r.line })),
           missingInLive: cmp.missing.map((f) => ({
             name: f.name,
             file: f.file,
@@ -423,9 +562,10 @@ function report(opts, repoFns, liveByName, cmp, dumpPath) {
             file: d.file,
             line: d.line,
             dumpLine: d.dumpLine,
+            matchedName: d.matchedName,
             isTest: isTest(d.name),
             onlyInRepo: d.onlyRepo,
-            onlyInLive: d.onlyLive,
+            onlyInLive: d.onlyDump,
           })),
         },
         null,
@@ -447,6 +587,24 @@ function report(opts, repoFns, liveByName, cmp, dumpPath) {
   line(`drift          : ${drift === 0 ? 'none' : drift + ' production function(s)'}`);
   line();
 
+  if (unknown.length) {
+    line('WARNING: unrecognized return type(s) — functions may be invisible:');
+    for (const t of unknown) line(`  ${t}`);
+    line('  Add them to KNOWN_TYPES / NOT_TYPES in tools/creator-parity.js.');
+    line();
+  }
+
+  if (cmp.renamed.length) {
+    line('NAME MISMATCH — matched through an alias, not an exact name');
+    line(bar);
+    for (const r of cmp.renamed) {
+      line(`  repo ${r.name}`);
+      line(`  live ${r.matchedName}`);
+      line(`      ${r.file}:${r.line}`);
+    }
+    line();
+  }
+
   if (prodMissing.length) {
     line('IN REPO, NOT IN LIVE — committed locally but never deployed');
     line(bar);
@@ -461,7 +619,7 @@ function report(opts, repoFns, liveByName, cmp, dumpPath) {
     line('DIFFERENT BODIES — repo has changes live does not');
     line(bar);
     for (const d of prodDifferent) {
-      line(`  ${d.name}`);
+      line(`  ${d.name}${d.matchedName && d.matchedName !== d.name ? `  (live name: ${d.matchedName})` : ''}`);
       line(`      repo ${d.file}:${d.line}   live .ds:${d.dumpLine}`);
       if (opts.verbose) {
         for (const s of d.onlyRepo) line(`      - repo: ${s}`);
@@ -513,7 +671,9 @@ function main() {
         'Exit codes: 0 no drift, 1 drift found, 2 bad input',
       ].join('\n')
     );
-    process.exit(0);
+    // An unknown flag is a usage error, not a successful help request: exiting 0
+    // there would let a typo'd flag pass for a clean run in a CI script.
+    process.exit(opts.badArg ? 2 : 0);
   }
 
   if (!fs.existsSync(DELUGE_DIR) || !fs.statSync(DELUGE_DIR).isDirectory()) {
@@ -526,15 +686,16 @@ function main() {
     process.exit(2);
   }
 
+  const stats = { unknownTypes: new Set() };
   const repoFns = [];
   for (const file of listDelugeFiles(DELUGE_DIR)) {
     const text = fs.readFileSync(file, 'utf8');
     const rel = path.relative(REPO_ROOT, file);
-    repoFns.push(...extractFunctions(text, () => rel));
+    repoFns.push(...extractFunctions(text, () => rel, stats));
   }
 
   const dumpText = fs.readFileSync(opts.dump, 'utf8');
-  const liveList = extractFunctions(dumpText, () => path.basename(opts.dump));
+  const liveList = extractFunctions(dumpText, () => path.basename(opts.dump), stats);
   const liveByName = new Map();
   for (const fn of liveList) {
     if (!liveByName.has(fn.name)) liveByName.set(fn.name, []);
@@ -542,7 +703,7 @@ function main() {
   }
 
   const cmp = compare(repoFns, liveByName);
-  const drift = report(opts, repoFns, liveByName, cmp, opts.dump);
+  const drift = report(opts, repoFns, liveByName, cmp, opts.dump, stats);
   process.exit(drift > 0 && !opts.allowDrift ? 1 : 0);
 }
 

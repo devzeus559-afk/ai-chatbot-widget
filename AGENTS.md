@@ -29,7 +29,12 @@ node tools/creator-parity.js --json      # machine-readable
 |---|---|---|
 | *in repo, not in live* | written and committed, never deployed | paste it into Creator |
 | *different bodies* | repo holds newer edits | re-paste, or re-export the `.ds` if the dump is stale |
+| *live name: X* | same function, different name in the export | decide whether the repo name or the module layout is canonical |
 | *tests also drifting* | informational only | test scaffolds are Creator-run, not production logic |
+
+It recognizes every Deluge return type the project uses (`map`, `list`, `string`, `void`, `number`, `int`, `float`, `date`, `collection`, `boolean`) rather than a fixed allowlist, so adding a type in a Zoho update cannot make a whole function silently invisible. Any type name it does not recognize is printed as a **WARNING** instead of being ignored. Type aliases are folded (`bool` ≡ `boolean`, the form Creator's exporter writes), so an alias difference alone is not reported as drift.
+
+Two name forms are matched for you: Creator sometimes exports a standalone function wrapped in a module named after it (repo `chat_list()` vs live `chat_list.chat_list()`). The tool falls back to that alias, but prints `live name:` so the discrepancy stays visible instead of being silently accepted.
 
 Run it before reporting any Deluge change as done, and again after deploying. It only proves parity against the **dump**, so a stale `.ds` reads as false drift — re-export from Creator when results look wrong.
 

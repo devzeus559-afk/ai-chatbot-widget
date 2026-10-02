@@ -111,7 +111,15 @@ node tools/creator-parity.js --json      # salida legible por máquina
 |---|---|---|
 | *en repo, no en live* | escrita y commiteada, nunca desplegada | pegarla en Creator |
 | *cuerpos distintos* | el repo tiene ediciones más nuevas | volver a pegar, o re-exportar el `.ds` si el dump quedó viejo |
+| *live name: X* | misma función, otro nombre en el export | decidir si el nombre del repo o el layout de módulo es el canónico |
 | *tests también con drift* | solo informativo | los tests se corren en Creator, no son lógica de producción |
+
+Reconoce todos los tipos de retorno de Deluge que usa el proyecto (`map`, `list`, `string`,
+`void`, `number`, `int`, `float`, `date`, `collection`, `boolean`) en vez de una lista fija,
+así que agregar un tipo en una actualización de Zoho no vuelve invisible a una función
+entera. Un tipo que no reconoce se imprime como **WARNING** en vez de ignorarse. Los alias
+se pliegan (`bool` ≡ `boolean`, la forma que escribe el exportador de Creator), así que una
+diferencia de alias sola no se reporta como drift.
 
 Correlo **después** de desplegar: recién ahí confirma que la función llegó a producción.
 
