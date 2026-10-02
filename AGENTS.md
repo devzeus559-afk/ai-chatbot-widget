@@ -13,7 +13,27 @@
 - Working branch: `develop` (not `main`).
 - Conventional commits: `feat|fix|refactor|docs` + scope, e.g. `feat(deluge): add tool_X`, `fix(widget): sort history by ID`.
 - No CI, no pre-commit hooks. Lint/typecheck/test commands do not exist.
-- `creatorapp-backup/Logistic_Management_II.ds` is a user-owned Creator dump: **never commit or touch it**.
+- `creatorapp-backup/Logistic_Management_II.ds` is a user-owned Creator dump: **never commit or touch it**. It is gitignored and serves as a read-only input for `tools/creator-parity.js`.
+
+## Repo ↔ live drift — a committed `.deluge` file is not a deployed one
+
+Nothing in git records what actually reached Creator, so a function can be committed and merged while production still runs the old version. `tools/creator-parity.js` compares the repo against the live app export:
+
+```bash
+node tools/creator-parity.js             # exit 1 if drifted
+node tools/creator-parity.js --verbose   # show the differing segments
+node tools/creator-parity.js --json      # machine-readable
+```
+
+| Bucket | Meaning | Action |
+|---|---|---|
+| *in repo, not in live* | written and committed, never deployed | paste it into Creator |
+| *different bodies* | repo holds newer edits | re-paste, or re-export the `.ds` if the dump is stale |
+| *tests also drifting* | informational only | test scaffolds are Creator-run, not production logic |
+
+Run it before reporting any Deluge change as done, and again after deploying. It only proves parity against the **dump**, so a stale `.ds` reads as false drift — re-export from Creator when results look wrong.
+
+**Deploy callers and callees together.** When a function's arity or signature changed, deploying the caller alone breaks production. `--verbose` exposes arity differences; treat any `different bodies` entry whose signature line appears in the diff as a hard ordering constraint.
 
 ## Dev server (widget preview)
 
@@ -61,10 +81,11 @@ These are often different in Creator. The `CONFIG.appName` uses the real app lin
 
 | Directory | What it owns | Touch rules |
 |---|---|---|
-| `deluge/config/` | `chat_config.deluge` — link names, currency, `composeWithAI`, `tools` catalog (15 tools), `toolsText` builder. Field maps / `ownerFields` do **not** exist here | Every tool/field change ripples here |
+| `deluge/config/` | `chat_config.deluge` — link names, currency, `composeWithAI`, `tools` catalog (16 tools), `toolsText` builder. Field maps / `ownerFields` do **not** exist here | Every tool/field change ripples here |
 | `deluge/core/` | `data_access` (native query layer with literal field names), `chat_common`, `chat_intent`, `chat_invoke`, `chat_list` + manual test files `tests_common`, `tests_chat_intent`, `tests_native_data_access`, `tests_report_top_customers` | Query field names are literals in `data_access` — keep them in sync with the Creator schema; no central field map to update |
-| `deluge/tools/` | One `tool_*.deluge` per business tool (15 files) | Each starts with `config = chat_config()`; returns `{"ok": true/false, "data": [...]}` |
+| `deluge/tools/` | One `tool_*.deluge` per business tool (16 files) | Each starts with `config = chat_config()`; returns `{"ok": true/false, "data": [...]}` |
 | `deluge/workflow/` | `on_submit_chatrequests.deluge` — On Submit script for ChatRequests | Calls `chat_invoke`; catches failures by mutating `input` in memory so no request stays "pending" |
+| `tools/` | `creator-parity.js` — repo ↔ live Deluge drift report | Node, no dependencies. Read-only: never writes the `.ds` or the Deluge sources |
 | `chatbot-widget/app/widget.html` | Single-file widget (UI + adapter + CSS + i18n) | Vanilla JS, no framework; `CONFIG` block inside for link names; i18n strings in `chatbot-widget/app/translations/en.json` |
 
 ## Composite fields — the gotcha that repeats
@@ -76,7 +97,7 @@ Creator has `name` and `address` field types (composite). You **cannot** filter 
 
 ## Business tools catalog
 
-15 tools registered in `chat_config`'s `tools` list (Zia catalog, in order):
+16 tools registered in `chat_config`'s `tools` list (Zia catalog, in order):
 
 Lookup (5):
 1. `track_package` — package status by tracking number
@@ -96,8 +117,9 @@ Reporting (10):
 13. `report_monthly_comparison` — month-over-month comparison
 14. `report_delayed_packages` — delayed package analysis
 15. `report_unscanned_packages` — unscanned package analysis
+16. `list_service_types` — static catalog of the agency's 7 service types (no Zia, no data access)
 
-Tool file naming drops the verb prefix: `tool_services.deluge`, `tool_offices.deluge`, `tool_coverage.deluge`, `tool_contacts.deluge`, `tool_report_top_customers.deluge`, etc.
+Tool file naming drops the verb prefix: `tool_services.deluge`, `tool_offices.deluge`, `tool_coverage.deluge`, `tool_contacts.deluge`, `tool_service_types.deluge`, `tool_report_top_customers.deluge`, etc.
 
 When adding a tool: register in `chat_config` `tools` list + `toolsText`, add `dispatch_tool` if-chain case in `chat_invoke`, create `deluge/tools/tool_*.deluge`, add data helpers in `data_access.deluge` if needed.
 
@@ -114,7 +136,8 @@ When adding a tool: register in `chat_config` `tools` list + `toolsText`, add `d
 
 - `deluge/README.md` — full backend setup guide (module schemas, function list, field mapping, composite-field caveat)
 - `deluge/METRICS.md` — metric tracking (manual verification states, pending Creator deploys)
+- `tools/creator-parity.js` — repo ↔ live drift report; run before claiming a Deluge change is deployed
 - `README.md` (root) — architecture diagram, widget flow, configuration checklist
-- `deluge/config/chat_config.deluge` — the single source of truth for all link names and the 15-tool catalog
+- `deluge/config/chat_config.deluge` — the single source of truth for all link names and the 16-tool catalog
 - `openspec/config.yaml` — SDD rules, testing constraints, commit conventions
 - `chatbot-widget/app/translations/en.json` — widget i18n strings

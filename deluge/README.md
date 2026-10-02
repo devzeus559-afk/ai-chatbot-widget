@@ -95,6 +95,34 @@ deluge/
 > El nombre de la función en el editor de Creator debe coincidir EXACTAMENTE con el nombre
 > definido en el archivo (por ejemplo, crear la función `chat_invoke`, no `chat_invoke.deluge`).
 
+## Verificar que el deploy llegó (repo ↔ live)
+
+Commitear un `.deluge` **no** lo despliega. Como git no registra qué llegó a Creator,
+una función puede estar commiteada y mergeada mientras producción sigue corriendo la
+versión vieja. `tools/creator-parity.js` compara el repo contra el dump de la app viva:
+
+```bash
+node tools/creator-parity.js             # sale con código 1 si hay drift
+node tools/creator-parity.js --verbose   # muestra los segmentos que difieren
+node tools/creator-parity.js --json      # salida legible por máquina
+```
+
+| Bucket | Significado | Acción |
+|---|---|---|
+| *en repo, no en live* | escrita y commiteada, nunca desplegada | pegarla en Creator |
+| *cuerpos distintos* | el repo tiene ediciones más nuevas | volver a pegar, o re-exportar el `.ds` si el dump quedó viejo |
+| *tests también con drift* | solo informativo | los tests se corren en Creator, no son lógica de producción |
+
+Correlo **después** de desplegar: recién ahí confirma que la función llegó a producción.
+
+Dos precauciones:
+
+1. Solo prueba paridad contra el **dump**. Si el `.ds` está desactualizado, todo aparece
+   como drift falso — re-exportá desde Creator si los resultados no tienen sentido.
+2. **Caller y callee van juntos.** Si cambió la firma de una función (más parámetros),
+   subir solo el caller rompe producción. Mirá la línea de firma en `--verbose` y
+   tratá esa diferencia como una restricción de orden, no como un simple texto viejo.
+
 ## Requisitos previos
 
 1. **Habilitar la tarea Zia de Deluge**: en Creator → *Operations* → *Zia* → habilitar
@@ -127,6 +155,8 @@ deluge/
    | Error | Multilínea | mensaje de error si falla |
 
 3. **Crear las funciones** listadas arriba pegando el contenido de cada archivo.
+   Al terminar, re-exportar la app desde Creator y correr
+   `node tools/creator-parity.js` hasta que reporte 0 drift.
 
 4. **Crear el workflow "On Submit"** en el módulo `ChatRequests` con el script de
    `workflow/on_submit_chatrequests.deluge`.
