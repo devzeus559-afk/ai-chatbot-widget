@@ -101,25 +101,7 @@ The system MUST pass the mutable fetched session record to `update_session` (nev
 - THEN Title becomes the first 50 chars of the prompt
 - AND Last_Activity updates with no API call
 
-### Requirement: Session List (chat_list)
 
-`chat_list` MUST resolve `userId = zoho.loginuser.get("Id")` first, then fetch the logged-in user's sessions via `ChatSessions[User == userId] sort by Last_Activity desc` and return `{"ok": true, "data": [{id, title, lastActivity}, ...]}`.
-
-- MUST scope to the current user only (multi-user behavior preserved)
-
-#### Scenario: Sessions listed for current user
-
-- GIVEN sessions exist for the logged-in user and for other users
-- WHEN `chat_list` runs
-- THEN ok:true with only the logged-in user's sessions, sorted by Last_Activity desc
-
-#### Scenario: No sessions
-
-- GIVEN the logged-in user has no sessions
-- WHEN `chat_list` runs
-- THEN ok:true with an empty data list
-
-### Requirement: Unknown Tool Fallback
 
 The system MUST return `{"ok": false, "message": "Herramienta desconocida: <name>"}` for an unknown tool name.
 
