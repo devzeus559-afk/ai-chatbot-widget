@@ -7,6 +7,9 @@ node_modules/
 # Zoho extension tool logs
 ZET-debug.log
 
+# User-owned Creator app dump (live export, never committed)
+creatorapp-backup/
+
 # Local AI tooling state (not project code)
 .atl/
 
