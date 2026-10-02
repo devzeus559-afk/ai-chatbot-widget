@@ -13,11 +13,11 @@
  *   {"ok": true, "data": [{"id", "title", "lastActivity"}, ...]}
  */
 
-Map chat_list()
+map chat_list.chat_list()
 {
     userId = zoho.loginuser.get("Id");
 
-    records = fetch_chat_sessions_by_user(userId, 0, 49);
+    records = thisapp.chat_data_access.fetch_chat_sessions_by_user(userId, 0, 49);
 
     sessions = List();
     if (records == null) {
