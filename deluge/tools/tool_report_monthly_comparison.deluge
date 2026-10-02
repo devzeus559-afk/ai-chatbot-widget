@@ -9,7 +9,7 @@
  *          "startDate"?: date, "endDate"?: date,
  *          "office"?: string}
  * Devuelve: {"ok": true, "data": {
- *   reportType: "monthly_comparison", office,
+ *   reportType: "monthly_comparison", office, truncated: boolean,
  *   months: [{monthLabel, totalPounds, daysInMonth, monthlyAverage,
  *             monthlyAverageLabel, deltaPct}],
  *   trend: [{monthLabel, value}]}}
@@ -62,7 +62,7 @@ map chat_tools.report_monthly_comparison(map params)
     reportedOffice = officeName;
   }
   fullFlag = params.get("full");
-  boolean full = (fullFlag != null && fullFlag != "" && fullFlag != "false");
+  full = (fullFlag != null && fullFlag != "" && fullFlag != "false");
   if (full)
   {
     records = thisapp.chat_data_access.fetch_all_packages_by_window_office(startDate,endDate,officeZid);
@@ -70,7 +70,8 @@ map chat_tools.report_monthly_comparison(map params)
   else
   {
     records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
-  }  if(records == null)
+  }
+  if(records == null)
   {
     records = List();
   }
@@ -106,7 +107,7 @@ map chat_tools.report_monthly_comparison(map params)
   }
   // Construir la secuencia de meses de startDate a endDate
   // Deluge no soporta while: se genera una lista contadora con leftpad/toList
-  // (idiom recomendado por Zoho) y se recorre con for each + break.
+  // y se recorre con for each + break (doble espacio obligatorio).
   cursor = thisapp.chat_common.first_of_month(startDate);
   lastCursor = thisapp.chat_common.first_of_month(endDate);
   monthSpan = (lastCursor.getYear() * 12 + lastCursor.getMonth()) - (cursor.getYear() * 12 + cursor.getMonth()) + 1;
@@ -164,6 +165,7 @@ map chat_tools.report_monthly_comparison(map params)
   data = Map();
   data.put("reportType","monthly_comparison");
   data.put("office",reportedOffice);
+  data.put("truncated",thisapp.chat_data_access.report_scan_truncated(records,fullFlag));
   data.put("months",monthsOut);
   // trend para viz
   tl = List();

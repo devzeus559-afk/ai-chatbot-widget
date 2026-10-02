@@ -9,7 +9,7 @@
 *
 * Patrón de filtrado (tras gate 5.1: `Form[criteriaVar]` es INVÁLIDO en Creator
 * y el nombre de campo tampoco puede venir de una variable dentro de corchetes):
-* - 0 condiciones   -> Form[ID != 0]            (todos los registros)
+* - 0 condiciones   -> Form[ID != 0]            (todos lofetchs registros)
 * - 1 condición     -> Form[Field == valorVar]   (igualdad inline: campo literal,
 *                      valor como variable)
 * - 2+ condiciones  -> IDs por condición (Form[Field == valor].ID.getAll()),
@@ -74,6 +74,8 @@
  *            materialize_service_report, fetch_services_report_by_date_window,
  *            fetch_services_report_by_ids, materialize_package_report,
  *            fetch_packages_report_by_window_office,
+ *            fetch_all_packages_by_window_office,
+ *            prefetch_office_names, prefetch_shipment_info, shipment_info,
  *            materialize_pkg_tracking_report, fetch_pkg_tracking_scanned_all,
  *            fetch_pkg_tracking_unscanned, insert_unanswered_query
  */
@@ -608,14 +610,14 @@ list chat_data_access.fetch_services_ids_by_destination(string destination)
 	// País/provincia viven en Service.Location -> Coverage_Location
 	// (Address_Information1), campo que SIEMPRE se llena en Service.
 	location_country_ids = Coverage_Location[Address_Information1.country == destination].distinct(ID);
-	location_province_ids = Coverage_Location[Address_Information1.state_province == destination].distinct(ID);
+	location_state_ids = Coverage_Location[Address_Information1.state_province == destination].distinct(ID);
 	if(location_country_ids.size() > 0)
 	{
 		ids = Service[Location in location_country_ids].distinct(ID);
 	}
-	else if(location_province_ids.size() > 0)
+	else if(location_state_ids.size() > 0)
 	{
-		ids = Service[Location in location_province_ids].distinct(ID);
+		ids = Service[Location in location_state_ids].distinct(ID);
 	}
 	else
 	{
@@ -781,7 +783,7 @@ int chat_data_access.fetch_office_id_by_name(string officeName)
   }
   // Buscar todos los registros y comparar por nombre base
   records = Commercial_Office[Office_Name != ""] range from 0 to 199;
-  if(records == null || records.size() == 0)
+  if(records == null || records.count(ID) == 0)
   {
     return 0;
   }
@@ -805,7 +807,7 @@ int chat_data_access.fetch_office_id_by_name(string officeName)
   }
   return 0;
 }
-list chat_data_access.materialize_service_report(list records)
+list chat_data_access.materialize_service_report(Service records)
 {
   resultList = List();
   if(records == null)
@@ -855,8 +857,74 @@ list chat_data_access.fetch_services_report_by_ids(list ids)
   records = Service[ID in ids] sort by Date_field1 range from 0 to 199;
   return thisapp.chat_data_access.materialize_service_report(records);
 }
-list chat_data_access.materialize_package_report(list records)
+map chat_data_access.prefetch_office_names()
 {
+  // La app tiene 3 Commercial_Office. Una sola query + Map en memoria reemplaza
+  // N sub-queries Commercial_Office[ID == ...]. Se guarda el Office_Name COMPLETO
+  // (con la dirección embebida) porque es lo que produce hoy el reporte y así el
+  // output no cambia respecto de la versión con N+1.
+  nameById = Map();
+  offices = Commercial_Office[ID != 0] sort by ID range from 0 to 199;
+  for each  o in offices
+  {
+    if(o.Office_Name != null)
+    {
+      nameById.put(o.ID,o.Office_Name);
+    }
+  }
+  return nameById;
+}
+map chat_data_access.prefetch_shipment_info()
+{
+  // La app tiene 230 Shipment, que SUPERA el tope de 200 registros por query de
+  // Creator: traerlos en una sola llamada truncaría en silencio y perdería 30.
+  // Por eso se parte explícitamente en dos lotes (0-199 y 200-399).
+  //
+  // Clasificación aéreo/maritime por Short_Name.contains("Air"), convención del
+  // dashboard de la app. Se precalcula la clase acá para no repetir el contains()
+  // por cada paquete.
+  infoById = Map();
+  firstBatch = Shipment[ID != 0] sort by ID range from 0 to 199;
+  for each  s in firstBatch
+  {
+    infoById.put(s.ID,thisapp.chat_data_access.shipment_info(s));
+  }
+  secondBatch = Shipment[ID != 0] sort by ID range from 200 to 399;
+  for each  s in secondBatch
+  {
+    infoById.put(s.ID,thisapp.chat_data_access.shipment_info(s));
+  }
+  return infoById;
+}
+map chat_data_access.shipment_info(Shipment shipment)
+{
+  // Clasificación aéreo/maritime por Short_Name.contains("Air"), convención del
+  // dashboard de la app. Se precalcula la clase acá para no repetir el contains()
+  // por cada paquete.
+  info = Map();
+  shortName = "";
+  if(shipment.Short_Name != null)
+  {
+    shortName = "" + shipment.Short_Name;
+  }
+  if(shortName.contains("Air"))
+  {
+    info.put("class","air");
+  }
+  else
+  {
+    info.put("class","maritime");
+  }
+  info.put("name",shortName);
+  info.put("merch",shipment.Type_of_Merchandise);
+  return info;
+}
+list chat_data_access.materialize_package_report(Package records, map officeNameById, map shipmentInfoById)
+{
+  // Sin N+1: las tablas de catálogo entran precargadas como Maps y se resuelven
+  // en memoria. Antes cada registro disparaba Commercial_Office[ID == ...] +
+  // Shipment[ID == ...]: con 5000 paquetes eso eran 10.000 sub-queries contra un
+  // timeout de 40s. Ahora son 3 queries totales por invocación.
   resultList = List();
   if(records == null)
   {
@@ -875,43 +943,33 @@ list chat_data_access.materialize_package_report(list records)
       weight = 0;
     }
     item.put("totalWeight",weight);
-    officeName = "";
     item.put("officeZid",r.Office);
-    if(r.Office != null)
+    officeName = "";
+    if(r.Office != null && officeNameById != null)
     {
-      OfficeRec = Commercial_Office[ID == r.Office];
-      if(OfficeRec != null && OfficeRec.Office_Name != null)
+      cachedName = officeNameById.get(r.Office);
+      if(cachedName != null)
       {
-        officeName = OfficeRec.Office_Name;
+        officeName = cachedName;
       }
     }
     item.put("officeName",officeName);
-    // Shipment_Type -> Shipment (nombre Short_Name, clase air/maritime,
-    // tipo de mercancía). Clasificación aéreo por Short_Name.contains("Air"),
-    // convención del dashboard de la app.
+    // Shipment_Type -> Shipment. Sin Shipment_Type (o sin registro que lo
+    // resuelva) la clase queda "" — se preserva el comportamiento previo, donde
+    // esas ramas nunca entraban al if y la variable arrancaba en "".
     shipmentZid = r.Shipment_Type;
     item.put("shipmentZid",shipmentZid);
     shipmentName = "";
     className = "";
     merchType = "";
-    if(shipmentZid != null)
+    if(shipmentZid != null && shipmentInfoById != null)
     {
-      ShipmentRec = Shipment[ID == shipmentZid];
-      if(ShipmentRec != null)
+      shipmentInfo = shipmentInfoById.get(shipmentZid);
+      if(shipmentInfo != null)
       {
-        if(ShipmentRec.Short_Name != null)
-        {
-          shipmentName = "" + ShipmentRec.Short_Name;
-        }
-        if(shipmentName != null && shipmentName.contains("Air"))
-        {
-          className = "air";
-        }
-        else
-        {
-          className = "maritime";
-        }
-        merchType = ShipmentRec.Type_of_Merchandise;
+        className = shipmentInfo.get("class");
+        shipmentName = shipmentInfo.get("name");
+        merchType = shipmentInfo.get("merch");
       }
     }
     item.put("shipmentName",shipmentName);
@@ -921,24 +979,95 @@ list chat_data_access.materialize_package_report(list records)
   }
   return resultList;
 }
-list chat_data_access.fetch_all_packages_by_window_office(date startDate, date endDate, number officeZid)
+boolean chat_data_access.report_scan_truncated(list records, boolean fullFlag)
 {
-    // NOTE: Deluge does not support while loops; pagination is simplified.
-    // This fetches all matching packages in a single query. For very large
-    // result sets (>200 records) Creator will truncate to the first 200 rows.
-    // If pagination is required, consider splitting the date range.
-    list allRecords = List();
-    if (officeZid == null || officeZid <= 0)
+  // Única fuente de verdad para el flag `truncated` de los report tools.
+  //
+  // - Cohorte acotada (full = false): siempre incompleta, la cohorte es de 200
+  //   y no se recorre el resto.
+  // - Recorrido completo (full = true): solo puede estar incompleto si agotó
+  //   maxBatches con un lote COMPLETO de 200. Si el último lote hubiera tenido
+  //   menos de 200, el recorrido terminó solo (break) y los datos están
+  //   completos. El tope dura es maxBatches * 200 = 25 * 200 = 5000.
+  if(!fullFlag)
+  {
+    return true;
+  }
+  if(records == null)
+  {
+    return false;
+  }
+  return records.size() >= 5000;
+}
+list chat_data_access.fetch_packages_report_by_window_office(date startDate, date endDate, int officeZid)
+{
+  // --------------------------------------------------------------------------
+  // Cohorte ACOTADA a 200 registros (range 0-199). Es el path de vista rápida:
+  // si la ventana tiene más de 200 paquetes el ranking es aproximado y el tool
+  // lo señala con truncated. Devuelve el MISMO contrato que la variante full:
+  // lista de mapas ya materializados (nunca registros crudos de Package).
+  // --------------------------------------------------------------------------
+  if(officeZid == null || officeZid <= 0)
+  {
+    records = Package[Receipt_Date >= startDate && Receipt_Date <= endDate] sort by Receipt_Date range from 0 to 199;
+  }
+  else
+  {
+    records = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && Office == officeZid] sort by Receipt_Date range from 0 to 199;
+  }
+  officeNameById = thisapp.chat_data_access.prefetch_office_names();
+  shipmentInfoById = thisapp.chat_data_access.prefetch_shipment_info();
+  return thisapp.chat_data_access.materialize_package_report(records,officeNameById,shipmentInfoById);
+}
+list chat_data_access.fetch_all_packages_by_window_office(date startDate, date endDate, int officeZid)
+{
+  // --------------------------------------------------------------------------
+  // Ventana COMPLETA: se recorre en lotes de 200 con cursor sobre ID y se
+  // materializa cada lote por separado. Materializar miles de registros de una
+  // sola vez puede exceder el timeout de 40s del script.
+  //
+  // Deluge NO soporta while: se genera una lista contadora con leftpad/toList
+  // y se recorre con for each + break. OJO: el for each de elemento exige DOS
+  // espacios ("for each  x in y"); con uno solo el live tira Improper Statement
+  // en esa misma línea. maxBatches acota el trabajo (25 lotes = 5000 paquetes,
+  // cubre la ventana anual observada); si se alcanza el tope el ranking queda
+  // incompleto.
+  // --------------------------------------------------------------------------
+  resultList = List();
+  lastId = 0;
+  maxBatches = 25;
+  // Catálogos precargados UNA vez por invocación y reutilizados en todos los
+  // lotes: 3 queries en total, no 3 por lote.
+  officeNameById = thisapp.chat_data_access.prefetch_office_names();
+  shipmentInfoById = thisapp.chat_data_access.prefetch_shipment_info();
+  counter = leftpad("1",maxBatches + 1).replaceAll(" ","1,").toList(",");
+  for each  idx in counter
+  {
+    if(officeZid == null || officeZid <= 0)
     {
-        allRecords = Package[Receipt_Date >= startDate && Receipt_Date <= endDate];
+      recBatch = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && ID > lastId] sort by ID range from 0 to 199;
     }
     else
     {
-        allRecords = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && Office == officeZid];
+      recBatch = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && Office == officeZid && ID > lastId] sort by ID range from 0 to 199;
     }
-    return allRecords;
+    // recBatch es colección de registros crudos: usa .count(), NO .size()
+    // (.size() es solo para List/Map en memoria).
+    if(recBatch == null || recBatch.count() == 0)
+    {
+      break;
+    }
+    resultList.addAll(thisapp.chat_data_access.materialize_package_report(recBatch,officeNameById,shipmentInfoById));
+    // sort by ID es ascendente: el cursor avanza al mayor ID del lote.
+    lastId = recBatch.get(recBatch.count() - 1).get("ID");
+    if(recBatch.count() < 200)
+    {
+      break;
+    }
+  }
+  return resultList;
 }
-list chat_data_access.materialize_pkg_tracking_report(list records)
+list chat_data_access.materialize_pkg_tracking_report(Pkg_Tracking records)
 {
   resultList = List();
   if(records == null)

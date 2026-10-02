@@ -94,23 +94,6 @@ map chat_intent.normalize_zia_response(map response)
         params = Map();
       }
       // Validación de campos requeridos (solo track_package tiene required)
-    // Set default behavior for report tools: return all records unless user asks for a fast/limited view
-    if(toolName != null && toolName.startsWith("report_"))
-    {
-        // Ensure params is a map
-        if(params == null)
-        {
-            params = Map();
-        }
-        // Default: full = true (return all records)
-        params.put("full", true);
-        // Detect user intent for a quick view
-        string lowerPrompt = userPrompt != null ? userPrompt.toLowerCase() : "";
-        if(lowerPrompt.contains("hazlo rapido") || lowerPrompt.contains("solo los primeros"))
-        {
-            params.put("full", false);
-        }
-    }
     if(toolName == "track_package")
     {
         trackingNumber = params.get("trackingNumber");
@@ -925,6 +908,71 @@ map chat_intent.resolve_tool(string userPrompt, string category, string filtered
   response.put("error",zia_response.error);
   return thisapp.chat_intent.normalize_tool(response,category,userPrompt,history);
 }
+map chat_intent.apply_report_scan_mode(map normalized, string toolName, string userPrompt)
+{
+  // Modo de escaneo de los report tools que agregan paquetes: por defecto se
+  // revisan TODOS los registros de la ventana; solo se acota a 200 cuando el
+  // usuario pide explícitamente una vista acotada.
+  //
+  // Antes este default vivía en normalize_zia_response, que está desconectada
+  // del flujo productivo (solo la llaman los tests). Por eso params.get("full")
+  // era siempre null y los 3 report tools caían siempre en la cohorte de 200:
+  // fetch_all_packages_by_window_office nunca se ejecutaba.
+  //
+  // Inyección determinista, no delega en Zia (patrón c01037f): el sandbox no
+  // distingue "revisar todo" de "revisar hasta 200", y el default de revisar
+  // todo es el que el usuario pidió.
+  if(toolName != null)
+  {
+    isScanReport = false;
+    for each  scanTool in thisapp.chat_intent.scan_report_tools()
+    {
+      if(scanTool == toolName)
+      {
+        isScanReport = true;
+      }
+    }
+    if(isScanReport)
+    {
+      params = normalized.get("params");
+      if(params == null)
+      {
+        params = Map();
+      }
+      params.put("full", true);
+      if(userPrompt != null)
+      {
+        up = userPrompt.toLowerCase();
+        // Solo acota ante pedido explícito de vista acotada. NO se toca el
+        // "limit" de ranking (top N clientes): esa semántica es otra — un top N
+        // necesita escanear todo para rankear bien, y recortarlo por acá
+        // devolvería un ranking de una ventana parcial.
+        wantsBounded = up.contains("hazlo rapido") || up.contains("hazlo rápido") || up.contains("solo los primeros") || up.contains("sólo los primeros") || up.contains("vista rapida") || up.contains("vista rápida") || up.contains("quick view");
+        if(wantsBounded)
+        {
+          params.put("full", false);
+        }
+      }
+      normalized.put("params", params);
+    }
+  }
+  return normalized;
+}
+list chat_intent.scan_report_tools()
+{
+  // Solo los report tools que realmente leen params.get("full") para elegir
+  // entre la cohorte acotada y el recorrido completo. report_top_customers,
+  // report_top_package_customers, report_top_remittance_customers,
+  // report_delayed_packages y report_unscanned_packages NO consumen el flag:
+  // aggregate sobre otros módulos y no deben recibirlo.
+  tools = List();
+  tools.add("report_daily_average");
+  tools.add("report_pounds_shipped");
+  tools.add("report_monthly_comparison");
+  tools.add("report_shipping_type_frequency");
+  tools.add("report_merchandise_type");
+  return tools;
+}
 map chat_intent.resolve_params(string userPrompt, string toolName, string paramSchema)
 {
   if(toolName == "list_service_types")
@@ -942,7 +990,8 @@ map chat_intent.resolve_params(string userPrompt, string toolName, string paramS
   ];
   if(zia_response == null)
   {
-    return thisapp.chat_intent.normalize_params(null,toolName);
+    fallback = thisapp.chat_intent.normalize_params(null,toolName);
+    return thisapp.chat_intent.apply_report_scan_mode(fallback,toolName,userPrompt);
   }
   response = Map();
   response.put("status",zia_response.status);
@@ -980,7 +1029,7 @@ map chat_intent.resolve_params(string userPrompt, string toolName, string paramS
       normalized.put("params", params);
     }
   }
-  return normalized;
+  return thisapp.chat_intent.apply_report_scan_mode(normalized,toolName,userPrompt);
 }
 // --------------------------------------------------------------------------
 // chat_intent — hierarchical facade (3-stage pipeline)

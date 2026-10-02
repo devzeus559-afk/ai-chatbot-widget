@@ -549,30 +549,31 @@ map tests_chat_intent.run_unit_normalize_category(map counters)
 // --------------------------------------------------------------------------
 map tests_chat_intent.run_unit_resolve_period(map counters)
 {
-  endDate = zoho.date(year:2025,month:3,day:15);
-  info "resolve_period endDate: " + endDate.toString();
-  // ultimo_mes: startDate = endDate - 30 = 2025-02-13
-  r1 = thisapp.chat_common.resolve_period("ultimo_mes",endDate);
-  counters = thisapp.tests_common.assert_equals("resolve_period ultimo_mes start",r1.get(0).toString("yyyy-MM-dd"),zoho.date(year:2025,month:2,day:13).toString("yyyy-MM-dd"),counters);
-  counters = thisapp.tests_common.assert_equals("resolve_period ultimo_mes end",r1.get(1).toString("yyyy-MM-dd"),endDate.toString("yyyy-MM-dd"),counters);
-  // mes_anterior: startDate = 2025-02-01, endDate = 2025-02-28
-  r2 = thisapp.chat_common.resolve_period("mes_anterior",endDate);
-  counters = thisapp.tests_common.assert_equals("resolve_period mes_anterior start",r2.get(0).toString("yyyy-MM-dd"),zoho.date(year:2025,month:2,day:1).toString("yyyy-MM-dd"),counters);
-  counters = thisapp.tests_common.assert_equals("resolve_period mes_anterior end",r2.get(1).toString("yyyy-MM-dd"),zoho.date(year:2025,month:2,day:28).toString("yyyy-MM-dd"),counters);
-  // este_mes: startDate = 2025-03-01, endDate = 2025-03-15
-  r3 = thisapp.chat_common.resolve_period("este_mes",endDate);
-  counters = thisapp.tests_common.assert_equals("resolve_period este_mes start",r3.get(0).toString("yyyy-MM-dd"),zoho.date(year:2025,month:3,day:1).toString("yyyy-MM-dd"),counters);
-  counters = thisapp.tests_common.assert_equals("resolve_period este_mes end",r3.get(1).toString("yyyy-MM-dd"),endDate.toString("yyyy-MM-dd"),counters);
-  // ultimos_7_dias: startDate = 2025-03-08, endDate = 2025-03-15
-  r4 = thisapp.chat_common.resolve_period("ultimos_7_dias",endDate);
-  counters = thisapp.tests_common.assert_equals("resolve_period ultimos_7_dias start",r4.get(0).toString("yyyy-MM-dd"),zoho.date(year:2025,month:3,day:8).toString("yyyy-MM-dd"),counters);
-  counters = thisapp.tests_common.assert_equals("resolve_period ultimos_7_dias end",r4.get(1).toString("yyyy-MM-dd"),endDate.toString("yyyy-MM-dd"),counters);
-  // default (desconocido): same as ultimo_mes
-  r5 = thisapp.chat_common.resolve_period("periodo_inventado",endDate);
-  counters = thisapp.tests_common.assert_equals("resolve_period default start",r5.get(0).toString("yyyy-MM-dd"),zoho.date(year:2025,month:2,day:13).toString("yyyy-MM-dd"),counters);
-  counters = thisapp.tests_common.assert_equals("resolve_period default end",r5.get(1).toString("yyyy-MM-dd"),endDate.toString("yyyy-MM-dd"),counters);
-  info "run_unit_resolve_period done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
-  return counters;
+	// endDate = zoho.date(year:2025,month:3,day:15);
+  endDate = "2025-03-15".toDate("yyyy-MM-dd");
+	info "resolve_period endDate: " + endDate.toString();
+	// ultimo_mes: startDate = endDate - 30 = 2025-02-13
+	r1 = thisapp.chat_common.resolve_period("ultimo_mes",endDate);
+	counters = thisapp.tests_common.assert_equals("resolve_period ultimo_mes start",r1.get(0).toString(),"2025-02-13",counters);
+	counters = thisapp.tests_common.assert_equals("resolve_period ultimo_mes end",r1.get(1).toString(),endDate.toString(),counters);
+	// mes_anterior: startDate = 2025-02-01, endDate = 2025-02-28
+	r2 = thisapp.chat_common.resolve_period("mes_anterior",endDate);
+	counters = thisapp.tests_common.assert_equals("resolve_period mes_anterior start",r2.get(0).toString(),"2025-02-01",counters);
+	counters = thisapp.tests_common.assert_equals("resolve_period mes_anterior end",r2.get(1).toString(),"2025-02-28",counters);
+	// este_mes: startDate = 2025-03-01, endDate = 2025-03-15
+	r3 = thisapp.chat_common.resolve_period("este_mes",endDate);
+	counters = thisapp.tests_common.assert_equals("resolve_period este_mes start",r3.get(0).toString(),"2025-03-01",counters);
+	counters = thisapp.tests_common.assert_equals("resolve_period este_mes end",r3.get(1).toString(),endDate.toString(),counters);
+	// ultimos_7_dias: startDate = 2025-03-08, endDate = 2025-03-15
+	r4 = thisapp.chat_common.resolve_period("ultimos_7_dias",endDate);
+	counters = thisapp.tests_common.assert_equals("resolve_period ultimos_7_dias start",r4.get(0).toString(),"2025-03-08",counters);
+	counters = thisapp.tests_common.assert_equals("resolve_period ultimos_7_dias end",r4.get(1).toString(),endDate.toString(),counters);
+	// default (desconocido): same as ultimo_mes
+	r5 = thisapp.chat_common.resolve_period("periodo_inventado",endDate);
+	counters = thisapp.tests_common.assert_equals("resolve_period default start",r5.get(0).toString(),"2025-02-13",counters);
+	counters = thisapp.tests_common.assert_equals("resolve_period default end",r5.get(1).toString(),endDate.toString(),counters);
+	info "run_unit_resolve_period done — passed: " + counters.get("passed") + " failed: " + counters.get("failed");
+	return counters;
 }
 
 // --------------------------------------------------------------------------

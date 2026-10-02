@@ -8,7 +8,8 @@
  *          "office"?: string}
  * Devuelve: {"ok": true, "data": {
  *   reportType: "daily_average", periodStart, periodEnd, office,
- *   totalPounds, totalPackages, daysInPeriod, dailyAverage}}
+ *   totalPounds, totalPackages, daysInPeriod, dailyAverage,
+ *   truncated: boolean}}
  */
 
 map chat_tools.report_daily_average(map params)
@@ -39,7 +40,7 @@ map chat_tools.report_daily_average(map params)
     reportedOffice = officeName;
   }
   fullFlag = params.get("full");
-  boolean full = (fullFlag != null && fullFlag != "" && fullFlag != "false");
+  full = (fullFlag != null && fullFlag != "" && fullFlag != "false");
   if (full)
   {
     records = thisapp.chat_data_access.fetch_all_packages_by_window_office(startDate, endDate, officeZid);
@@ -47,7 +48,8 @@ map chat_tools.report_daily_average(map params)
   else
   {
     records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate, endDate, officeZid);
-  }  if(records == null)
+  }
+  if(records == null)
   {
     records = List();
   }
@@ -76,6 +78,7 @@ map chat_tools.report_daily_average(map params)
   data.put("office",reportedOffice);
   data.put("totalPounds",totalPounds);
   data.put("totalPackages",totalPackages);
+  data.put("truncated",thisapp.chat_data_access.report_scan_truncated(records,fullFlag));
   data.put("daysInPeriod",daysInPeriod);
   data.put("dailyAverage",dailyAverage);
   return {"ok":true,"data":data,"visualization":null};

@@ -43,7 +43,19 @@ map chat_tools.report_merchandise_type(map params)
   }
   endDate = zoho.currentdate;
   startDate = endDate.subDay(30);
-  records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+  fullFlag = params.get("full");
+  if(fullFlag == null)
+  {
+    fullFlag = true;
+  }
+  if(fullFlag)
+  {
+    records = thisapp.chat_data_access.fetch_all_packages_by_window_office(startDate,endDate,officeZid);
+  }
+  else
+  {
+    records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+  }
   if(records == null)
   {
     records = List();
@@ -109,7 +121,7 @@ map chat_tools.report_merchandise_type(map params)
   data.put("periodEnd",endDate);
   data.put("office",reportedOffice);
   data.put("totalPackages",total);
-  data.put("truncated",false);
+  data.put("truncated",thisapp.chat_data_access.report_scan_truncated(records,fullFlag));
   data.put("merchandise",ranking);
   if(total == 0)
   {

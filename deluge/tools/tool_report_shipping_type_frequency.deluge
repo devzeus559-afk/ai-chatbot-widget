@@ -44,13 +44,25 @@ map chat_tools.report_shipping_type_frequency(map params)
   }
   endDate = zoho.currentdate;
   startDate = endDate.subDay(30);
-  records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+  fullFlag = params.get("full");
+  if(fullFlag == null)
+  {
+    fullFlag = true;
+  }
+  if(fullFlag)
+  {
+    records = thisapp.chat_data_access.fetch_all_packages_by_window_office(startDate,endDate,officeZid);
+  }
+  else
+  {
+    records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+  }
   if(records == null)
   {
     records = List();
   }
   total = records.size();
-  truncated = false;
+  truncated = thisapp.chat_data_access.report_scan_truncated(records,fullFlag);
   // Agregación por clase (air/maritime) -> luego por tipo de envío
   shipmentMap = Map();
   airCount = 0;

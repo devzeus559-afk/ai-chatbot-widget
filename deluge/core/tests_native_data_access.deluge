@@ -103,7 +103,7 @@ map tests_native_data_access.test_fetch_all_chat_sessions(map counters)
   if(records != null)
   {
     info "fetch_all_chat_sessions: " + records.size() + " registros";
-    if(records.size() == 0)
+    if(records.count() == 0)
     {
       info "[INFO] fetch_all_chat_sessions: 0 registros (data prereq)";
     }
@@ -117,7 +117,7 @@ map tests_native_data_access.test_fetch_all_chat_messages(map counters)
   if(records != null)
   {
     info "fetch_all_chat_messages: " + records.size() + " registros";
-    if(records.size() == 0)
+    if(records.count() == 0)
     {
       info "[INFO] fetch_all_chat_messages: 0 registros (data prereq)";
     }
@@ -131,7 +131,7 @@ map tests_native_data_access.test_fetch_all_chat_requests(map counters)
   if(records != null)
   {
     info "fetch_all_chat_requests: " + records.size() + " registros";
-    if(records.size() == 0)
+    if(records.count() == 0)
     {
       info "[INFO] fetch_all_chat_requests: 0 registros (data prereq)";
     }
@@ -329,7 +329,8 @@ map tests_native_data_access.test_inserts_note(map counters)
 // --- track_package ---
 map tests_native_data_access.test_track_package_empty(map counters)
 {
-  result = thisapp.chat_tools.track_package({});
+	empty_map = Map();
+	result = thisapp.chat_tools.track_package(empty_map);
   counters = thisapp.tests_common.assert_true("track_package empty: ok=false",result.get("ok") == false,counters,"result=" + result.toString());
   return counters;
 }
@@ -343,7 +344,7 @@ map tests_native_data_access.test_track_package_real(map counters)
 {
   // Buscar un tracking real del módulo Package
   pkgs = Package[Package_ID != null && Package_ID != "" && Latest_Solved_Status != ""] sort by Receipt_Date desc range from 0 to 0;
-  if(pkgs == null || pkgs.size() == 0)
+  if(pkgs == null || pkgs.count() == 0)
   {
     info "[INFO] track_package real: sin paquetes con tracking (data prereq)";
     return counters;
@@ -358,7 +359,8 @@ map tests_native_data_access.test_track_package_real(map counters)
 // --- search_services ---
 map tests_native_data_access.test_services_no_filter(map counters)
 {
-  result = thisapp.chat_tools.search_services({});
+	empty_map = Map();
+	result = thisapp.chat_tools.search_services(empty_map);
   counters = thisapp.tests_common.assert_true("services no-filter: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
   data = result.get("data");
   if(data == null || data.size() == 0)
@@ -437,7 +439,7 @@ map tests_native_data_access.test_services_type_and_destination(map counters)
 }
 map tests_native_data_access.test_list_service_types(map counters)
 {
-  result = thisapp.chat_tools.list_service_types({});
+  result = thisapp.chat_tools.list_service_types(Map());
   counters = thisapp.tests_common.assert_true("list_service_types: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
   data = result.get("data");
   counters = thisapp.tests_common.assert_true("list_service_types: 7 tipos",data != null && data.size() == 7,counters,"data=" + if(data == null,"null",data.size().toString()));
@@ -448,7 +450,8 @@ map tests_native_data_access.test_list_service_types(map counters)
 // --- find_offices ---
 map tests_native_data_access.test_offices_no_filter(map counters)
 {
-  result = thisapp.chat_tools.find_offices({});
+	empty_map = Map();
+	result = thisapp.chat_tools.find_offices(empty_map);
   counters = thisapp.tests_common.assert_true("offices no-filter: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
   data = result.get("data");
   if(data == null || data.size() == 0)
@@ -591,7 +594,7 @@ map tests_native_data_access.test_coverage_country_and_service_type(map counters
 // --- find_contacts ---
 map tests_native_data_access.test_contacts_no_filter(map counters)
 {
-  result = thisapp.chat_tools.find_contacts({});
+  result = thisapp.chat_tools.find_contacts(Map());
   counters = thisapp.tests_common.assert_true("contacts no-filter: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
   data = result.get("data");
   if(data == null || data.size() == 0)
@@ -705,7 +708,7 @@ map tests_native_data_access.test_history_order(map counters)
 {
   // Buscar una sesión con ≥2 mensajes
   sessions = ChatSessions[ID != 0] sort by ID range from 0 to 0;
-  if(sessions == null || sessions.size() == 0)
+  if(sessions == null || sessions.count() == 0)
   {
     info "[INFO] history order: sin sesiones (data prereq)";
     return counters;

@@ -46,22 +46,24 @@ map chat_tools.report_pounds_shipped(map params)
     reportedOffice = officeName;
   }
   fullFlag = params.get("full");
-  boolean full = (fullFlag != null && fullFlag != "" && fullFlag != "false");
-  if (full)
+  if(fullFlag == null)
+  {
+    fullFlag = true;
+  }
+  if(fullFlag)
   {
     records = thisapp.chat_data_access.fetch_all_packages_by_window_office(startDate,endDate,officeZid);
   }
   else
   {
     records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
-  }  if(records == null)
+  }
+  if(records == null)
   {
     records = List();
   }
   total = records.size();
-  // fetch_packages_report_by_window_office ya aplica range 0-199 (máx 200),
-  // así que total nunca supera el cap: el flag truncated es siempre false.
-  truncated = false;
+  truncated = thisapp.chat_data_access.report_scan_truncated(records,fullFlag);
   // Agregaciones
   officeMap = Map();
   pkgTypeMap = Map();
