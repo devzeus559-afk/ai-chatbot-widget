@@ -780,7 +780,7 @@ map tests_chat_intent.run_live_hierarchical(map counters)
 // Suite manual con los 10 casos + medición de latencia.
 // Inspirado en tests_report_top_customers.run().
 // --------------------------------------------------------------------------
-map tests_intent_hierarchical.run_smoke()
+map tests_intent_hierarchical.run_smoke(map counters)
 {
   counters = Map();
   counters.put("passed",0);

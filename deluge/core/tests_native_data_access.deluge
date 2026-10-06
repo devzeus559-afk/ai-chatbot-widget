@@ -102,7 +102,7 @@ map tests_native_data_access.test_fetch_all_chat_sessions(map counters)
   counters = thisapp.tests_common.assert_true("fetch_all_chat_sessions: no-null",records != null,counters,"records=null");
   if(records != null)
   {
-    info "fetch_all_chat_sessions: " + records.size() + " registros";
+    info "fetch_all_chat_sessions: " + records.count() + " registros";
     if(records.count() == 0)
     {
       info "[INFO] fetch_all_chat_sessions: 0 registros (data prereq)";
@@ -116,7 +116,7 @@ map tests_native_data_access.test_fetch_all_chat_messages(map counters)
   counters = thisapp.tests_common.assert_true("fetch_all_chat_messages: no-null",records != null,counters,"records=null");
   if(records != null)
   {
-    info "fetch_all_chat_messages: " + records.size() + " registros";
+    info "fetch_all_chat_messages: " + records.count() + " registros";
     if(records.count() == 0)
     {
       info "[INFO] fetch_all_chat_messages: 0 registros (data prereq)";
@@ -130,7 +130,7 @@ map tests_native_data_access.test_fetch_all_chat_requests(map counters)
   counters = thisapp.tests_common.assert_true("fetch_all_chat_requests: no-null",records != null,counters,"records=null");
   if(records != null)
   {
-    info "fetch_all_chat_requests: " + records.size() + " registros";
+    info "fetch_all_chat_requests: " + records.count() + " registros";
     if(records.count() == 0)
     {
       info "[INFO] fetch_all_chat_requests: 0 registros (data prereq)";
@@ -282,12 +282,12 @@ map tests_native_data_access.test_chat_requests_id_type_match(map counters)
 {
   // Buscar un chat request real
   requests = ChatRequests[ID != 0] sort by ID range from 0 to 0;
-  if(requests == null || requests.size() == 0)
+  if(requests == null || requests.count() == 0)
   {
     info "[INFO] chat_requests_id_type: sin chat requests (data prereq)";
     return counters;
   }
-  realRec = requests.get(0);
+  realRec = requests;
   realId = realRec.ID;
   info "chat_requests_id_type: ID real=" + realId + " (ID de Creator es Number; primero se pasa como tal, luego como String→toNumber)";
 
@@ -349,7 +349,7 @@ map tests_native_data_access.test_track_package_real(map counters)
     info "[INFO] track_package real: sin paquetes con tracking (data prereq)";
     return counters;
   }
-  realTracking = "" + pkgs.get(0).Package_ID;
+  realTracking = "" + pkgs.Package_ID;
   info "track_package real: tracking=" + realTracking;
   result = thisapp.chat_tools.track_package({"trackingNumber":realTracking});
   counters = thisapp.tests_common.assert_true("track_package real: ok=true",result.get("ok") == true,counters,"result=" + result.toString());
@@ -713,7 +713,7 @@ map tests_native_data_access.test_history_order(map counters)
     info "[INFO] history order: sin sesiones (data prereq)";
     return counters;
   }
-  sessionId = sessions.get(0).ID;
+  sessionId = sessions.ID;
   messages = thisapp.chat_data_access.fetch_chat_messages_by_session(sessionId);
   if(messages == null || messages.size() < 2)
   {
