@@ -76,6 +76,7 @@
  *            fetch_packages_report_by_window_office,
  *            fetch_all_packages_by_window_office,
  *            prefetch_office_names, prefetch_shipment_info, shipment_info,
+ *            prefetch_service_refs, _populate_pkg_batch,
  *            materialize_pkg_tracking_report, fetch_pkg_tracking_scanned_all,
  *            fetch_pkg_tracking_unscanned, insert_unanswered_query
  */
@@ -466,87 +467,109 @@ list chat_data_access.fetch_packages_by_tracking(string trackingNumber)
 }
 list chat_data_access.fetch_services_all()
 {
-	records = Service[Service_ID != null && Service_ID != ""] sort by Service_ID range from 0 to 199;
-	if(records == null)
-	{
-		return List();
-	}
-	resultList = List();
-	for each  r in records
-	{
-		item = Map();
-		item.put("serviceType",r.Service_Type);
-		item.put("zid",r.ID);
-		item.put("serviceId",r.Service_ID);
-		item.put("customerId",r.Sender_field);
-		item.put("customerName",r.Sender_Full_Name.toUpperCase());
-		item.put("customerPhone",r.Sender_Mobile);
-		price = if(r.Amount > 0,r.Amount,r.Price);
-		item.put("price",price);
-		item.put("date",r.Date_field1);
-		item.put("vendorZid",r.Vendor);
-		VendorRec = Vendor[ID == r.Vendor];
-		if(VendorRec != null)
-		{
-			item.put("vendorName",VendorRec.Vendor_Name);
-		}
-		item.put("officeZid",r.Office);
-		OfficeRec = Commercial_Office[ID == r.Office];
-		if(OfficeRec != null)
-		{
-			item.put("officeName",OfficeRec.Office_Name);
-		}
-		item.put("locationZid",r.Location);
-		LocationRec = Coverage_Location[ID == r.Location];
-		if(LocationRec != null)
-		{
-			item.put("serviceCountry",LocationRec.Address_Information1.country);
-		}
-		resultList.add(item);
-	}
-	return resultList;
+   records = Service[Service_ID != null && Service_ID != ""] sort by Service_ID range from 0 to 199;
+   if(records == null)
+   {
+      return List();
+   }
+   // Pre–fetch all needed reference maps (Vendor, Office, Location)
+   refs = thisapp.chat_data_access.prefetch_service_refs();
+   resultList = List();
+   for each r in records
+   {
+      item = Map();
+      item.put("serviceType",r.Service_Type);
+      item.put("zid",r.ID);
+      item.put("serviceId",r.Service_ID);
+      item.put("customerId",r.Sender_field);
+      item.put("customerName",r.Sender_Full_Name.toUpperCase());
+      item.put("customerPhone",r.Sender_Mobile);
+      price = if(r.Amount > 0,r.Amount,r.Price);
+      item.put("price",price);
+      item.put("date",r.Date_field1);
+      // Vendor name from pre‑fetched map
+      vendorName = "";
+      if(r.Vendor != null)
+      {
+         cached = refs.get("vendor").get(r.Vendor);
+         if(cached != null) { vendorName = cached; }
+      }
+      item.put("vendorZid",r.Vendor);
+      if(vendorName != "") { item.put("vendorName",vendorName); }
+      // Office name from pre‑fetched map
+      officeName = "";
+      if(r.Office != null)
+      {
+         cached = refs.get("office").get(r.Office);
+         if(cached != null) { officeName = cached; }
+      }
+      item.put("officeZid",r.Office);
+      if(officeName != "") { item.put("officeName",officeName); }
+      // Location country from pre‑fetched map
+      locationCountry = "";
+      if(r.Location != null)
+      {
+         cached = refs.get("location").get(r.Location);
+         if(cached != null) { locationCountry = cached; }
+      }
+      item.put("locationZid",r.Location);
+      if(locationCountry != "") { item.put("serviceCountry",locationCountry); }
+      resultList.add(item);
+   }
+   return resultList;
 }
 list chat_data_access.fetch_services_by_date_window(date startDate, date endDate)
 {
-	records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
-	if(records == null)
-	{
-		return List();
-	}
-	resultList = List();
-	for each  r in records
-	{
-		item = Map();
-		item.put("serviceType",r.Service_Type);
-		item.put("zid",r.ID);
-		item.put("serviceId",r.Service_ID);
-		item.put("customerId",r.Sender_field);
-		item.put("customerName",r.Sender_Full_Name.toUpperCase());
-		item.put("customerPhone",r.Sender_Mobile);
-		price = if(r.Amount > 0,r.Amount,r.Price);
-		item.put("price",price);
-		item.put("date",r.Date_field1);
-		item.put("vendorZid",r.Vendor);
-		VendorRec = Vendor[ID == r.Vendor];
-		if(VendorRec != null)
-		{
-			item.put("vendorName",VendorRec.Vendor_Name);
-		}
-		item.put("officeZid",r.Office);
-		OfficeRec = Commercial_Office[ID == r.Office];
-		if(OfficeRec != null)
-		{
-			item.put("officeName",OfficeRec.Office_Name);
-		}
-		item.put("locationZid",r.Location);
-		LocationRec = Coverage_Location[ID == r.Location];
-		if(LocationRec != null)
-		{
-			item.put("serviceCountry",LocationRec.Address_Information1.country);
-		}
-		resultList.add(item);
-	}
-	return resultList;
+   records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
+   if(records == null)
+   {
+      return List();
+   }
+   // Pre‑fetch reference maps (Vendor, Office, Location)
+   refs = thisapp.chat_data_access.prefetch_service_refs();
+   resultList = List();
+   for each r in records
+   {
+      item = Map();
+      item.put("serviceType",r.Service_Type);
+      item.put("zid",r.ID);
+      item.put("serviceId",r.Service_ID);
+      item.put("customerId",r.Sender_field);
+      item.put("customerName",r.Sender_Full_Name.toUpperCase());
+      item.put("customerPhone",r.Sender_Mobile);
+      price = if(r.Amount > 0,r.Amount,r.Price);
+      item.put("price",price);
+      item.put("date",r.Date_field1);
+      // Vendor name via map
+      vendorName = "";
+      if(r.Vendor != null)
+      {
+         cached = refs.get("vendor").get(r.Vendor);
+         if(cached != null) { vendorName = cached; }
+      }
+      item.put("vendorZid",r.Vendor);
+      if(vendorName != "") { item.put("vendorName",vendorName); }
+      // Office name via map
+      officeName = "";
+      if(r.Office != null)
+      {
+         cached = refs.get("office").get(r.Office);
+         if(cached != null) { officeName = cached; }
+      }
+      item.put("officeZid",r.Office);
+      if(officeName != "") { item.put("officeName",officeName); }
+      // Location country via map
+      locationCountry = "";
+      if(r.Location != null)
+      {
+         cached = refs.get("location").get(r.Location);
+         if(cached != null) { locationCountry = cached; }
+      }
+      item.put("locationZid",r.Location);
+      if(locationCountry != "") { item.put("serviceCountry",locationCountry); }
+      resultList.add(item);
+   }
+   return resultList;
 }
 list chat_data_access.fetch_services_by_ids(list ids)
 {
@@ -556,7 +579,8 @@ list chat_data_access.fetch_services_by_ids(list ids)
 		return List();
 	}
 	resultList = List();
-	for each  r in records
+	refs = thisapp.chat_data_access.prefetch_service_refs();
+	for each r in records
 	{
 		item = Map();
 		item.put("serviceType",r.Service_Type);
@@ -568,24 +592,33 @@ list chat_data_access.fetch_services_by_ids(list ids)
 		price = if(r.Amount > 0,r.Amount,r.Price);
 		item.put("price",price);
 		item.put("date",r.Date_field1);
-		item.put("vendorZid",r.Vendor);
-		VendorRec = Vendor[ID == r.Vendor];
-		if(VendorRec != null)
+		// Vendor name via map
+		vendorName = "";
+		if(r.Vendor != null)
 		{
-			item.put("vendorName",VendorRec.Vendor_Name);
+			cached = refs.get("vendor").get(r.Vendor);
+			if(cached != null) { vendorName = cached; }
+		}
+		item.put("vendorZid",r.Vendor);
+		if(vendorName != "") { item.put("vendorName",vendorName); }
+		// Office name via map
+		officeName = "";
+		if(r.Office != null)
+		{
+			cached = refs.get("office").get(r.Office);
+			if(cached != null) { officeName = cached; }
 		}
 		item.put("officeZid",r.Office);
-		OfficeRec = Commercial_Office[ID == r.Office];
-		if(OfficeRec != null)
+		if(officeName != "") { item.put("officeName",officeName); }
+		// Location country via map
+		locationCountry = "";
+		if(r.Location != null)
 		{
-			item.put("officeName",OfficeRec.Office_Name);
+			cached = refs.get("location").get(r.Location);
+			if(cached != null) { locationCountry = cached; }
 		}
 		item.put("locationZid",r.Location);
-		LocationRec = Coverage_Location[ID == r.Location];
-		if(LocationRec != null)
-		{
-			item.put("serviceCountry",LocationRec.Address_Information1.country);
-		}
+		if(locationCountry != "") { item.put("serviceCountry",locationCountry); }
 		resultList.add(item);
 	}
 	return resultList;
@@ -807,56 +840,61 @@ int chat_data_access.fetch_office_id_by_name(string officeName)
   }
   return 0;
 }
-list chat_data_access.materialize_service_report(Service records)
+list chat_data_access.materialize_service_report(Service records, map officeById)
 {
-  resultList = List();
-  if(records == null)
-  {
-    return resultList;
-  }
-  for each  r in records
-  {
-    item = Map();
-    item.put("serviceType",r.Service_Type);
-    item.put("zid",r.ID);
-    item.put("customerId",r.Sender_field);
-    item.put("date",r.Date_field1);
-    amount = r.Amount;
-    if(amount == null)
-    {
-      amount = 0;
-    }
-    item.put("amount",amount);
-    weight = 0;
-    if(r.Total_Weight != null)
-    {
-      weight = r.Total_Weight;
-    }
-    item.put("totalWeight",weight);
-    officeName = "";
-    if(r.Office != null)
-    {
-      OfficeRec = Commercial_Office[ID == r.Office];
-      if(OfficeRec != null && OfficeRec.Office_Name != null)
+   resultList = List();
+   if(records == null)
+   {
+      return resultList;
+   }
+   for each  r in records
+   {
+      item = Map();
+      item.put("serviceType",r.Service_Type);
+      item.put("zid",r.ID);
+      item.put("customerId",r.Sender_field);
+      item.put("date",r.Date_field1);
+      amount = r.Amount;
+      if(amount == null)
       {
-        officeName = OfficeRec.Office_Name;
+         amount = 0;
       }
-    }
-    item.put("officeName",officeName);
-    resultList.add(item);
-  }
-  return resultList;
+      item.put("amount",amount);
+      weight = 0;
+      if(r.Total_Weight != null)
+      {
+         weight = r.Total_Weight;
+      }
+      item.put("totalWeight",weight);
+      officeName = "";
+      if(r.Office != null && officeById != null)
+      {
+         cachedName = officeById.get(r.Office);
+         if(cachedName != null)
+         {
+            officeName = cachedName;
+         }
+      }
+      item.put("officeName",officeName);
+      resultList.add(item);
+   }
+   return resultList;
 }
+
 list chat_data_access.fetch_services_report_by_date_window(date startDate, date endDate)
 {
-  records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
-  return thisapp.chat_data_access.materialize_service_report(records);
+   records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
+   refs = thisapp.chat_data_access.prefetch_service_refs();
+   return thisapp.chat_data_access.materialize_service_report(records, refs.get("office"));
 }
+
 list chat_data_access.fetch_services_report_by_ids(list ids)
 {
-  records = Service[ID in ids] sort by Date_field1 range from 0 to 199;
-  return thisapp.chat_data_access.materialize_service_report(records);
+   records = Service[ID in ids] sort by Service_ID range from 0 to 199;
+   refs = thisapp.chat_data_access.prefetch_service_refs();
+   return thisapp.chat_data_access.materialize_service_report(records, refs.get("office"));
 }
+
 map chat_data_access.prefetch_office_names()
 {
   // La app tiene 3 Commercial_Office. Una sola query + Map en memoria reemplaza
@@ -876,26 +914,89 @@ map chat_data_access.prefetch_office_names()
 }
 map chat_data_access.prefetch_shipment_info()
 {
-  // La app tiene 230 Shipment, que SUPERA el tope de 200 registros por query de
-  // Creator: traerlos en una sola llamada truncaría en silencio y perdería 30.
-  // Por eso se parte explícitamente en dos lotes (0-199 y 200-399).
-  //
-  // Clasificación aéreo/maritime por Short_Name.contains("Air"), convención del
-  // dashboard de la app. Se precalcula la clase acá para no repetir el contains()
-  // por cada paquete.
-  infoById = Map();
-  firstBatch = Shipment[ID != 0] sort by ID range from 0 to 199;
-  for each  s in firstBatch
-  {
-    infoById.put(s.ID,thisapp.chat_data_access.shipment_info(s));
-  }
-  secondBatch = Shipment[ID != 0] sort by ID range from 200 to 399;
-  for each  s in secondBatch
-  {
-    infoById.put(s.ID,thisapp.chat_data_access.shipment_info(s));
-  }
-  return infoById;
+   // La app tiene 230 Shipment, que SUPERA el tope de 200 registros por query de
+   // Creator: traerlos en una sola llamada truncaría en silencio y perdería 30.
+   // Por eso se parte explícitamente en dos lotes (0-199 y 200-399).
+   //
+   // Clasificación aéreo/maritime por Short_Name.contains("Air"), convención del
+   // dashboard de la app. Se precalcula la clase acá para no repetir el contains()
+   // por cada paquete.
+   infoById = Map();
+   firstBatch = Shipment[ID != 0] sort by ID range from 0 to 199;
+   for each  s in firstBatch
+   {
+     infoById.put(s.ID,thisapp.chat_data_access.shipment_info(s));
+   }
+   secondBatch = Shipment[ID != 0] sort by ID range from 200 to 399;
+   for each  s in secondBatch
+   {
+     infoById.put(s.ID,thisapp.chat_data_access.shipment_info(s));
+   }
+   return infoById;
+ }
+
+// ------------------------------------------------------------
+// Helper: populate a package batch (no while, reusable logic)
+// ------------------------------------------------------------
+void chat_data_access._populate_pkg_batch(int start, int end, map pkgById)
+{
+   batch = Package[ID != 0] sort by ID range from start to end;
+   for each  p in batch
+   {
+      if(p.ID != null)
+      {
+         pkgInfo = Map();
+         if(p.Package_ID != null) { pkgInfo.put("packageId",""+p.Package_ID); }
+         if(p.Status != null) { pkgInfo.put("status",""+p.Status); }
+         if(p.Location != null) { pkgInfo.put("location",p.Location); }
+         pkgById.put(p.ID,pkgInfo);
+      }
+   }
 }
+
+// ------------------------------------------------------------
+// prefetch_service_refs: un solo lugar para los mapas de referencia
+// (office, vendor, location, shipment, pkg) que resuelven en memoria
+// los lookups de los reportes de servicios, paquetes y tracking.
+// ------------------------------------------------------------
+map chat_data_access.prefetch_service_refs()
+{
+   // Office map – already implemented in prefetch_office_names()
+   officeById = thisapp.chat_data_access.prefetch_office_names();
+   // Vendor map – only need Vendor_Name
+   vendorById = Map();
+   vendors = Vendor[ID != 0] sort by ID range from 0 to 199;
+   for each  v in vendors
+   {
+      if(v.Vendor_Name != null)
+      {
+         vendorById.put(v.ID,v.Vendor_Name);
+      }
+   }
+   // Location map – Coverage_Location → country
+   locationById = Map();
+   locations = Coverage_Location[ID != 0] sort by ID range from 0 to 199;
+   for each  loc in locations
+   {
+      if(loc.Address_Information1 != null && loc.Address_Information1.country != null)
+      {
+         locationById.put(loc.ID,loc.Address_Information1.country);
+      }
+   }
+   // Shipment map – reuse existing prefetch_shipment_info()
+   shipmentById = thisapp.chat_data_access.prefetch_shipment_info();
+    // Package map – use reusable batch helper
+    pkgById = Map();
+    thisapp.chat_data_access._populate_pkg_batch(0,   199, pkgById);
+    thisapp.chat_data_access._populate_pkg_batch(200, 399, pkgById);
+    thisapp.chat_data_access._populate_pkg_batch(400, 599, pkgById);
+    thisapp.chat_data_access._populate_pkg_batch(600, 799, pkgById);
+    thisapp.chat_data_access._populate_pkg_batch(800, 999, pkgById);
+
+   return {"office":officeById, "vendor":vendorById, "location":locationById, "shipment":shipmentById, "pkg":pkgById};
+}
+
+
 map chat_data_access.shipment_info(Shipment shipment)
 {
   // Clasificación aéreo/maritime por Short_Name.contains("Air"), convención del
@@ -1067,103 +1168,91 @@ list chat_data_access.fetch_all_packages_by_window_office(date startDate, date e
   }
   return resultList;
 }
-list chat_data_access.materialize_pkg_tracking_report(Pkg_Tracking records)
+list chat_data_access.materialize_pkg_tracking_report(Pkg_Tracking records, map refs)
 {
-  resultList = List();
-  if(records == null)
-  {
-    return resultList;
-  }
-  for each  r in records
-  {
-    item = Map();
-    item.put("zid",r.ID);
-    item.put("description",r.Description);
-    item.put("latestStatus",r.Latest_Status);
-    item.put("scanDate",r.Scan_Date);
-    item.put("lastUpdated",r.Last_Updated);
-    item.put("lastSync",r.Last_Sync);
-    item.put("scanned",r.Scanned);
-    // Package_ID picklist->Package: resolver el texto Package.Package_ID
-    packageIdText = "";
-    packageStatus = "";
-    if(r.Package_ID != null)
-    {
-      PackageRec = Package[ID == r.Package_ID];
-      if(PackageRec != null && PackageRec.Package_ID != null)
+   resultList = List();
+   if(records == null)
+   {
+      return resultList;
+   }
+   for each r in records
+   {
+      item = Map();
+      item.put("zid",r.ID);
+      item.put("description",r.Description);
+      item.put("latestStatus",r.Latest_Status);
+      item.put("scanDate",r.Scan_Date);
+      item.put("lastUpdated",r.Last_Updated);
+      item.put("lastSync",r.Last_Sync);
+      item.put("scanned",r.Scanned);
+      // Package fields from pre‑fetched map
+      packageIdText = "";
+      packageStatus = "";
+      if(r.Package_ID != null)
       {
-        packageIdText = "" + PackageRec.Package_ID;
+         pkgInfo = refs.get("pkg").get(r.Package_ID);
+         if(pkgInfo != null)
+         {
+            packageIdText = pkgInfo.get("packageId");
+            packageStatus = pkgInfo.get("status");
+         }
       }
-      if(PackageRec != null && PackageRec.Status != null)
+      item.put("packageId",packageIdText);
+      item.put("packageStatus",packageStatus);
+      // Destination country via location map
+      destCountry = "";
+      if(r.Package_ID != null)
       {
-        packageStatus = "" + PackageRec.Status;
+         pkgInfo = refs.get("pkg").get(r.Package_ID);
+         if(pkgInfo != null && pkgInfo.get("location") != null)
+         {
+            locationId = pkgInfo.get("location");
+            cached = refs.get("location").get(locationId);
+            if(cached != null) { destCountry = cached; }
+         }
       }
-    }
-    item.put("packageId",packageIdText);
-    item.put("packageStatus",packageStatus);
-    // destino: Package.Location -> Coverage_Location.Address_Information1.country
-    destCountry = "";
-    if(r.Package_ID != null)
-    {
-      PackageRec = Package[ID == r.Package_ID];
-      if(PackageRec != null && PackageRec.Location != null)
+      item.put("destCountry",destCountry);
+      // Office name via map
+      officeName = "";
+      if(r.Office != null)
       {
-        LocationRec = Coverage_Location[ID == PackageRec.Location];
-        if(LocationRec != null && LocationRec.Address_Information1 != null)
-        {
-          destCountry = LocationRec.Address_Information1.country;
-        }
+         cached = refs.get("office").get(r.Office);
+         if(cached != null) { officeName = cached; }
       }
-    }
-    item.put("destCountry",destCountry);
-    // office
-    officeName = "";
-    item.put("officeZid",r.Office);
-    if(r.Office != null)
-    {
-      OfficeRec = Commercial_Office[ID == r.Office];
-      if(OfficeRec != null && OfficeRec.Office_Name != null)
+      item.put("officeZid",r.Office);
+      if(officeName != "") { item.put("officeName",officeName); }
+      // Shipping type via shipment map
+      shipZid = r.Shipping_Type;
+      item.put("shippingTypeZid",shipZid);
+      shipmentName = "";
+      className = "";
+      if(shipZid != null)
       {
-        officeName = OfficeRec.Office_Name;
+         shipInfo = refs.get("shipment").get(shipZid);
+         if(shipInfo != null)
+         {
+            shipmentName = shipInfo.get("name");
+            className = shipInfo.get("class");
+         }
       }
-    }
-    item.put("officeName",officeName);
-    // Shipping_Type -> Shipment (nombre Short_Name, clase air/maritime)
-    shipZid = r.Shipping_Type;
-    item.put("shippingTypeZid",shipZid);
-    shipmentName = "";
-    className = "";
-    if(shipZid != null)
-    {
-      ShipmentRec = Shipment[ID == shipZid];
-      if(ShipmentRec != null && ShipmentRec.Short_Name != null)
-      {
-        shipmentName = "" + ShipmentRec.Short_Name;
-      }
-      if(shipmentName != null && shipmentName.contains("Air"))
-      {
-        className = "air";
-      }
-      else
-      {
-        className = "maritime";
-      }
-    }
-    item.put("shippingTypeName",shipmentName);
-    item.put("className",className);
-    resultList.add(item);
-  }
-  return resultList;
+      item.put("shippingTypeName",shipmentName);
+      item.put("className",className);
+      resultList.add(item);
+   }
+   return resultList;
 }
+
 list chat_data_access.fetch_pkg_tracking_scanned_all()
 {
   records = Pkg_Tracking[Scanned == true] sort by ID range from 0 to 999;
-  return thisapp.chat_data_access.materialize_pkg_tracking_report(records);
+  refs = thisapp.chat_data_access.prefetch_service_refs();
+  return thisapp.chat_data_access.materialize_pkg_tracking_report(records,refs);
 }
 list chat_data_access.fetch_pkg_tracking_unscanned()
 {
   records = Pkg_Tracking[Scanned == false] sort by ID range from 0 to 999;
-  return thisapp.chat_data_access.materialize_pkg_tracking_report(records);
+  refs = thisapp.chat_data_access.prefetch_service_refs();
+  return thisapp.chat_data_access.materialize_pkg_tracking_report(records,refs);
 }
 int chat_data_access.insert_unanswered_query(map data)
 {
