@@ -1160,7 +1160,11 @@ list chat_data_access.fetch_all_packages_by_window_office(date startDate, date e
     }
     resultList.addAll(thisapp.chat_data_access.materialize_package_report(recBatch,officeNameById,shipmentInfoById));
     // sort by ID es ascendente: el cursor avanza al mayor ID del lote.
-    lastId = recBatch.get(recBatch.count() - 1).get("ID");
+    // getAll() sobre el campo ID (patrón de AGENTS.md) evita .get() sobre la
+    // colección cruda: el runtime resolvía .get("ID") como get(bigint index) y
+    // tiraba "Expected BIGINT but found STRING". idList es un List en memoria.
+    idList = recBatch.ID.getAll();
+    lastId = idList.get(idList.size() - 1);
     if(recBatch.count() < 200)
     {
       break;
