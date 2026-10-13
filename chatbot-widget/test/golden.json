@@ -1,0 +1,399 @@
+[
+  {
+    "id": "tracking-abc123456",
+    "prompt": "Rastrea mi paquete ABC123456",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "track_package",
+      "params": { "trackingNumber": "ABC123456" }
+    }
+  },
+  {
+    "id": "services-paqueteria-madrid",
+    "prompt": "¿Qué servicios tienen para paquetería a Madrid?",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "search_services",
+      "params": { "serviceType": "Package Receipt", "destination": "Madrid" }
+    }
+  },
+  {
+    "id": "offices-miami-usa",
+    "prompt": "¿Tienen oficinas en Miami, USA?",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "find_offices",
+      "params": { "country": "United States" }
+    }
+  },
+  {
+    "id": "coverage-colombia-remesas",
+    "prompt": "¿Tienen cobertura en Colombia para remesas?",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "check_coverage",
+      "params": { "country": "Colombia", "serviceType": "Remittance" }
+    }
+  },
+  {
+    "id": "contacts-juan-perez-phone",
+    "prompt": "Busca el contacto Juan Pérez teléfono 5551234",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "find_contacts",
+      "params": { "phone": "5551234", "name": "Juan Pérez" }
+    }
+  },
+  {
+    "id": "top-customers-locker-ultimo-mes",
+    "prompt": "¿Quiénes son los clientes más frecuentes del servicio Locker del último mes?",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "report_top_customers",
+      "params": {
+        "serviceType": ["Locker"],
+        "period": "ultimo_mes",
+        "needsResolve": true
+      }
+    }
+  },
+  {
+    "id": "top-customers-no-type-clarify",
+    "prompt": "¿Quiénes son los clientes más frecuentes del último mes?",
+    "history": [],
+    "expected": { "via": "clarify", "tool": "", "params": {} }
+  },
+  {
+    "id": "smalltalk-greet",
+    "prompt": "Hola, ¿qué hacen ustedes?",
+    "history": [],
+    "expected": { "via": "smalltalk", "tool": "", "params": {} }
+  },
+  {
+    "id": "list-service-types-disponibles",
+    "prompt": "¿Qué servicios tienen disponibles?",
+    "history": [],
+    "expected": { "via": "rule", "tool": "list_service_types", "params": {} }
+  },
+  {
+    "id": "list-service-types-ofrecen",
+    "prompt": "¿Qué servicios ofrecen?",
+    "history": [],
+    "expected": { "via": "rule", "tool": "list_service_types", "params": {} }
+  },
+  {
+    "id": "list-service-types-tipos",
+    "prompt": "tipos de servicio",
+    "history": [],
+    "expected": { "via": "rule", "tool": "list_service_types", "params": {} }
+  },
+  {
+    "id": "coverage-servicio-en-argentina",
+    "prompt": "¿Tienen servicio en Argentina?",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "check_coverage",
+      "params": { "country": "Argentina" }
+    }
+  },
+  {
+    "id": "smalltalk-payment-bitcoin",
+    "prompt": "¿Aceptan Bitcoin?",
+    "history": [],
+    "expected": { "via": "smalltalk", "tool": "", "params": {} }
+  },
+  {
+    "id": "offices-miami",
+    "prompt": "Oficinas en Miami",
+    "history": [],
+    "expected": { "via": "rule", "tool": "find_offices", "params": {} }
+  },
+  {
+    "id": "coverage-cuba",
+    "prompt": "Cobertura en Cuba",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "check_coverage",
+      "params": { "country": "Cuba" }
+    }
+  },
+  {
+    "id": "top-remittance-5",
+    "prompt": "top 5 clientes de remesas",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "report_top_remittance_customers",
+      "params": { "limit": "5" }
+    }
+  },
+  {
+    "id": "top-package-oficina-miami-mes-pasado",
+    "prompt": "clientes más frecuentes de paquetería en la oficina Miami el mes pasado",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "report_top_package_customers",
+      "params": { "office": "Miami", "period": "mes_anterior", "needsResolve": true }
+    }
+  },
+  {
+    "id": "top-customers-10-recargas",
+    "prompt": "top 10 clientes de recargas",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "report_top_customers",
+      "params": { "serviceType": ["Recharge"], "limit": "10" }
+    }
+  },
+  {
+    "id": "pounds-cuantos-por-oficina-mes-pasado",
+    "prompt": "¿cuántos paquetes enviaron por oficina el mes pasado?",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "report_pounds_shipped",
+      "params": { "period": "mes_anterior", "needsResolve": true }
+    }
+  },
+  {
+    "id": "pounds-libras-este-mes",
+    "prompt": "libras enviadas este mes",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "report_pounds_shipped",
+      "params": { "period": "este_mes", "needsResolve": true }
+    }
+  },
+  {
+    "id": "daily-average-libras",
+    "prompt": "promedio diario de libras",
+    "history": [],
+    "expected": { "via": "rule", "tool": "report_daily_average", "params": {} }
+  },
+  {
+    "id": "monthly-comparison-3-meses",
+    "prompt": "comparación mensual de libras de los últimos 3 meses",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "report_monthly_comparison",
+      "params": { "months": "3" }
+    }
+  },
+  {
+    "id": "shipping-type-aerea-maritima",
+    "prompt": "¿cuántos paquetes se enviaron por vía aérea y marítima?",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "report_shipping_type_frequency",
+      "params": {}
+    }
+  },
+  {
+    "id": "merchandise-distribucion",
+    "prompt": "distribución por tipo de mercancía",
+    "history": [],
+    "expected": { "via": "rule", "tool": "report_merchandise_type", "params": {} }
+  },
+  {
+    "id": "delayed-cajas-demoradas",
+    "prompt": "cajas demoradas",
+    "history": [],
+    "expected": { "via": "rule", "tool": "report_delayed_packages", "params": {} }
+  },
+  {
+    "id": "delayed-paquetes-atrasados-cuba",
+    "prompt": "paquetes atrasados a Cuba",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "report_delayed_packages",
+      "params": { "destCountry": "Cuba" }
+    }
+  },
+  {
+    "id": "unscanned-cajas-sin-escanear",
+    "prompt": "cajas sin escanear",
+    "history": [],
+    "expected": { "via": "rule", "tool": "report_unscanned_packages", "params": {} }
+  },
+  {
+    "id": "llm-all-clima-madrid",
+    "prompt": "¿Cuál es el clima en Madrid?",
+    "history": [],
+    "expected": { "via": "llm_all", "tool": "", "params": {} }
+  },
+  {
+    "id": "llm-all-chiste",
+    "prompt": "Cuéntame un chiste",
+    "history": [],
+    "expected": { "via": "llm_all", "tool": "", "params": {} }
+  },
+  {
+    "id": "llm-all-mundial",
+    "prompt": "¿Quién ganó el mundial?",
+    "history": [],
+    "expected": { "via": "llm_all", "tool": "", "params": {} }
+  },
+  {
+    "id": "llm-all-mandar-caja-cuba",
+    "prompt": "Necesito mandar una caja a Cuba",
+    "history": [],
+    "expected": { "via": "llm_all", "tool": "", "params": {} }
+  },
+  {
+    "id": "offices-miami-uppercase",
+    "prompt": "OFICINAS EN MIAMI",
+    "history": [],
+    "expected": { "via": "rule", "tool": "find_offices", "params": {} }
+  },
+  {
+    "id": "tracking-p-123456",
+    "prompt": "Dónde está mi paquete P-123456",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "track_package",
+      "params": { "trackingNumber": "P-123456" }
+    }
+  },
+  {
+    "id": "tracking-numero-rastreo-99887766",
+    "prompt": "mi número de rastreo es 99887766",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "track_package",
+      "params": { "trackingNumber": "99887766" }
+    }
+  },
+  {
+    "id": "services-cuanto-cuesta-bogota",
+    "prompt": "¿Cuánto cuesta enviar a Bogotá?",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "search_services",
+      "params": { "destination": "Bogotá" }
+    }
+  },
+  {
+    "id": "llm-shortlist-promedio-libras-mes-pasado",
+    "prompt": "¿cuál es el promedio de libras del mes pasado?",
+    "history": [],
+    "expected": {
+      "via": "llm_shortlist",
+      "tool": "",
+      "params": {},
+      "candidates": [
+        "report_pounds_shipped",
+        "report_daily_average",
+        "report_monthly_comparison"
+      ]
+    }
+  },
+  {
+    "id": "smalltalk-thanks",
+    "prompt": "gracias",
+    "history": [],
+    "expected": { "via": "smalltalk", "tool": "", "params": {} }
+  },
+  {
+    "id": "llm-all-ayuda",
+    "prompt": "ayuda",
+    "history": [],
+    "expected": { "via": "llm_all", "tool": "", "params": {} }
+  },
+  {
+    "id": "llm-all-abc",
+    "prompt": "ABC",
+    "history": [],
+    "expected": { "via": "llm_all", "tool": "", "params": {} }
+  },
+  {
+    "id": "merchandise-envian-mas",
+    "prompt": "¿Qué mercancía envían más?",
+    "history": [],
+    "expected": { "via": "rule", "tool": "report_merchandise_type", "params": {} }
+  },
+  {
+    "id": "delayed-cajas-retrasadas",
+    "prompt": "¿Cuántas cajas están retrasadas?",
+    "history": [],
+    "expected": { "via": "rule", "tool": "report_delayed_packages", "params": {} }
+  },
+  {
+    "id": "services-locker",
+    "prompt": "servicios de locker",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "search_services",
+      "params": { "serviceType": "Locker" }
+    }
+  },
+  {
+    "id": "followup-y-a-barcelona",
+    "prompt": "¿y a Barcelona?",
+    "history": [
+      { "role": "user", "content": "¿y a Barcelona?" },
+      { "role": "user", "content": "servicios a Madrid" }
+    ],
+    "expected": {
+      "via": "followup",
+      "tool": "search_services",
+      "params": { "destination": "Barcelona" }
+    }
+  },
+  {
+    "id": "followup-y-el-mes-anterior",
+    "prompt": "¿y el mes anterior?",
+    "history": [
+      { "role": "user", "content": "¿y el mes anterior?" },
+      { "role": "user", "content": "libras enviadas este mes" }
+    ],
+    "expected": {
+      "via": "followup",
+      "tool": "report_pounds_shipped",
+      "params": { "period": "mes_anterior", "needsResolve": true }
+    }
+  },
+  {
+    "id": "tracking-abc123456-with-prev",
+    "prompt": "ABC123456",
+    "history": [
+      { "role": "user", "content": "ABC123456" },
+      { "role": "user", "content": "rastrear mi paquete" }
+    ],
+    "expected": {
+      "via": "rule",
+      "tool": "track_package",
+      "params": { "trackingNumber": "ABC123456" }
+    }
+  },
+  {
+    "id": "contacts-tel-with-prev",
+    "prompt": "tel 5551234",
+    "history": [
+      { "role": "user", "content": "tel 5551234" },
+      { "role": "user", "content": "busca el contacto Juan" }
+    ],
+    "expected": {
+      "via": "rule",
+      "tool": "find_contacts",
+      "params": { "phone": "5551234" }
+    }
+  }
+]
