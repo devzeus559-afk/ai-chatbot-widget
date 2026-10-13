@@ -157,11 +157,16 @@ async function loadThread(convId) {
 
 // Envía un prompt al backend: crea ChatRequests (workflow On Submit →
 // chat_invoke) y hace polling del Status hasta answered/failed.
-async function sendToServer(convId, prompt) {
+// `hint` (opcional) es la decisión del router en JS: se serializa en el campo
+// Route_Hint para que chat_invoke use la tool/params sin re-inferir intención.
+async function sendToServer(convId, prompt, hint) {
   const recordData = {
     [CONFIG.chatRequestsFields.sessionId]: convId,
     [CONFIG.chatRequestsFields.prompt]: prompt,
   };
+  if (hint && CONFIG.chatRequestsFields.routeHint) {
+    recordData[CONFIG.chatRequestsFields.routeHint] = JSON.stringify(hint);
+  }
   console.log("[LM2Chatbot] sendToServer payload:", recordData);
   const res = await clientApi(
     "addRecord",

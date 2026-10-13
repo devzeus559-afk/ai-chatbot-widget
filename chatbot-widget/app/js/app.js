@@ -22,7 +22,11 @@ async function sendMessage() {
   showThinking();
 
   try {
-    const result = await historyStore.send(state.currentConv.id, content);
+    // Router de intención en JS: resuelve la tool determinista (si la hay) y
+    // adjunta la pista al request. Si ChatRouter no está disponible se envía
+    // sin hint (el backend cae a la inferencia normal).
+    const hint = routePrompt(content);
+    const result = await historyStore.send(state.currentConv.id, content, hint);
     removeThinking();
     if (result.ok) {
       // result.reply es el envelope JSON: {"text":"...","visualization":{...}}
@@ -213,6 +217,132 @@ importInput.addEventListener("change", (e) => {
 });
 
 // ================================================================
+// 3.10b  Router de intención (JS) + catálogo de lugares
+// ================================================================
+
+// Resuelve la intención con ChatRouter y devuelve la pista para Route_Hint.
+// Mantiene state.lastIntent (solo rule/followup) para los follow-ups.
+// Devuelve null si el router no está disponible (el backend infiere solo).
+function routePrompt(content) {
+  if (typeof ChatRouter === "undefined" || !ChatRouter || !ChatRouter.route) {
+    return null;
+  }
+  try {
+    const history = (state.messages || [])
+      .slice(-6)
+      .map((m) => ({ role: m.role, content: m.content }));
+    const res = ChatRouter.route(content, {
+      places: state.places || undefined,
+      lastIntent: state.lastIntent,
+      history: history,
+    });
+    if (res.via === "rule" || res.via === "followup") {
+      state.lastIntent = { tool: res.tool, params: res.params };
+    } else {
+      state.lastIntent = null;
+    }
+    return { tool: res.tool, params: res.params, via: res.via };
+  } catch (err) {
+    console.warn("[LM2Chatbot] routePrompt failed", err);
+    return null;
+  }
+}
+
+const PLACES_CACHE_KEY = "lm2chatbot:places-catalog";
+const PLACES_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Lee el primer campo no vacío de una lista de nombres candidatos.
+function _placeField(rec, keys) {
+  for (var i = 0; i < keys.length; i++) {
+    var v = rec[keys[i]];
+    if (v !== undefined && v !== null && v !== "") return v;
+  }
+  return "";
+}
+
+// Lee un subcampo de un campo compuesto (Address.district_city).
+function _placeSubField(rec, parent, child) {
+  var p = rec && rec[parent];
+  if (p && typeof p === "object") return p[child] || "";
+  return "";
+}
+
+// Construye {offices, cities, countries} desde oficinas + cobertura.
+// Best-effort: cualquier fallo deja el catálogo sin esa fuente.
+async function fetchPlaces() {
+  if (BACKEND_MODE !== "server" || typeof apiGetAll !== "function") return null;
+
+  // 1) Caché de sesión (24 h)
+  try {
+    const raw = sessionStorage.getItem(PLACES_CACHE_KEY);
+    if (raw) {
+      const cached = JSON.parse(raw);
+      if (cached && cached.ts && Date.now() - cached.ts < PLACES_TTL_MS) {
+        state.places = cached.data;
+        return state.places;
+      }
+    }
+  } catch (err) {
+    /* caché corrupta: seguir y recargar */
+  }
+
+  const offices = new Set();
+  const cities = new Set();
+  const countries = new Set();
+  const add = (set, v) => {
+    if (v !== undefined && v !== null && String(v).trim() !== "") {
+      set.add(String(v).trim());
+    }
+  };
+
+  // 2) Oficinas: Office_Name, Address.district_city, Address.country
+  try {
+    const recs = await apiGetAll(CONFIG.officesReport, { limit: 200 });
+    recs.forEach((rec) => {
+      add(offices, _placeField(rec, ["Office_Name", "Name"]));
+      add(cities, _placeSubField(rec, "Address", "district_city"));
+      add(cities, _placeField(rec, ["district_city", "City"]));
+      add(countries, _placeSubField(rec, "Address", "country"));
+      add(countries, _placeField(rec, ["country", "Country"]));
+    });
+  } catch (err) {
+    console.warn("[LM2Chatbot] fetchPlaces: offices failed", err);
+  }
+
+  // 3) Cobertura: Location_Name, Address_Information1.state_province/country
+  try {
+    const recs = await apiGetAll(CONFIG.coverageReport, { limit: 200 });
+    recs.forEach((rec) => {
+      add(cities, _placeField(rec, ["Location_Name", "Name"]));
+      add(cities, _placeSubField(rec, "Address_Information1", "state_province"));
+      add(countries, _placeSubField(rec, "Address_Information1", "country"));
+      add(countries, _placeField(rec, ["country", "Country"]));
+    });
+  } catch (err) {
+    console.warn("[LM2Chatbot] fetchPlaces: coverage failed", err);
+  }
+
+  const data = {
+    offices: Array.from(offices),
+    cities: Array.from(cities),
+    countries: Array.from(countries),
+  };
+  state.places = data;
+  // Mantener en sincronía el objeto mutable que usa el router por defecto.
+  if (typeof ChatRouterData !== "undefined" && ChatRouterData && ChatRouterData.PLACES) {
+    ChatRouterData.PLACES.offices = data.offices;
+    ChatRouterData.PLACES.cities = data.cities;
+    ChatRouterData.PLACES.countries = data.countries;
+  }
+  try {
+    sessionStorage.setItem(PLACES_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: data }));
+  } catch (err) {
+    /* sessionStorage lleno o no disponible: ignorar */
+  }
+  return data;
+}
+
+// ================================================================
 // 3.11  Init (arranque)
 // ================================================================
 async function init() {
@@ -225,6 +355,8 @@ async function init() {
   // 3) Nueva conversación en la pantalla de inicio en cada carga.
   //    El usuario carga una conversación anterior manualmente desde el sidebar.
   newChat();
+  // 4) Catálogo de lugares para el router (fire-and-forget: no bloquea la UI).
+  fetchPlaces().catch((err) => console.warn("[LM2Chatbot] fetchPlaces failed", err));
 }
 
 init();

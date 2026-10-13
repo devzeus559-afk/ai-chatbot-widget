@@ -148,10 +148,12 @@
 
 
     <!-- Scripts clásicos del widget. EL ORDEN ES TOPOLÓGICO (comparten ámbito global):
-         config → dom → creator-api → store → ui-helpers → export → viz → messages → conversations → app.
+         config → chat-router-data → chat-router → dom → creator-api → store → ui-helpers → export → viz → messages → conversations → app.
          Cadena de dependencias: export → viz → messages → conversations → app.
          app.js va último: registra los listeners y llama a init(). -->
     <script src="js/config.js"></script>
+    <script src="js/chat-router-data.js"></script>
+    <script src="js/chat-router.js"></script>
     <script src="js/dom.js"></script>
     <script src="js/creator-api.js"></script>
     <script src="js/store.js"></script>

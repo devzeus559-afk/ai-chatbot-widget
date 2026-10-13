@@ -32,7 +32,16 @@ const CONFIG = {
   chatRequestsFields: {
     sessionId: "Session_ID",
     prompt: "Prompt",
+    // Route_Hint: JSON con la decisión del router (tool/params/via) que el widget
+    // resuelve en JS. Campo Long Text en ChatRequests. El backend lo consume para
+    // saltarse la llamada de intención cuando viene una tool determinista.
+    routeHint: "Route_Hint",
   },
+  // Report link names del catálogo de lugares que alimenta ChatRouterData.PLACES
+  // (fetchPlaces). AJUSTAR a los link names reales del live si difieren: el
+  // backend lee los mismos módulos nativamente (Commercial_Office / Coverage_Location).
+  officesReport: "Commercial_Office_Report",
+  coverageReport: "Coverage_Location_Report",
   pollIntervalMs: 1500,
   pollTimeoutMs: 45000,
   forceLocal: false,
@@ -128,6 +137,12 @@ const REQUEST_STATUS = Object.freeze({
 const state = {
   currentConv: null, // conversación activa: { id, title, createdAt, updatedAt, messages }
   isLoading: false,
+  // Última intención determinista resuelta por el router (solo rule/followup).
+  // Alimenta los follow-ups ("¿y a Barcelona?" reusa la tool anterior).
+  lastIntent: null, // { tool, params }
+  // Catálogo de lugares para el router ({offices, cities, countries}), poblado
+  // en init() por fetchPlaces() en modo server. null = aún no cargado.
+  places: null,
   // Siempre derivado de currentConv: ya no hay un alias que pueda divergir.
   get messages() {
     return this.currentConv ? this.currentConv.messages : [];

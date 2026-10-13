@@ -143,8 +143,10 @@ const historyStore = {
     return true;
   },
 
-  // Envía un mensaje y devuelve la respuesta del agente
-  async send(convId, prompt) {
+  // Envía un mensaje y devuelve la respuesta del agente.
+  // `hint` (opcional) es la decisión del router en JS ({tool, params, via});
+  // solo tiene efecto en modo server (se ignora en la simulación local).
+  async send(convId, prompt, hint) {
     if (this.mode !== "server") {
       await sleep(600);
       return {
@@ -153,7 +155,7 @@ const historyStore = {
           "This is a simulated response. Run the widget inside Zoho Creator to use the real backend (Client API).",
       };
     }
-    return sendToServer(convId, prompt);
+    return sendToServer(convId, prompt, hint);
   },
 
   _upsert(conv) {
