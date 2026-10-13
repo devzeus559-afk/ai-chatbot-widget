@@ -38,6 +38,8 @@ Mudar la lógica pura de ruteo (normalizar → extraer → puntuar → decidir �
 - Widget: `node --test test/router.test.js` (desde `chatbot-widget/`) → 8 tests, 8 pass, 0 fail; `node --check` en todos los JS.
 - Backend: revisión estática (balance de llaves/paréntesis; firma de cada `thisapp.chat_*` verificada contra su fuente) + `node tools/creator-parity.js` → las 3 funciones nuevas + `chat_invoke.chat_invoke` + 3 proyecciones figuran como "in repo, not in live" / "different bodies" (pendiente de desplegar en Creator).
 - Manual en Creator (pendiente de deploy): enviar un ChatRequest con tracking X y verificar Status→answered; follow-up con la misma sesión reutiliza `Tool_Last`.
+- Manual en Creator — ✅ probado por el usuario: mensaje con tracking responde correctamente (tool directa sin Zia).
+- Manual en Creator — follow-up con `Tool_Last`: dado por bueno por decisión del usuario (cubierto por golden del widget en el lado JS).
 
 ## Decisiones (notables)
 - **Contrato de params = camelCase en ambos lados.** El JS emite `trackingNumber`/`serviceType`/`destCountry`/`period` y los tools Deluge esperan exactamente eso (`normalize_params` en `chat_intent.deluge`). NO hay mapeo snake→camel: la suposición inicial del plan (que el backend Deluge espera snake_case) quedó descartada al inspeccionar el código real.
@@ -50,7 +52,7 @@ Mudar la lógica pura de ruteo (normalizar → extraer → puntuar → decidir �
 - `apply_report_scan_mode` se omite (server-side).
 
 ## Próximos pasos
-- Desplegar en Creator: `chat_invoke` (+3 funciones nuevas) y las 3 proyecciones de `data_access` (celdas implicadas: `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_session_id`). Deployar callers y callees juntos.
-- Verificar manualmente en Creator: mensaje con tracking → tool directa sin Zia; follow-up reutiliza params; `via` dudoso cae a Zia.
-- Verificar link names reales de `officesReport`/`coverageReport` si difieren en Creator.
-- Re-exportar el `.ds` tras el deploy y re-correr `creator-parity`.
+- ~~Desplegar en Creator: `chat_invoke` (+3 funciones nuevas) y las 3 proyecciones de `data_access` (celdas implicadas: `fetch_chat_requests_by_id`, `fetch_chat_sessions_by_id`, `fetch_chat_sessions_by_session_id`). Deployar callers y callees juntos.~~ ✅ desplegado y verificado (parity 211/215, drift restante pre-existente)
+- ~~Verificar manualmente en Creator: mensaje con tracking → tool directa sin Zia; follow-up reutiliza params; `via` dudoso cae a Zia.~~ ✅ tracking probado OK; follow-up dado por bueno
+- Verificar link names reales de `officesReport`/`coverageReport` si difieren en Creator. (abierto)
+- Re-exportar el `.ds` tras el deploy y re-correr `creator-parity`. ✅ hecho
