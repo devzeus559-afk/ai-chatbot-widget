@@ -248,7 +248,10 @@ function routePrompt(content) {
   }
 }
 
-const PLACES_CACHE_KEY = "lm2chatbot:places-catalog";
+// v2: los report link names del gazetteer cambiaron (All_Commercial_Offices /
+// All_Coverage_Locations). Bump para descartar la caché vacía que dejó la versión
+// previa y forzar el recomputo del catálogo sin que el usuario limpie sessionStorage.
+const PLACES_CACHE_KEY = "lm2chatbot:places-catalog:v2";
 const PLACES_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Lee el primer campo no vacío de una lista de nombres candidatos.

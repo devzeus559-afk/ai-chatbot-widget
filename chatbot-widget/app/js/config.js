@@ -38,10 +38,11 @@ const CONFIG = {
     routeHint: "Route_Hint",
   },
   // Report link names del catálogo de lugares que alimenta ChatRouterData.PLACES
-  // (fetchPlaces). AJUSTAR a los link names reales del live si difieren: el
-  // backend lee los mismos módulos nativamente (Commercial_Office / Coverage_Location).
-  officesReport: "Commercial_Office_Report",
-  coverageReport: "Coverage_Location_Report",
+  // (fetchPlaces). Deben ser los nombres REALES de los reportes exportados en la
+  // app (no el nombre del módulo): el backend lee los mismos módulos nativamente
+  // (Commercial_Office / Coverage_Location), pero el widget usa getAllRecords.
+  officesReport: "All_Commercial_Offices",
+  coverageReport: "All_Coverage_Locations",
   pollIntervalMs: 1500,
   pollTimeoutMs: 45000,
   forceLocal: false,
