@@ -59,6 +59,7 @@
     "find_offices": [
       "oficina*=5",
       "sucursal*=5",
+      "office*=5",
       "horario*=2",
       "direccion*=2",
       "donde queda*=3",

@@ -81,6 +81,23 @@ El título de sesión (primer prompt) lo fija el servidor y el widget lo refresc
 cada intercambio. La Client API no invoca funciones custom: `chat_list()` del backend
 queda como helper server-side para otros consumidores.
 
+## Desambiguación oficina vs ciudad (router JS)
+
+Algunos nombres existen como **oficina** y como **ciudad** a la vez (p. ej. `Miami`).
+El router decide por el **término explícito** que use el usuario:
+
+| Frase | Se interpreta como |
+|---|---|
+| `oficina / sucursal / office <nombre>` | **Oficina** (sucursal) |
+| El nombre sin ese término (p. ej. `en Miami`) | **Ciudad / destino** |
+
+**Convención:** para referirse a una sucursal hay que usar el término **office / oficina**
+(o `sucursal`). Si el término no aparece, se asume **ciudad destino**. Si el nombre **solo**
+es sucursal (no existe como ciudad), se resuelve como oficina igual.
+
+Los casos que fijan este comportamiento están en `chatbot-widget/test/golden.json`
+y se corren con `node --test chatbot-widget/test/router.test.js`.
+
 ## Configuración (checklist)
 
 - [ ] `CONFIG.appName` en `widget.html` con el link name real de la app (solo Client API del widget; el backend es acceso nativo, sin `appName`)

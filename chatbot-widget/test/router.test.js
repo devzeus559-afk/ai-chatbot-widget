@@ -2,8 +2,8 @@
  * router.test.js — suite del router de intención (port JS del chat_router Deluge).
  *
  * Runner NATIVO de Node (`node --test test/router.test.js`), sin dependencias.
- * Porta los 46 casos golden de `deluge/core/tests_chat_router.deluge`
- * (rule_case) + los unit tests de normalize/has_kw/extract/build_params/parse_choice.
+ * Corre los casos golden de `test/golden.json` (47; originalmente portados de
+ * `tests_chat_router.deluge`) + los unit tests de normalize/has_kw/extract/build_params/parse_choice.
  *
  * El gazetteer de prueba replica `tests_chat_router.test_gaz()` para no tocar
  * datos reales; el router recibe los lugares por argumento.
@@ -35,10 +35,10 @@ const TEST_GAZ = {
 };
 
 // --------------------------------------------------------------------------
-// Golden set: 46 casos {prompt, history, expected}
+// Golden set: 47 casos {prompt, history, expected}
 // --------------------------------------------------------------------------
 test("golden set: via/tool/params/candidates por caso", () => {
-  assert.ok(Array.isArray(golden) && golden.length === 46, "el golden debe tener 46 casos");
+  assert.ok(Array.isArray(golden) && golden.length === 47, "el golden debe tener 47 casos");
 
   for (const c of golden) {
     const res = ChatRouter.route(c.prompt, {

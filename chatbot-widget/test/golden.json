@@ -146,6 +146,16 @@
     }
   },
   {
+    "id": "top-package-office-miami-mes-pasado",
+    "prompt": "clientes más frecuentes de paquetería en office Miami el mes pasado",
+    "history": [],
+    "expected": {
+      "via": "rule",
+      "tool": "report_top_package_customers",
+      "params": { "office": "Miami", "period": "mes_anterior", "needsResolve": true }
+    }
+  },
+  {
     "id": "top-customers-10-recargas",
     "prompt": "top 10 clientes de recargas",
     "history": [],

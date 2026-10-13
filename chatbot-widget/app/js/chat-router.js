@@ -193,9 +193,11 @@
         if (country === "" && hasKw(padded, ali[0]) === 1) country = ali[1];
       }
     }
-    // Si un mismo texto es nombre de oficina Y ciudad: con "oficina/sucursal" es oficina; si no, ciudad.
+    // Convención de desambiguación (ver README): un mismo texto puede ser nombre de
+    // oficina Y ciudad (p. ej. "Miami"). Con el término "oficina/sucursal/office" se
+    // interpreta como OFICINA; sin ese término → CIUDAD (destino).
     if (office !== "" && place !== "" && normalizeText(office) === normalizeText(place)) {
-      if (hasAny(padded, ["oficina*", "sucursal*"]) === 1) {
+      if (hasAny(padded, ["oficina*", "sucursal*", "office*"]) === 1) {
         place = "";
       } else {
         office = "";
@@ -274,7 +276,7 @@
     // --- "cuántos paquetes por oficina" es un reporte, no find_offices ---
     var reportish = hasAny(padded, ["cuantos", "cuantas", "reporte", "estadistica*", "resumen", "total*", "promedio", "libras", "pounds", "lbs", "peso"]);
     var pkgword = hasAny(padded, ["paquete*", "enviaron", "envio*", "cajas", "libras", "peso"]);
-    var locword = hasAny(padded, ["oficina*", "sucursal*", "ciudad", "city"]);
+    var locword = hasAny(padded, ["oficina*", "sucursal*", "office*", "ciudad", "city"]);
     var perword = ents.period !== "" ? 1 : 0;
     if (reportish === 1) {
       var fo = scores.get("find_offices") - 5;
