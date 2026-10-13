@@ -51,9 +51,9 @@
 *   Transporter, Freight Forwarder, Remittance, Recharge, Remittance & Recharge),
 *   Active. Vendor_Type cruza con Service.Service_Type (el app usa
 *   `Vendor[Vendor_Type == input.Service_Type && Active == true]`).
-* - Contacts: First_Name (name compuesto), Mobile (único), Email, DNI,
+* - Contacts: Full_Name1 (name compuesto), Mobile (único), Email, DNI,
 *   Type_field (Sender|Receiver|Sender & Receiver). AUSENTES top-level:
-*   Full_Name, Phone, Document_Number, Role -> se leen subcampos (First_Name
+*   Full_Name, Phone, Document_Number, Role -> se leen subcampos (Full_Name1
 *   compuesto) y Mobil/DNI reemplazan Phone/Document_Number.
 *
  * Funciones (28 + reportes): fetch_chat_requests_by_id, fetch_chat_sessions_by_session_id,
@@ -159,9 +159,9 @@ list chat_data_access.fetch_contacts_all()
   for each  r in records
   {
     item = Map();
-    firstName = r.First_Name.first_name;
-    lastName = r.First_Name.last_name;
-    sndLastName = r.First_Name.suffix;
+    firstName = r.Full_Name1.first_name;
+    lastName = r.Full_Name1.last_name;
+    sndLastName = r.Full_Name1.suffix;
     fullName = firstName;
     if(lastName != null && lastName != "")
     {
@@ -197,11 +197,11 @@ list chat_data_access.fetch_contacts_by_ids(list ids)
   for each  r in records
   {
     item = Map();
-    // First_Name es un campo compuesto (name): leer nombres de subfields
+    // Full_Name1 es un campo compuesto (name): leer nombres de subfields
     item = Map();
-    firstName = r.First_Name.first_name;
-    lastName = r.First_Name.last_name;
-    sndLastName = r.First_Name.suffix;
+    firstName = r.Full_Name1.first_name;
+    lastName = r.Full_Name1.last_name;
+    sndLastName = r.Full_Name1.suffix;
     fullName = firstName;
     if(lastName != null && lastName != "")
     {
@@ -227,7 +227,7 @@ list chat_data_access.fetch_contacts_ids_by_document(string document)
 {
   // --------------------------------------------------------------------------
   // Contacts — IDs por condición + fetch final por IDs + sin filtro (límite 50)
-  // Full_Name -> First_Name (nombre?), Phone -> Mobile, Document_Number -> DNI
+  // Full_Name -> Full_Name1 (nombre?), Phone -> Mobile, Document_Number -> DNI
   // --------------------------------------------------------------------------
   ids = Contacts[DNI == document].ID.getAll();
   return ids;
@@ -236,7 +236,7 @@ list chat_data_access.fetch_contacts_ids_by_full_name(string fullName)
 {
   // --------------------------------------------------------------------------
   // Contacts — IDs por condición + fetch final por IDs + sin filtro (límite 50)
-  // Full_Name -> First_Name (nombre?), Phone -> Mobile, Document_Number -> DNI
+  // Full_Name -> Full_Name1 (nombre?), Phone -> Mobile, Document_Number -> DNI
   // --------------------------------------------------------------------------
   ids = List();
   nameParts = fullName.trim().toList(" ");
@@ -254,18 +254,18 @@ list chat_data_access.fetch_contacts_ids_by_full_name(string fullName)
     first_name = nameParts.get(0);
     last_name = nameParts.get(1);
     second_last_name = nameParts.get(2);
-    ids = Contacts[First_Name.first_name == first_name && First_Name.last_name == last_name].ID.getAll();
+    ids = Contacts[Full_Name1.first_name == first_name && Full_Name1.last_name == last_name].ID.getAll();
   }
   else if(nameParts.size() == 2)
   {
     first_name = nameParts.get(0);
     last_name = nameParts.get(1);
-    ids = Contacts[First_Name.first_name == first_name && First_Name.last_name == last_name].ID.getAll();
+    ids = Contacts[Full_Name1.first_name == first_name && Full_Name1.last_name == last_name].ID.getAll();
   }
   else
   {
     first_name = nameParts.get(0);
-    ids = Contacts[First_Name.first_name == first_name].ID.getAll();
+    ids = Contacts[Full_Name1.first_name == first_name].ID.getAll();
   }
   return ids;
 }
@@ -273,7 +273,7 @@ list chat_data_access.fetch_contacts_ids_by_phone(string phone)
 {
   // --------------------------------------------------------------------------
   // Contacts — IDs por condición + fetch final por IDs + sin filtro (límite 50)
-  // Full_Name -> First_Name (nombre?), Phone -> Mobile, Document_Number -> DNI
+  // Full_Name -> Full_Name1 (nombre?), Phone -> Mobile, Document_Number -> DNI
   // --------------------------------------------------------------------------
   ids = Contacts[Mobile == phone].ID.getAll();
   return ids;
