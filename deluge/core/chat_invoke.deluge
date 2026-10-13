@@ -52,10 +52,23 @@ map chat_invoke.chat_invoke(int requestId)
   }
   // 3. Historial para contexto (últimos 10 mensajes, más reciente primero)
   history = thisapp.chat_invoke.get_recent_history(session.get("ID"));
-  // 4. Intención vía Zia
-  intent = thisapp.chat_intent.chat_intent(prompt,history);
+  // 4. Intención: pista determinista del widget (Route_Hint) o inferencia completa
+  hintIntent = thisapp.chat_invoke.resolve_hint(request,session);
+  if(hintIntent == null)
+  {
+    intent = thisapp.chat_intent.chat_intent(prompt,history);
+  }
+  else
+  {
+    intent = hintIntent;
+  }
   // 5. Dispatch + respuesta
   reply = thisapp.chat_invoke.resolve_reply(intent);
+  // 5a. Persistir última tool/params para follow-ups (solo si hubo tool)
+  if(intent.get("kind") == "tool")
+  {
+    thisapp.chat_invoke.persist_last_intent(session,intent);
+  }
   // 5b. Metric 12: registrar consultas que Zia NO pudo responder con una tool
   // (kind == "clarify", incluida la guardia fuera de tema). El try/catch
   // garantiza que un fallo de logging NUNCA bloquee la respuesta normal.
@@ -406,4 +419,464 @@ void chat_invoke.update_session(map session, string firstPrompt)
   {
     session_record.Last_Activity=zoho.currenttime;
   }
+}
+map chat_invoke.resolve_hint(map request, map session)
+{
+  // --------------------------------------------------------------------------
+  // Consume la pista determinista del widget (campo Route_Hint de ChatRequests).
+  //
+  // Devuelve un intent tool listo para resolve_reply:
+  //   {"status":"ok","kind":"tool","tool":"...","params":{...}}
+  // o null para caer al flujo de inferencia existente (Zia).
+  //
+  // POLÍTICA: Route_Hint es una PROPUESTA NO CONFIABLE del cliente. Solo se usa
+  // cuando via ∈ {rule, followup}, la tool está en la whitelist config.tools y
+  // los params sobreviven el saneamiento. Cualquier otra situación → null.
+  // Rollback trivial: borrar la lectura del hint en chat_invoke restaura el
+  // comportamiento previo sin tocar nada más.
+  // --------------------------------------------------------------------------
+  config = thisapp.chat_config.chat_config();
+  if(request == null)
+  {
+    return null;
+  }
+  // NOTA: request viene de fetch_chat_requests_by_id, una proyección nativa que
+  // NO incluye Route_Hint. Se lee del registro ENLAZADO como fallback; si algún
+  // día la proyección expone el campo, no hay lookup extra.
+  hintRaw = request.get("Route_Hint");
+  if(hintRaw == null)
+  {
+    reqId = request.get("ID");
+    if(reqId != null)
+    {
+      reqRecord = ChatRequests[ID == reqId];
+      if(reqRecord != null)
+      {
+        hintRaw = reqRecord.Route_Hint;
+      }
+    }
+  }
+  if(hintRaw == null || hintRaw == "")
+  {
+    return null;
+  }
+  hint = thisapp.chat_common.parse_json_strict(hintRaw);
+  if(hint == null)
+  {
+    return null;
+  }
+  if(hint.get("parse_error") != null)
+  {
+    return null;
+  }
+  via = hint.get("via");
+  if(via != "rule" && via != "followup")
+  {
+    return null;
+  }
+  tool = hint.get("tool");
+  if(tool == null || tool == "")
+  {
+    return null;
+  }
+  // Whitelist: la tool debe existir en config.tools (name)
+  toolWhitelisted = false;
+  for each  t in config.get("tools")
+  {
+    if(t.get("name") == tool)
+    {
+      toolWhitelisted = true;
+    }
+  }
+  if(!toolWhitelisted)
+  {
+    return null;
+  }
+  params = hint.get("params");
+  if(params == null)
+  {
+    params = Map();
+  }
+  // 1. Limpiar claves null / string vacío (espejo de normalize_params).
+  //    v.toString() en vez de v == "": NUMBER/LIST contra TEXT es inválido.
+  cleanedParams = Map();
+  keysToRemove = params.keys();
+  for each  k in keysToRemove
+  {
+    v = params.get(k);
+    if(k == null)
+    {
+      continue;
+    }
+    if(v == null)
+    {
+      continue;
+    }
+    if(v.toString() == "")
+    {
+      continue;
+    }
+    cleanedParams.put(k,v);
+  }
+  params = cleanedParams;
+  // 2. limit: solo numérico; persistido como string (los tools comparan limit != "")
+  if(params.containKey("limit"))
+  {
+    limitVal = params.get("limit");
+    if(limitVal == null)
+    {
+      params.remove("limit");
+    }
+    else
+    {
+      limitText = limitVal.toString();
+      if(!limitText.matches("[0-9]+"))
+      {
+        params.remove("limit");
+      }
+      else
+      {
+        params.put("limit",limitText);
+      }
+    }
+  }
+  // 3. Un mes-calendario nunca es country/office/measure/city/vendor/destCountry/destination
+  monthKeys = List({"country","office","measure","city","vendor","destCountry","destination"});
+  for each  mk in monthKeys
+  {
+    if(params.containKey(mk))
+    {
+      mv = params.get(mk);
+      if(mv == null)
+      {
+        params.remove(mk);
+      }
+      else
+      {
+        mt = mv.toString().toLowerCase();
+        if(mt.contains("marzo") || mt.contains("febrero") || mt.contains("enero") || mt.contains("abril") || mt.contains("mayo") || mt.contains("junio") || mt.contains("julio") || mt.contains("agosto") || mt.contains("septiembre") || mt.contains("octubre") || mt.contains("noviembre") || mt.contains("diciembre"))
+        {
+          params.remove(mk);
+        }
+      }
+    }
+  }
+  // 4. followup: base = Tool_Last + Params_Last; los params del hint pisan encima.
+  //    Si no hay Tool_Last, se usa solo el hint.
+  if(via == "followup" && session != null)
+  {
+    // NOTA: session viene de fetch_chat_sessions_by_session_id, una proyección
+    // que NO incluye Tool_Last/Params_Last. Fallback al registro ENLAZADO.
+    lastTool = session.get("Tool_Last");
+    lastParamsRaw = session.get("Params_Last");
+    if(lastTool == null || lastTool == "" || lastParamsRaw == null || lastParamsRaw == "")
+    {
+      lookupSessionId = session.get("Session_ID");
+      if(lookupSessionId != null && lookupSessionId != "")
+      {
+        sessionRecord = ChatSessions[Session_ID == lookupSessionId];
+        if(sessionRecord != null)
+        {
+          if(lastTool == null || lastTool == "")
+          {
+            lastTool = sessionRecord.Tool_Last;
+          }
+          if(lastParamsRaw == null || lastParamsRaw == "")
+          {
+            lastParamsRaw = sessionRecord.Params_Last;
+          }
+        }
+      }
+    }
+    if(lastTool != null && lastTool != "")
+    {
+      tool = lastTool;
+    }
+    if(lastParamsRaw != null && lastParamsRaw != "")
+    {
+      lastParams = thisapp.chat_common.parse_json_strict(lastParamsRaw);
+      if(lastParams != null && lastParams.get("parse_error") == null)
+      {
+        hintHasPeriod = params.containKey("period") && params.get("period") != null && params.get("period").toString() != "";
+        hintHasDates = false;
+        if(params.containKey("startDate") && params.get("startDate") != null)
+        {
+          hintHasDates = true;
+        }
+        if(params.containKey("endDate") && params.get("endDate") != null)
+        {
+          hintHasDates = true;
+        }
+        mergedParams = Map();
+        for each  lk in lastParams.keys()
+        {
+          mergedParams.put(lk,lastParams.get(lk));
+        }
+        // Si el hint trae un period nuevo sin fechas explícitas, descartar las
+        // fechas heredadas del turno anterior para no ignorar el period nuevo.
+        if(hintHasPeriod && !hintHasDates)
+        {
+          mergedParams.remove("startDate");
+          mergedParams.remove("endDate");
+        }
+        for each  hk in params.keys()
+        {
+          mergedParams.put(hk,params.get(hk));
+        }
+        params = mergedParams;
+      }
+    }
+  }
+  // 5. needsResolve es solo un aviso del cliente: el server resuelve el period
+  if(params.containKey("needsResolve"))
+  {
+    params.remove("needsResolve");
+  }
+  // 6. period enum → [startDate,endDate] (misma normalización que normalize_params).
+  //    Se guardan como string ISO: los tools hacen `sd != ""` + toDate("" + sd);
+  //    con un DATE esa comparación da false y el period se ignoraría.
+  if(params.containKey("period") && params.get("period") != null)
+  {
+    hasExplicitDates = false;
+    if(params.containKey("startDate") && params.get("startDate") != null)
+    {
+      hasExplicitDates = true;
+    }
+    if(params.containKey("endDate") && params.get("endDate") != null)
+    {
+      hasExplicitDates = true;
+    }
+    if(!hasExplicitDates)
+    {
+      periodStr = params.get("period").toString().toLowerCase();
+      // Alias en lenguaje natural → enum canónico
+      if(periodStr == "mes pasado" || periodStr == "mes anterior" || periodStr == "mes_pasado")
+      {
+        periodStr = "mes_anterior";
+      }
+      else if(periodStr == "ultimo mes" || periodStr == "mes actual")
+      {
+        periodStr = "ultimo_mes";
+      }
+      else if(periodStr == "ultimos 30 dias" || periodStr == "ultimos_30_dias")
+      {
+        periodStr = "ultimos_30_dias";
+      }
+      else if(periodStr == "ultimos 7 dias" || periodStr == "ultimos_7_dias")
+      {
+        periodStr = "ultimos_7_dias";
+      }
+      validPeriods = List({"ultimo_mes","mes_anterior","este_mes","ultimos_7_dias","ultimos_30_dias"});
+      isValidPeriod = false;
+      for each  vp in validPeriods
+      {
+        if(vp == periodStr)
+        {
+          isValidPeriod = true;
+        }
+      }
+      if(!isValidPeriod)
+      {
+        // Period inválido: la pista no es confiable → cae a Zia
+        return null;
+      }
+      datePair = thisapp.chat_common.resolve_period(periodStr,zoho.currentdate);
+      params.put("startDate",datePair.get(0).toString("yyyy-MM-dd"));
+      params.put("endDate",datePair.get(1).toString("yyyy-MM-dd"));
+      params.remove("period");
+    }
+  }
+  // 7. Requeridos deterministas (mismas reglas que normalize_params).
+  //    Si faltan, la pista no alcanza → null y Zia clarifica como hoy.
+  if(tool == "track_package")
+  {
+    trackingNumber = params.get("trackingNumber");
+    if(trackingNumber == null || trackingNumber == "")
+    {
+      return null;
+    }
+  }
+  if(tool == "report_top_customers")
+  {
+    serviceTypes = params.get("serviceType");
+    validServiceList = false;
+    if(serviceTypes != null)
+    {
+      try
+      {
+        if(serviceTypes.size() >= 1)
+        {
+          validServiceList = true;
+        }
+      } catch (e)
+      {
+        validServiceList = false;
+      }
+    }
+    if(!validServiceList)
+    {
+      return null;
+    }
+  }
+  return {"status":"ok","kind":"tool","tool":tool,"params":params};
+}
+void chat_invoke.persist_last_intent(map session, map intent)
+{
+  // --------------------------------------------------------------------------
+  // Persiste la última tool/params de un intent kind=="tool" en ChatSessions
+  // (Tool_Last / Params_Last) para que un follow-up pueda completar params.
+  // Mutación del registro ENLAZADO: persiste sin llamada de API.
+  // --------------------------------------------------------------------------
+  config = thisapp.chat_config.chat_config();
+  if(intent != null && intent.get("kind") == "tool" && session != null)
+  {
+    sessionId = session.get("Session_ID");
+    if(sessionId != null && sessionId != "")
+    {
+      session_record = ChatSessions[Session_ID == sessionId];
+      session_record.Tool_Last = intent.get("tool");
+      session_record.Params_Last = thisapp.chat_invoke.params_to_json(intent.get("params"));
+    }
+  }
+}
+string chat_invoke.params_to_json(map params)
+{
+  // --------------------------------------------------------------------------
+  // Serializa un map de params a JSON válido para persistir en Params_Last
+  // (Deluge Map.toString() NO produce JSON: genera {key=value}).
+  //
+  // Tipos:
+  //  - strings → string citado
+  //  - números y numeric-strings → string citado: en Deluge isText("123") == false
+  //    (no se puede distinguir un número de un string numérico) y los tools
+  //    comparan `limit != ""` / `months != ""`, que exige TEXT.
+  //  - booleanos → sin comillas (isText(boolean) == null): `full` debe seguir
+  //    siendo booleano.
+  //  - listas → array (items escalares citados; maps anidados vía el helper)
+  //  - maps → objeto (recursivo)
+  // Usa escape_json_str para valores y claves.
+  // --------------------------------------------------------------------------
+  if(params == null)
+  {
+    return "null";
+  }
+  result = "{";
+  first = true;
+  for each  k in params.keys()
+  {
+    v = params.get(k);
+    if(!first)
+    {
+      result = result + ",";
+    }
+    first = false;
+    result = result + thisapp.chat_common.escape_json_str("" + k) + ":";
+    valueJson = null;
+    if(v == null)
+    {
+      valueJson = "null";
+    }
+    else
+    {
+      try
+      {
+        // isText: "abc" → true; "123"/24 → false; boolean/list/map → null
+        textFlag = isText(v);
+        if(textFlag == true)
+        {
+          valueJson = thisapp.chat_common.escape_json_str(v.toString());
+        }
+        else if(textFlag == null && (v.toString() == "true" || v.toString() == "false"))
+        {
+          // Booleano real (full) → sin comillas
+          valueJson = v.toString();
+        }
+        else
+        {
+          // Map / List / número(numeric-string)
+          isMapValue = false;
+          try
+          {
+            mapKeys = v.keys();
+            isMapValue = true;
+          } catch (e)
+          {
+            isMapValue = false;
+          }
+          if(isMapValue)
+          {
+            valueJson = thisapp.chat_invoke.params_to_json(v);
+          }
+          else
+          {
+            isListValue = false;
+            try
+            {
+              listSize = v.size();
+              isListValue = true;
+            } catch (e)
+            {
+              isListValue = false;
+            }
+            if(isListValue)
+            {
+              listJson = "[";
+              listFirst = true;
+              for each  item in v
+              {
+                if(!listFirst)
+                {
+                  listJson = listJson + ",";
+                }
+                listFirst = false;
+                if(item == null)
+                {
+                  listJson = listJson + "null";
+                }
+                else
+                {
+                  itemIsMap = false;
+                  try
+                  {
+                    itemKeys = item.keys();
+                    itemIsMap = true;
+                  } catch (e)
+                  {
+                    itemIsMap = false;
+                  }
+                  if(itemIsMap)
+                  {
+                    listJson = listJson + thisapp.chat_invoke.params_to_json(item);
+                  }
+                  else
+                  {
+                    // Escalar de lista (string/número) → string citado
+                    listJson = listJson + thisapp.chat_common.escape_json_str("" + item);
+                  }
+                }
+              }
+              listJson = listJson + "]";
+              valueJson = listJson;
+            }
+            else
+            {
+              // Número o numeric-string → string citado
+              valueJson = thisapp.chat_common.escape_json_str(v.toString());
+            }
+          }
+        }
+      } catch (e)
+      {
+        // Defensivo: cualquier valor no serializable → string citado
+        valueJson = thisapp.chat_common.escape_json_str("" + v);
+      }
+    }
+    if(valueJson == null)
+    {
+      valueJson = "null";
+    }
+    result = result + valueJson;
+  }
+  result = result + "}";
+  return result;
 }

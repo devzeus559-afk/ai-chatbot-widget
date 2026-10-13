@@ -102,7 +102,7 @@ list chat_data_access.fetch_chat_requests_by_id(int requestId)
   for each  r in records_selected
   {
     // Access real field values instead of references
-    recordData = {"ID":r.ID,"Status":r.Status,"Prompt":r.Prompt,"Reply":r.Reply,"Error":r.Error,"Session_ID":r.Session_ID};
+    recordData = {"ID":r.ID,"Status":r.Status,"Prompt":r.Prompt,"Reply":r.Reply,"Error":r.Error,"Session_ID":r.Session_ID,"Route_Hint":r.Route_Hint};
     records2.insert(recordData);
   }
   return records2;
@@ -115,7 +115,7 @@ list chat_data_access.fetch_chat_sessions_by_id(int id)
   {
     employee_record = Employee[ID == r.User];
     userField = employee_record.User;
-    recordData = {"ID":r.ID,"Session_ID":r.Session_ID,"Title":r.Title,"User":userField,"Last_Activity":r.Last_Activity};
+    recordData = {"ID":r.ID,"Session_ID":r.Session_ID,"Title":r.Title,"User":userField,"Last_Activity":r.Last_Activity,"Tool_Last":r.Tool_Last,"Params_Last":r.Params_Last};
     records2.insert(recordData);
   }
   return records2;
@@ -129,7 +129,7 @@ list chat_data_access.fetch_chat_sessions_by_session_id(string sessionId)
     // Access real field values instead of references
     employee_record = Employee[ID == r.User] sort by ID;
     userField = employee_record.User;
-    recordData = {"ID":r.ID,"Session_ID":r.Session_ID,"Title":r.Title,"Last_Activity":r.Last_Activity,"User":userField};
+    recordData = {"ID":r.ID,"Session_ID":r.Session_ID,"Title":r.Title,"Last_Activity":r.Last_Activity,"User":userField,"Tool_Last":r.Tool_Last,"Params_Last":r.Params_Last};
     records2.insert(recordData);
   }
   return records2;
