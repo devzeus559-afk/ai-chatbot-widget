@@ -267,6 +267,19 @@ function _placeSubField(rec, parent, child) {
   return "";
 }
 
+// Base office name: everything before the first comma.
+// Office_Name is exported as "Elizabeth, New Jersey,United States, United States".
+// The backend (data_access.fetch_office_id_by_name) resolves an office by that
+// base name, so the gazetteer MUST store the same form: otherwise the router
+// never matches "oficina Miami" against the full name and silently drops the
+// office filter.
+function _officeBaseName(v) {
+  var s = String(v == null ? "" : v).trim();
+  var i = s.indexOf(",");
+  if (i > 0) return s.substring(0, i).trim();
+  return s;
+}
+
 // Construye {offices, cities, countries} desde oficinas + cobertura.
 // Best-effort: cualquier fallo deja el catálogo sin esa fuente.
 async function fetchPlaces() {
@@ -299,7 +312,7 @@ async function fetchPlaces() {
   try {
     const recs = await apiGetAll(CONFIG.officesReport, { limit: 200 });
     recs.forEach((rec) => {
-      add(offices, _placeField(rec, ["Office_Name", "Name"]));
+      add(offices, _officeBaseName(_placeField(rec, ["Office_Name", "Name"])));
       add(cities, _placeSubField(rec, "Address", "district_city"));
       add(cities, _placeField(rec, ["district_city", "City"]));
       add(countries, _placeSubField(rec, "Address", "country"));
