@@ -269,9 +269,9 @@ function collapseParens(text) {
 
 /*
  * Canonical form used for parity comparison: comments dropped, whitespace
- * removed, redundant parens collapsed. Identifiers, literals, string contents
- * and statement order are all preserved, so a genuine logic or text change
- * still registers as a difference.
+ * removed, redundant parens collapsed, and the case of member invocations
+ * folded. Identifiers, literals, string contents and statement order are all
+ * preserved, so a genuine logic or text change still registers as a difference.
  */
 /*
  * Deluge type aliases: Creator's exporter abbreviates what you wrote, so the
@@ -318,9 +318,19 @@ function canonicalizeTypes(src) {
       // stay `rec.bool`, otherwise the reference stops matching its field.
       const prev = out.replace(/\s+$/, '').slice(-1);
       const isMember = prev === '.';
-      out += !isMember && TYPE_ALIASES.has(word.toLowerCase())
-        ? TYPE_ALIASES.get(word.toLowerCase())
-        : word;
+      // Deluge resolves method names case-insensitively, and Creator's editor
+      // rewrites the `.getAll()` accessor to `.getall()` on save. Folding the
+      // case of member invocations (`x.method(`) stops that editor rewrite from
+      // reporting drift forever. Only the invocation name is folded: a genuine
+      // logic, text or ranking change still registers as a difference.
+      let k = j;
+      while (k < src.length && /\s/.test(src[k])) k++;
+      const isInvocation = src[k] === '(';
+      out += isMember && isInvocation
+        ? word.toLowerCase()
+        : !isMember && TYPE_ALIASES.has(word.toLowerCase())
+          ? TYPE_ALIASES.get(word.toLowerCase())
+          : word;
       i = j;
       continue;
     }
