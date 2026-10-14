@@ -249,9 +249,10 @@ function routePrompt(content) {
 }
 
 // v2: los report link names del gazetteer cambiaron (All_Commercial_Offices /
-// All_Coverage_Locations). Bump para descartar la caché vacía que dejó la versión
-// previa y forzar el recomputo del catálogo sin que el usuario limpie sessionStorage.
-const PLACES_CACHE_KEY = "lm2chatbot:places-catalog:v2";
+// All_Coverage_Locations). Bump para descartar la caché vacía que dejó la versión previa.
+// v3: el gazetteer se limpia (filtro Active + descarte de basura). Bump para forzar
+// el recomputo y no servir el catálogo sucio cacheado durante 24 h.
+const PLACES_CACHE_KEY = "lm2chatbot:places-catalog:v3";
 const PLACES_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Lee el primer campo no vacío de una lista de nombres candidatos.
@@ -283,6 +284,28 @@ function _officeBaseName(v) {
   return s;
 }
 
+// Normaliza un valor de lugar y descarta basura de datos: colapsa espacios
+// internos, recorta extremos, y devuelve "" para nombres vacíos, sin resolver
+// ("null…", típico de Location_Name) o de prueba ("office test"). El casing NO
+// se toca: el backend compara el nombre base tal cual lo entrega el gazetteer.
+function _cleanPlace(v) {
+  if (v === undefined || v === null) return "";
+  var s = String(v).replace(/\s+/g, " ").trim();
+  if (s === "") return "";
+  if (/^null\b/i.test(s)) return "";
+  if (/\btest\b/i.test(s)) return "";
+  return s;
+}
+
+// Un registro inactivo no debe entrar al gazetteer. Fail-open: si el campo
+// Active no viniera en la proyección del reporte, el registro se conserva.
+function _isActive(rec) {
+  if (!rec) return false;
+  var a = rec.Active;
+  if (a === undefined || a === null || a === "") return true;
+  return !(a === false || a === "false" || a === 0 || a === "0");
+}
+
 // Construye {offices, cities, countries} desde oficinas + cobertura.
 // Best-effort: cualquier fallo deja el catálogo sin esa fuente.
 async function fetchPlaces() {
@@ -306,36 +329,51 @@ async function fetchPlaces() {
   const cities = new Set();
   const countries = new Set();
   const add = (set, v) => {
-    if (v !== undefined && v !== null && String(v).trim() !== "") {
-      set.add(String(v).trim());
-    }
+    const s = _cleanPlace(v);
+    if (s !== "") set.add(s);
   };
 
   // 2) Oficinas: Office_Name, Address.district_city, Address.country
+  let officesLoaded = false;
   try {
     const recs = await apiGetAll(CONFIG.officesReport, { limit: 200 });
     recs.forEach((rec) => {
+      if (!_isActive(rec)) return;
       add(offices, _officeBaseName(_placeField(rec, ["Office_Name", "Name"])));
       add(cities, _placeSubField(rec, "Address", "district_city"));
       add(cities, _placeField(rec, ["district_city", "City"]));
       add(countries, _placeSubField(rec, "Address", "country"));
       add(countries, _placeField(rec, ["country", "Country"]));
     });
+    officesLoaded = true;
   } catch (err) {
-    console.warn("[LM2Chatbot] fetchPlaces: offices failed", err);
+    console.error(
+      "[LM2Chatbot] fetchPlaces: falló la carga de oficinas (report: " +
+        CONFIG.officesReport +
+        ")",
+      err
+    );
   }
 
   // 3) Cobertura: Location_Name, Address_Information1.state_province/country
+  let coverageLoaded = false;
   try {
     const recs = await apiGetAll(CONFIG.coverageReport, { limit: 200 });
     recs.forEach((rec) => {
+      if (!_isActive(rec)) return;
       add(cities, _placeField(rec, ["Location_Name", "Name"]));
       add(cities, _placeSubField(rec, "Address_Information1", "state_province"));
       add(countries, _placeSubField(rec, "Address_Information1", "country"));
       add(countries, _placeField(rec, ["country", "Country"]));
     });
+    coverageLoaded = true;
   } catch (err) {
-    console.warn("[LM2Chatbot] fetchPlaces: coverage failed", err);
+    console.error(
+      "[LM2Chatbot] fetchPlaces: falló la carga de cobertura (report: " +
+        CONFIG.coverageReport +
+        ")",
+      err
+    );
   }
 
   const data = {
@@ -343,6 +381,30 @@ async function fetchPlaces() {
     cities: Array.from(cities),
     countries: Array.from(countries),
   };
+
+  // Diagnóstico: un gazetteer vacío ya no puede pasar desapercibido. El bug
+  // original (link names inválidos) quedó invisible porque el fallo solo dejaba
+  // un warn perdido; ahora los conteos se loguean y el fallo es un error.
+  console.info("[LM2Chatbot] fetchPlaces: catálogo", {
+    offices: data.offices.length,
+    cities: data.cities.length,
+    countries: data.countries.length,
+  });
+  if (!officesLoaded || data.offices.length === 0) {
+    console.error(
+      "[LM2Chatbot] fetchPlaces: catálogo de oficinas VACÍO (report: " +
+        CONFIG.officesReport +
+        "). El router no va a poder filtrar por oficina — revisá el report link name y sus permisos."
+    );
+  }
+  if (!coverageLoaded) {
+    console.error(
+      "[LM2Chatbot] fetchPlaces: no se cargó cobertura (report: " +
+        CONFIG.coverageReport +
+        "). Revisá el report link name y sus permisos."
+    );
+  }
+
   state.places = data;
   // Mantener en sincronía el objeto mutable que usa el router por defecto.
   if (typeof ChatRouterData !== "undefined" && ChatRouterData && ChatRouterData.PLACES) {
@@ -372,7 +434,7 @@ async function init() {
   //    El usuario carga una conversación anterior manualmente desde el sidebar.
   newChat();
   // 4) Catálogo de lugares para el router (fire-and-forget: no bloquea la UI).
-  fetchPlaces().catch((err) => console.warn("[LM2Chatbot] fetchPlaces failed", err));
+  fetchPlaces().catch((err) => console.error("[LM2Chatbot] fetchPlaces falló de forma inesperada", err));
 }
 
 init();
