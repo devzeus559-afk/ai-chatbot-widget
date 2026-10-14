@@ -60,3 +60,83 @@ El usuario pidió "el arreglo correcto, con paginado": recorrer la cohorte compl
 - **README estaba doblemente mal**: decía "se analizan los primeros 200 por fecha de negocio", pero el recorte era por `Service_ID` (orden arbitrario, no fecha) y encima el default no era 200. Corregido.
 - **`for each` con DOS espacios no es una regla universal**: hay 15 ocurrencias de UN espacio que funcionan en producción. El precedente paginado (`fetch_all_packages_by_window_office`) usa dos y su comentario registra un `Improper Statement` en vivo con uno; el loop nuevo lo copia byte a byte. Tratar como cosmético/heredado, no como regla dura.
 - **`fetch_services_by_ids` queda sin callers** tras T5 (era exclusiva de `top_customers`); su borrado es follow-up. `fetch_services_report_by_date_window` ya estaba sin callers antes de este cambio.
+
+---
+
+## PIVOT (2026-10-14) — la causa raíz no era la muestra ni el tiempo: era el techo de sentencias
+
+El "ranking exacto" **falló en vivo** (el widget mostró *"La solicitud tardó demasiado (45 s)"*), y
+el `addRecord` devolvió `Data Added Successfully` **con** `error: [... Number of statement
+execution limit exceed Line:(24)]`. Diagnóstico corregido:
+
+- **No es un timeout de tiempo.** Es el límite de **sentencias ejecutadas** de Deluge (~5000 en el
+  plan base; plan-dependent). Cada vuelta de un `for each` vuelve a multiplicar el cuerpo.
+- La cadena causal cierra los dos síntomas: el presupuesto se agota DENTRO de `chat_invoke` → el
+  `catch` de `on_submit_chatrequests.deluge` no alcanza a persistir `input.Status="failed"` (la
+  línea 24, la que reporta el error, es la última del catch) → el `ChatRequest` queda `pending` para
+  siempre → el widget pollea 24 veces y muestra su cartel a los 45 s.
+- Costo medido: `materialize_service_report` ≈ 20 sentencias/registro y el loop de agregación de
+  cada tool ≈ 15-20 más → **~40 por registro**. Con miles de servicios no entra en ningún
+  presupuesto síncrono. Explica por qué el path acotado a 200 andaba y el completo no.
+- **Error propio reconocido:** el troceo en memoria del intento anterior iteraba TODOS los ids
+  (~3 sentencias por id = 3N) mientras el cursor gasta una cantidad FIJA por lote; se optimizó
+  round-trips y se **empeoró** el conteo de sentencias. Eje equivocado. La única mejora real de ese
+  intento fue eliminar `prefetch_service_refs` (~10 queries y ~1400 registros que nadie leía).
+
+### Decisión del usuario: "optimizar y acotar"
+Mantener el ranking síncrono, bajar el costo por registro, poner un tope explícito y declarar
+`truncated` con honestidad. Descartado (por ahora): precalcular por función programada (Schedule),
+que es la única vía de ser **exacto** a escala.
+
+### Checklist del pivot
+- [x] T12: `data_access.materialize_service_report` — shape LEAN (se quitan `zid` y el bloque
+      completo de `officeName`; ningún tool de ranking los lee) → ~20 → ~11 sentencias/registro.
+      Firma pasa de `(Service records, map officeById)` a `(Service records)`; callers actualizados.
+- [x] T13: `data_access.fetch_all_services_report_by_ids` — se reemplaza el troceo en memoria (3N)
+      por el **cursor** del precedente de paquetes (`ID > lastId`, lotes de 200, costo fijo por
+      lote) **acotado al tope**.
+- [x] T14: `data_access.service_scan_batches()` + `service_scan_truncated()` — tope en UN solo
+      lugar (`2` lotes = 400 servicios) y flag `truncated` propio del path de servicios (no se toca
+      `report_scan_truncated`, compartido con paquetes, cuyo tope sigue siendo 5000).
+- [x] T15: los 3 tools de ranking — `report_scan_truncated` → `service_scan_truncated`; docstrings y
+      el comentario falso "ranking exacto sobre TODA la ventana" corregidos.
+- [x] T16: `tests_report_top_customers` — el assert del path completo pasa de `>=5000` a leer el
+      tope del helper (`service_scan_batches() * 200`), así no se desincroniza al subirlo.
+- [x] T17: `README.md` + `METRICS.md` — documentar el techo de sentencias, el tope de 400 y la
+      **sonda** para medir el techo real de la cuenta (`METRICS.md`).
+
+### Verificación del pivot
+- Balance de llaves/paréntesis: **delta 0** contra HEAD en los 5 `.deluge` tocados
+  (`data_access` 208/208 y 663/663, los 3 tools 71/71, 77/77, 56/56, `tests_report_top_customers`
+  67/67 y 280/280). Sin `while(`; sin refs de 2 args a `materialize_service_report`; sin
+  `report_scan_truncated` en los 3 rankings.
+- `node tools/creator-parity.js --json` → `parity 208`; `missingInLive`: `service_scan_batches`,
+  `service_scan_truncated` (nuevas); `differentInLive`: exactamente las 7 funciones tocadas +
+  `test_cap_200_truncated`. `unknownReturnTypes: []` (los tipos `int`/`boolean` se reconocen).
+- **Pendiente de deploy + verificación manual en Creator** (ver el orden de deploy abajo).
+
+### Orden de deploy (restricción dura)
+`materialize_service_report` cambió de **aridad** (2 → 1) y los 3 tools pasan a llamar funciones
+nuevas, así que deployar un caller sin su callee rompe producción. Subir **juntos**:
+`service_scan_batches`, `service_scan_truncated`, `materialize_service_report`, los 3 fetchers
+(`fetch_services_report_by_ids`, `fetch_services_report_by_date_window`,
+`fetch_all_services_report_by_ids`) y los 3 tools de ranking.
+
+### Números honestos del resultado
+- Costo por registro: **~40 → ~25** (el materializador baja ~9; el cuerpo de agregación de cada tool,
+  ~15-20, es el piso y no se tocó).
+- Cobertura: **400 servicios** por corrida (antes 200 en el acotado; el "completo" no terminaba).
+- El ranking **NO es exacto a escala**: es una muestra de los 400 IDs más bajos de la cohorte, con
+  `truncated = true` cuando la cohorte los supera. La exactitud real requiere el precalculo por
+  función programada (opción descartada por ahora).
+- El tope se puede subir **solo** con el techo de sentencias medido (sonda en `METRICS.md`); un tope
+  demasiado alto reintroduce el cuelgue de 45 s.
+
+### Follow-ups identificados (no ejecutados)
+- Recortar el cuerpo de agregación de los 3 tools (la cadena de guards cuesta ~9 sentencias por
+  registro) o pasar a listas paralelas + `for each index`: ~25 → ~15/registro, y con eso el tope
+  sube sin gastar presupuesto.
+- Medir el techo real con la sonda y recalcular `service_scan_batches`.
+- `prefetch_service_refs` sigue usándose en `fetch_services_by_ids` / `fetch_services_all` /
+  `fetch_pkg_tracking_*` (paths NO de ranking) — no se tocó.
+- Borrado de `fetch_services_by_ids` y `fetch_services_report_by_date_window` (sin callers).

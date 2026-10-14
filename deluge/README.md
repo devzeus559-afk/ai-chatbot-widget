@@ -216,13 +216,18 @@ en AMBOS sitios (el literal de la consulta en `data_access` y el mapa `*Fields`)
   Online Store, Other Services): unión de IDs por `serviceType` (lista obligatoria ≥1) e
   intersección con la ventana. Paquetería y remesas se resuelven con los tools específicos
   `report_top_package_customers` / `report_top_remittance_customers`.
-- **Ranking exacto vs vista rápida**: los tres rankings de clientes sobre `Service`
+- **Ranking completo vs vista rápida**: los tres rankings de clientes sobre `Service`
   (`report_top_customers`, `report_top_package_customers`, `report_top_remittance_customers`)
-  recorren por defecto **toda** la ventana en lotes de 200 con cursor sobre `ID`
-  (`fetch_all_services_report_by_ids`, tope duro 25 lotes = 5000) para un ranking exacto y
-  comparable entre filtros. `full=false` — o pedidos como "vista rápida" — usa la vía acotada
-  a 200 (`fetch_services_report_by_ids`). La reply avisa que el ranking es aproximado sólo
-  cuando `truncated` es true (path acotado, o ventana ≥5000 en el completo).
+  recorren por defecto la ventana en lotes de 200 con cursor sobre `ID`
+  (`fetch_all_services_report_by_ids`), **acotados a `service_scan_batches` lotes = 400
+  servicios**. El tope no es arbitrario: Deluge limita las sentencias *ejecutadas* por
+  ejecución (~5000 en el plan base, plan-dependent) y el ranking cuesta ~25 sentencias por
+  registro (materializar + agregar); sin tope, una cohorte grande agota el presupuesto
+  dentro de `chat_invoke`, el `ChatRequest` queda en `pending` y el widget muestra su
+  cartel de timeout a los 45 s. `full=false` — o pedidos como "vista rápida" — usa la vía
+  acotada a 200 (`fetch_services_report_by_ids`). La reply avisa que el ranking es parcial
+  cuando `truncated` es true (path acotado, o cohorte > 400 en el completo). Cómo medir el
+  techo real de la cuenta: ver la sonda en `deluge/METRICS.md`.
 
 ## Conexión con el widget (implementada)
 

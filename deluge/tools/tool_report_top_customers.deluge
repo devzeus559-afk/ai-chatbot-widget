@@ -21,12 +21,16 @@
  *
  * Acceso nativo vía data_access (0 llamadas de API de Creator). Algoritmo:
  * unión de IDs por tipo (uno por elemento de serviceType) → intersección con
- * la ventana de 30 días → fetch acotado a 200 (range 0-199) → agregación por
- * remitente (Sender_field; se ignoran los vacíos; IDs normalizados a Number)
- * → top-N por inserción O(n·limit) con desempate por fecha más antigua →
- * resolución de nombres SOLO para el top-N vía fetch_contacts_by_ids. Si la
- * intersección supera 200, el ranking es APROXIMADO (truncated: true) y la
- * reply muestra un aviso.
+ * la ventana de 30 días → fetch por cursor en lotes de 200 (acotado a
+ * service_scan_batches lotes = 400 servicios por el techo de sentencias de
+ * Deluge) → agregación por remitente (Sender_field; se ignoran los vacíos; IDs
+ * normalizados a Number) → top-N por inserción O(n·limit) con desempate por
+ * fecha más antigua → resolución de nombres SOLO para el top-N vía
+ * fetch_contacts_by_ids.
+ *
+ * full (default true) recorre la cohorte hasta el tope; full:"false" fuerza el
+ * path acotado a 200 (vista rápida). En ambos casos, si la cohorte no entró
+ * entera, el ranking es APROXIMADO (truncated: true) y la reply muestra un aviso.
  *
  * GATE 5.1: todos los criterios usan campos LITERALES con valores variables;
  * el filtro por tipo se combina por ID-list (addAll por tipo + intersect con
@@ -158,7 +162,9 @@ map chat_tools.report_top_customers(map params)
     return thisapp.chat_common.build_empty_report(startDate,endDate,reportedType);
   }
   total = targetIDs.size();
-  // Path COMPLETO (paginado) por defecto: ranking exacto sobre TODA la ventana.
+  // Path COMPLETO por defecto: recorre la cohorte hasta el tope (NO es infinito:
+  // service_scan_batches * 200 = 400 servicios, por el techo de sentencias de
+  // Deluge). Si la cohorte lo supera, el ranking es parcial y truncated = true.
   // full=false fuerza el path acotado a 200 (vista rápida / tests).
   // Unificado sobre la shape del reporte (customerId/date/serviceType): este tool
   // solo consume esas claves de cada fila (los nombres vienen de
@@ -178,7 +184,7 @@ map chat_tools.report_top_customers(map params)
   {
     records = thisapp.chat_data_access.fetch_services_report_by_ids(targetIDs);
   }
-  truncated = thisapp.chat_data_access.report_scan_truncated(records,fullFlag);
+  truncated = thisapp.chat_data_access.service_scan_truncated(records,fullFlag);
     // Agregación por remitente (Map clave = "" + senderId normalizado)
     senderMap = Map();
     if(records == null)
@@ -254,6 +260,33 @@ map chat_tools.report_top_customers(map params)
       entry = senderMap.get(key);
       entryCount = entry.get("count");
       entryDate = entry.get("firstDate");
+      // Early-out: si el top-N ya está lleno y esta entrada no supera al PEOR
+      // del top-N, se descarta sin escanear ni reconstruir la lista.
+      if(limitNum > 0 && ranking.size() >= limitNum)
+      {
+        lastCur = ranking.get(ranking.size() - 1);
+        lastValue = lastCur.get("count");
+        lastDate = lastCur.get("firstDate");
+        better = false;
+        if(entryCount > lastValue)
+        {
+          better = true;
+        }
+        else
+        {
+          if(entryCount == lastValue && entryDate != null)
+          {
+            if(lastDate == null || entryDate < lastDate)
+            {
+              better = true;
+            }
+          }
+        }
+        if(better == false)
+        {
+          continue;
+        }
+      }
       pos = ranking.size();
       for each index i in ranking
       {
@@ -266,7 +299,7 @@ map chat_tools.report_top_customers(map params)
         if(entryCount == cur.get("count"))
         {
           curDate = cur.get("firstDate");
-          if(entryDate != null && curDate == null || entryDate < curDate)
+          if(entryDate != null && (curDate == null || entryDate < curDate))
           {
             pos = i;
             break;

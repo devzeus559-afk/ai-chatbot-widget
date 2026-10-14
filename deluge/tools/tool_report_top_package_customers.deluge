@@ -21,10 +21,15 @@
  *                firstServiceDate}]}}
  *
  * Acceso nativo vía data_access (0 llamadas de API de Creator). Algoritmo:
- * count-first → fetch acotado a 200 → agregación por remitente (Sender_field,
- * IDs normalizados a Number) → top-N por inserción con desempate por fecha más
- * antigua → resolución de nombres SOLO para el top-N. Si el conteo supera 200,
- * truncated: true (ranking aproximado).
+ * count-first → fetch por cursor en lotes de 200 (acotado a
+ * service_scan_batches lotes = 400 servicios por el techo de sentencias de
+ * Deluge) → agregación por remitente (Sender_field, IDs normalizados a Number)
+ * → top-N por inserción con desempate por fecha más antigua → resolución de
+ * nombres SOLO para el top-N.
+ *
+ * full (default true) recorre la cohorte hasta el tope; full:"false" fuerza el
+ * path acotado a 200 (vista rápida). En ambos casos, si la cohorte no entró
+ * entera, truncated: true (ranking parcial).
  *
  * GATE 5.1: criterios con campos LITERALES + valores variables; combinación de
  * filtros por ID-list (intersect); List.add() solo appendea -> la inserción
@@ -184,7 +189,9 @@ map chat_tools.report_top_package_customers(map params)
     return thisapp.chat_common.build_empty_package_customers_report(startDate,endDate,measure,reportedType);
   }
   total = targetIDs.size();
-  // Path COMPLETO (paginado) por defecto: ranking exacto sobre TODA la ventana.
+  // Path COMPLETO por defecto: recorre la cohorte hasta el tope (NO es infinito:
+  // service_scan_batches * 200 = 400 servicios, por el techo de sentencias de
+  // Deluge). Si la cohorte lo supera, el ranking es parcial y truncated = true.
   // full=false fuerza el path acotado a 200 (vista rápida / tests). Antes esto
   // era siempre acotado y truncaba un pool arbitrario, por lo que el global
   // "sin filtros" podía dar máximos MENORES que una oficina con <200 servicios.
@@ -202,7 +209,7 @@ map chat_tools.report_top_package_customers(map params)
   {
     records = thisapp.chat_data_access.fetch_services_report_by_ids(targetIDs);
   }
-  truncated = thisapp.chat_data_access.report_scan_truncated(records,fullFlag);
+  truncated = thisapp.chat_data_access.service_scan_truncated(records,fullFlag);
   // Agregación por remitente
   senderMap = Map();
   if(records == null)
@@ -270,6 +277,37 @@ map chat_tools.report_top_package_customers(map params)
       entryValue = entry.get("weight");
     }
     entryDate = entry.get("firstDate");
+    // Early-out: si el top-N ya está lleno y esta entrada no supera al PEOR
+    // del top-N, se descarta sin escanear ni reconstruir la lista.
+    if(limitNum > 0 && ranking.size() >= limitNum)
+    {
+      lastCur = ranking.get(ranking.size() - 1);
+      lastValue = lastCur.get("count");
+      if(measure == "pounds")
+      {
+        lastValue = lastCur.get("weight");
+      }
+      lastDate = lastCur.get("firstDate");
+      better = false;
+      if(entryValue > lastValue)
+      {
+        better = true;
+      }
+      else
+      {
+        if(entryValue == lastValue && entryDate != null)
+        {
+          if(lastDate == null || entryDate < lastDate)
+          {
+            better = true;
+          }
+        }
+      }
+      if(better == false)
+      {
+        continue;
+      }
+    }
     pos = ranking.size();
     for each index i in ranking
     {

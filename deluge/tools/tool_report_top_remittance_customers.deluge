@@ -106,7 +106,9 @@ map chat_tools.report_top_remittance_customers(map params)
     return thisapp.chat_common.build_empty_remittance_report(startDate,endDate);
   }
   total = targetIDs.size();
-  // Path COMPLETO (paginado) por defecto: ranking exacto sobre TODA la ventana.
+  // Path COMPLETO por defecto: recorre la cohorte hasta el tope (NO es infinito:
+  // service_scan_batches * 200 = 400 servicios, por el techo de sentencias de
+  // Deluge). Si la cohorte lo supera, el ranking es parcial y truncated = true.
   // full=false fuerza el path acotado a 200 (vista rápida / tests).
   fullFlag = true;
   fullRaw = params.get("full");
@@ -122,7 +124,7 @@ map chat_tools.report_top_remittance_customers(map params)
   {
     records = thisapp.chat_data_access.fetch_services_report_by_ids(targetIDs);
   }
-  truncated = thisapp.chat_data_access.report_scan_truncated(records,fullFlag);
+  truncated = thisapp.chat_data_access.service_scan_truncated(records,fullFlag);
   senderMap = Map();
   if(records == null)
   {
@@ -183,6 +185,33 @@ map chat_tools.report_top_remittance_customers(map params)
     entry = senderMap.get(key);
     entryValue = entry.get("amount");
     entryDate = entry.get("firstDate");
+    // Early-out: si el top-N ya está lleno y esta entrada no supera al PEOR
+    // del top-N, se descarta sin escanear ni reconstruir la lista.
+    if(limitNum > 0 && ranking.size() >= limitNum)
+    {
+      lastCur = ranking.get(ranking.size() - 1);
+      lastValue = lastCur.get("amount");
+      lastDate = lastCur.get("firstDate");
+      better = false;
+      if(entryValue > lastValue)
+      {
+        better = true;
+      }
+      else
+      {
+        if(entryValue == lastValue && entryDate != null)
+        {
+          if(lastDate == null || entryDate < lastDate)
+          {
+            better = true;
+          }
+        }
+      }
+      if(better == false)
+      {
+        continue;
+      }
+    }
     pos = ranking.size();
     for each index i in ranking
     {

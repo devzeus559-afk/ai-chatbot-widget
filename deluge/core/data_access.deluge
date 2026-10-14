@@ -72,7 +72,9 @@
  *
  * Capa de REPORTES (métricas 2-11): fetch_office_id_by_name,
  *            materialize_service_report, fetch_services_report_by_date_window,
- *            fetch_services_report_by_ids, materialize_package_report,
+ *            fetch_services_report_by_ids, fetch_all_services_report_by_ids,
+ *            service_scan_batches, service_scan_truncated,
+ *            materialize_package_report,
  *            fetch_packages_report_by_window_office,
  *            fetch_all_packages_by_window_office,
  *            prefetch_office_names, prefetch_shipment_info, shipment_info,
@@ -840,8 +842,20 @@ int chat_data_access.fetch_office_id_by_name(string officeName)
   }
   return 0;
 }
-list chat_data_access.materialize_service_report(Service records, map officeById)
+list chat_data_access.materialize_service_report(Service records)
 {
+   // Shape LEAN: solo las cinco claves que consumen los tres tools de ranking
+   // (customerId / date / serviceType + totalWeight / amount). NO se materializa
+   // zid ni officeName porque ningún tool de ranking los lee, y armarlos costaba
+   // ~9 sentencias por registro (el put de zid + el bloque completo de lookup de
+   // oficina con sus dos if anidados).
+   //
+   // Por qué importa el costo POR FILA: Deluge limita las sentencias EJECUTADAS
+   // por ejecución (~5000 en el plan base, plan-dependent) y cada vuelta de un
+   // `for each` vuelve a contar todas las sentencias de su cuerpo. Un
+   // materializador caro se paga una vez por registro escaneado, así que es la
+   // palanca más directa para que un ranking sobre miles de servicios entre en
+   // presupuesto.
    resultList = List();
    if(records == null)
    {
@@ -851,7 +865,6 @@ list chat_data_access.materialize_service_report(Service records, map officeById
    {
       item = Map();
       item.put("serviceType",r.Service_Type);
-      item.put("zid",r.ID);
       item.put("customerId",r.Sender_field);
       item.put("date",r.Date_field1);
       amount = r.Amount;
@@ -866,16 +879,6 @@ list chat_data_access.materialize_service_report(Service records, map officeById
          weight = r.Total_Weight;
       }
       item.put("totalWeight",weight);
-      officeName = "";
-      if(r.Office != null && officeById != null)
-      {
-         cachedName = officeById.get(r.Office);
-         if(cachedName != null)
-         {
-            officeName = cachedName;
-         }
-      }
-      item.put("officeName",officeName);
       resultList.add(item);
    }
    return resultList;
@@ -884,35 +887,87 @@ list chat_data_access.materialize_service_report(Service records, map officeById
 list chat_data_access.fetch_services_report_by_date_window(date startDate, date endDate)
 {
    records = Service[Date_field1 >= startDate && Date_field1 <= endDate] sort by Date_field1 range from 0 to 199;
-   refs = thisapp.chat_data_access.prefetch_service_refs();
-   return thisapp.chat_data_access.materialize_service_report(records, refs.get("office"));
+   return thisapp.chat_data_access.materialize_service_report(records);
 }
 
 list chat_data_access.fetch_services_report_by_ids(list ids)
 {
+   // Path ACOTADO (vista rápida / full:"false"): una sola query de <=200
+   // registros. Mismo contrato que la variante completa, pero el tope de 200 es
+   // fijo y el tool lo declara con truncated=true.
+   //
+   // Sin prefetch de catálogo: los tres tools de ranking solo leen
+   // customerId/date/serviceType (+totalWeight/amount) de cada fila, así que
+   // officeName no se usaba y cargarlo costaba ~10 queries y ~1400 registros por
+   // corrida (incluye 5 scans de Package).
    records = Service[ID in ids] sort by Service_ID range from 0 to 199;
-   refs = thisapp.chat_data_access.prefetch_service_refs();
-   return thisapp.chat_data_access.materialize_service_report(records, refs.get("office"));
+   return thisapp.chat_data_access.materialize_service_report(records);
 }
+
+int chat_data_access.service_scan_batches()
+{
+   // Único número que define el tope del ranking completo de servicios:
+   // cap de registros = service_scan_batches() * 200 (hoy: 2 * 200 = 400).
+   // Lo leen tanto el fetcher (fetch_all_services_report_by_ids) como el chequeo
+   // de truncated (service_scan_truncated), así que se cambia en un solo lugar.
+   //
+   // POR QUÉ HAY TOPE: Deluge limita las sentencias EJECUTADAS por ejecución
+   // (~5000 en el plan base, plan-dependent; cada `for each` multiplica el cuerpo
+   // por la cantidad de vueltas). El ranking cuesta ~25 sentencias por registro
+   // entre materializar y agregar, así que una cohorte de miles agota el
+   // presupuesto DENTRO de chat_invoke: el On Submit no llega a persistir
+   // Status="failed", el ChatRequest queda "pending" y el widget muestra su
+   // cartel de timeout a los 45s. El tope es lo que garantiza que la ejecución
+   // termine y el registro se cierre.
+   //
+   // SUBIRLO SOLO con el techo de sentencias de la cuenta medido (ver la sonda en
+   // deluge/METRICS.md). Un tope demasiado alto reintroduce exactamente el cuelgue
+   // que este número evita.
+   return 8;
+}
+
+bool chat_data_access.service_scan_truncated(list records, bool fullFlag)
+{
+   // `truncated` del path de servicios (los tres tools de ranking). Es una función
+   // propia y NO report_scan_truncated porque ese chequeo es compartido con los
+   // reportes de paquetes, cuyo tope es 25 lotes (5000): con el tope de servicios
+   // (service_scan_batches * 200) daría falsos "exacto".
+   if(!fullFlag)
+   {
+      return true;
+   }
+   if(records == null)
+   {
+      return false;
+   }
+   return records.size() >= thisapp.chat_data_access.service_scan_batches() * 200;
+}
+
 list chat_data_access.fetch_all_services_report_by_ids(list ids)
 {
    // --------------------------------------------------------------------------
-   // Cohorte COMPLETA de los servicios en `ids` (paginado, no acotado a 200).
-   // Mismo contrato que fetch_services_report_by_ids; la diferencia es que
-   // recorre TODOS los registros y no una muestra arbitraria de 200. Devolver
-   // una muestra hacía que el ranking global ("sin filtros") fuera MENOR que el
-   // de una oficina con <200 servicios: cada consulta truncaba un pool distinto.
+   // Ranking de servicios: recorre la cohorte con cursor sobre ID, en lotes de
+   // 200, y se detiene cuando la cohorte se agota O cuando se acaban los lotes
+   // del tope (service_scan_batches). Si se detiene por tope el ranking queda
+   // parcial y el tool lo declara con truncated (service_scan_truncated).
    //
-   // Deluge NO soporta while: se genera una lista contadora con leftpad/toList
-   // y se recorre con for each + break. OJO: el for each de elemento exige DOS
-   // espacios ("for each  x in y"); con uno solo el live tira Improper Statement
-   // en esa misma línea. maxBatches acota el trabajo (25 lotes = 5000 servicios);
-   // si se alcanza el tope el ranking queda incompleto y el tool lo señala con
-   // truncated (vía report_scan_truncated).
+   // POR QUÉ CURSOR Y NO TROCEAR `ids`: Deluge cuenta sentencias EJECUTADAS.
+   // Trocear la lista en memoria cuesta ~3 sentencias POR ID (add + el if de
+   // flush por elemento), o sea 3N: con una cohorte grande el propio troceo es lo
+   // que agota el presupuesto. El cursor gasta una cantidad FIJA por lote (~6),
+   // independiente del tamaño de la cohorte. Mismo mecanismo que
+   // fetch_all_packages_by_window_office.
    //
-   // Cursor sobre ID (ascendente): cada lote pide ID > lastId, así ningún
-   // registro se repite ni se saltea. Se materializa POR LOTE (no todo junto):
-   // materializar miles de una vez puede exceder el timeout de 40s del script.
+   // Deluge NO soporta while: se genera una lista contadora con leftpad/toList y
+   // se recorre con for each + break. OJO: el for each de elemento exige DOS
+   // espacios ("for each  x in y"), igual que el precedente de paquetes.
+   //
+   // El contador se genera con exactamente `maxBatches` elementos (leftpad con
+   // longitud = maxBatches), no maxBatches + 1 como el precedente de paquetes:
+   // así el tope es exacto (maxBatches * 200) y no se cuela un lote de más.
+   //
+   // Se materializa POR LOTE (no todo junto) para no acumular miles de Maps en
+   // una sola pasada.
    // --------------------------------------------------------------------------
    if(ids == null || ids.size() == 0)
    {
@@ -920,24 +975,22 @@ list chat_data_access.fetch_all_services_report_by_ids(list ids)
    }
    resultList = List();
    lastId = 0;
-   maxBatches = 25;
-   // Catálogo de oficinas precargado UNA vez y reutilizado en todos los lotes.
-   refs = thisapp.chat_data_access.prefetch_service_refs();
-   officeById = refs.get("office");
-   counter = leftpad("1",maxBatches + 1).replaceAll(" ","1,").toList(",");
+   maxBatches = thisapp.chat_data_access.service_scan_batches();
+   counter = leftpad("1",maxBatches).replaceAll(" ","1,").toList(",");
    for each  idx in counter
    {
+      // Criterio con campos LITERALES + valores variables (AGENTS.md): `ID in ids`
+      // con una List en memoria, más el cursor `ID > lastId`. sort by ID ascendente
+      // => el cursor avanza al mayor ID del lote.
       recBatch = Service[ID in ids && ID > lastId] sort by ID range from 0 to 199;
-      // recBatch es colección de registros crudos: usa .count(), NO .size()
-      // (.size() es solo para List/Map en memoria).
       if(recBatch == null || recBatch.count() == 0)
       {
          break;
       }
-      resultList.addAll(thisapp.chat_data_access.materialize_service_report(recBatch,officeById));
-      // sort by ID es ascendente: el cursor avanza al mayor ID del lote.
+      resultList.addAll(thisapp.chat_data_access.materialize_service_report(recBatch));
       // getAll() sobre el campo ID (patrón de AGENTS.md) evita .get() sobre la
-      // colección cruda; idList es un List en memoria.
+      // colección cruda: el runtime resolvía .get("ID") como get(bigint index) y
+      // tiraba "Expected BIGINT but found STRING". idList es un List en memoria.
       idList = recBatch.ID.getAll();
       lastId = idList.get(idList.size() - 1);
       if(recBatch.count() < 200)
