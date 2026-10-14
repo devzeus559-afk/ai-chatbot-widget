@@ -42,7 +42,7 @@ El usuario pidió "el arreglo correcto, con paginado": recorrer la cohorte compl
 - [x] T9: `chat_intent.scan_report_tools()` — sumar los 3 rankings sobre `Service` (la lista los excluía con un comentario ya falso)
 - [x] T10: `chat_config.deluge` — documentar `full` en las descripciones de los 3 tools (ripple del catálogo)
 - [x] T11: `README.md` + `METRICS.md` — reemplazar la doc del cap 200 por el contrato full/rápida
-- [ ] T8: Verificación estática + `node tools/creator-parity.js` + commit
+- [x] T8: Verificación estática + `node tools/creator-parity.js` + commit `425678b` (develop; sin push)
 
 ## Verificación
 - Estático: balance de llaves/paréntesis, firma de cada `thisapp.chat_*` contra su definición, `for each` con DOS espacios en el loop nuevo.
