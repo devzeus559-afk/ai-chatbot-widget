@@ -894,6 +894,59 @@ list chat_data_access.fetch_services_report_by_ids(list ids)
    refs = thisapp.chat_data_access.prefetch_service_refs();
    return thisapp.chat_data_access.materialize_service_report(records, refs.get("office"));
 }
+list chat_data_access.fetch_all_services_report_by_ids(list ids)
+{
+   // --------------------------------------------------------------------------
+   // Cohorte COMPLETA de los servicios en `ids` (paginado, no acotado a 200).
+   // Mismo contrato que fetch_services_report_by_ids; la diferencia es que
+   // recorre TODOS los registros y no una muestra arbitraria de 200. Devolver
+   // una muestra hacía que el ranking global ("sin filtros") fuera MENOR que el
+   // de una oficina con <200 servicios: cada consulta truncaba un pool distinto.
+   //
+   // Deluge NO soporta while: se genera una lista contadora con leftpad/toList
+   // y se recorre con for each + break. OJO: el for each de elemento exige DOS
+   // espacios ("for each  x in y"); con uno solo el live tira Improper Statement
+   // en esa misma línea. maxBatches acota el trabajo (25 lotes = 5000 servicios);
+   // si se alcanza el tope el ranking queda incompleto y el tool lo señala con
+   // truncated (vía report_scan_truncated).
+   //
+   // Cursor sobre ID (ascendente): cada lote pide ID > lastId, así ningún
+   // registro se repite ni se saltea. Se materializa POR LOTE (no todo junto):
+   // materializar miles de una vez puede exceder el timeout de 40s del script.
+   // --------------------------------------------------------------------------
+   if(ids == null || ids.size() == 0)
+   {
+      return List();
+   }
+   resultList = List();
+   lastId = 0;
+   maxBatches = 25;
+   // Catálogo de oficinas precargado UNA vez y reutilizado en todos los lotes.
+   refs = thisapp.chat_data_access.prefetch_service_refs();
+   officeById = refs.get("office");
+   counter = leftpad("1",maxBatches + 1).replaceAll(" ","1,").toList(",");
+   for each  idx in counter
+   {
+      recBatch = Service[ID in ids && ID > lastId] sort by ID range from 0 to 199;
+      // recBatch es colección de registros crudos: usa .count(), NO .size()
+      // (.size() es solo para List/Map en memoria).
+      if(recBatch == null || recBatch.count() == 0)
+      {
+         break;
+      }
+      resultList.addAll(thisapp.chat_data_access.materialize_service_report(recBatch,officeById));
+      // sort by ID es ascendente: el cursor avanza al mayor ID del lote.
+      // getAll() sobre el campo ID (patrón de AGENTS.md) evita .get() sobre la
+      // colección cruda; idList es un List en memoria.
+      idList = recBatch.ID.getAll();
+      lastId = idList.get(idList.size() - 1);
+      if(recBatch.count() < 200)
+      {
+         break;
+      }
+   }
+   return resultList;
+}
 
 map chat_data_access.prefetch_office_names()
 {

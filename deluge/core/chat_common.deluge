@@ -200,7 +200,7 @@ map chat_common.compose_reply(map toolResult, map intent)
   }
   if(data.get("truncated") == true)
   {
-    summary = summary + " (truncado a 200)";
+    summary = summary + " (truncado)";
   }
   return {"text":summary,"visualization":viz};
 }
@@ -400,7 +400,8 @@ string chat_common.format_top_customers(map data)
   // Plantilla del reporte top customers (composeWithAI=false: los nombres y
   // conteos NUNCA se envían al LLM). El breakdown por tipo se omite cuando la
   // tool no emitió ninguno; con truncated: true se añade el aviso de ranking
-  // aproximado (ventana > 200 servicios, se analizaron los primeros 200).
+  // aproximado (la ventana no se analizó completa: path acotado a 200 o tope del
+  // paginado de 5000).
   // --------------------------------------------------------------------------
   if(data == null)
   {
@@ -424,7 +425,7 @@ string chat_common.format_top_customers(map data)
   }
   if(data.get("truncated") == true)
   {
-    text = text + "Nota: el ranking es aproximado (se analizaron los primeros 200 servicios).\n";
+    text = text + "Nota: el ranking es aproximado (no se analizaron todos los servicios de la ventana).\n";
   }
   return text;
 }
@@ -461,7 +462,7 @@ string chat_common.format_top_package_customers(map data)
   }
   if(data.get("truncated") == true)
   {
-    text = text + "Nota: el ranking es aproximado (se analizaron los primeros 200 servicios).\n";
+    text = text + "Nota: el ranking es aproximado (no se analizaron todos los servicios de la ventana).\n";
   }
   return text;
 }
@@ -483,7 +484,7 @@ string chat_common.format_top_remittance_customers(map data)
   }
   if(data.get("truncated") == true)
   {
-    text = text + "Nota: el ranking es aproximado (se analizaron los primeros 200 servicios).\n";
+    text = text + "Nota: el ranking es aproximado (no se analizaron todos los servicios de la ventana).\n";
   }
   return text;
 }

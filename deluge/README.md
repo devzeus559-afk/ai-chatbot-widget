@@ -214,10 +214,15 @@ en AMBOS sitios (el literal de la consulta en `data_access` y el mapa `*Fields`)
   del chat (`0 to 9`, orden `Created_Time desc`). `report_top_customers` procesa la ventana
   fija de 30 días sobre **solo** los tipos del dominio genérico (Locker, Store, Recharge,
   Online Store, Other Services): unión de IDs por `serviceType` (lista obligatoria ≥1) e
-  intersección con la ventana; si la intersección supera 200, devuelve `truncated: true` y
-  la reply avisa que el ranking es aproximado (se analizan los primeros 200 por fecha de
-  negocio). Paquetería y remesas se resuelven con los tools específicos
+  intersección con la ventana. Paquetería y remesas se resuelven con los tools específicos
   `report_top_package_customers` / `report_top_remittance_customers`.
+- **Ranking exacto vs vista rápida**: los tres rankings de clientes sobre `Service`
+  (`report_top_customers`, `report_top_package_customers`, `report_top_remittance_customers`)
+  recorren por defecto **toda** la ventana en lotes de 200 con cursor sobre `ID`
+  (`fetch_all_services_report_by_ids`, tope duro 25 lotes = 5000) para un ranking exacto y
+  comparable entre filtros. `full=false` — o pedidos como "vista rápida" — usa la vía acotada
+  a 200 (`fetch_services_report_by_ids`). La reply avisa que el ranking es aproximado sólo
+  cuando `truncated` es true (path acotado, o ventana ≥5000 en el completo).
 
 ## Conexión con el widget (implementada)
 

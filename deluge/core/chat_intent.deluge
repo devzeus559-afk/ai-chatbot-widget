@@ -960,17 +960,22 @@ map chat_intent.apply_report_scan_mode(map normalized, string toolName, string u
 }
 list chat_intent.scan_report_tools()
 {
-  // Solo los report tools que realmente leen params.get("full") para elegir
-  // entre la cohorte acotada y el recorrido completo. report_top_customers,
-  // report_top_package_customers, report_top_remittance_customers,
-  // report_delayed_packages y report_unscanned_packages NO consumen el flag:
-  // aggregate sobre otros módulos y no deben recibirlo.
+  // Reportes que leen params.get("full") para elegir entre la cohorte acotada
+  // (200) y el recorrido completo paginado. Los TRES rankings de clientes sobre
+  // Service también lo consumen desde el fix de ranking exacto: agregaban una
+  // muestra arbitraria de 200 y el global "sin filtros" podía dar máximos
+  // MENORES que una oficina con <200 servicios.
+  // report_delayed_packages y report_unscanned_packages NO lo consumen (no
+  // recorren Service/Package por ventana): no deben recibirlo.
   tools = List();
   tools.add("report_daily_average");
   tools.add("report_pounds_shipped");
   tools.add("report_monthly_comparison");
   tools.add("report_shipping_type_frequency");
   tools.add("report_merchandise_type");
+  tools.add("report_top_customers");
+  tools.add("report_top_package_customers");
+  tools.add("report_top_remittance_customers");
   return tools;
 }
 map chat_intent.resolve_params(string userPrompt, string toolName, string paramSchema)

@@ -106,8 +106,23 @@ map chat_tools.report_top_remittance_customers(map params)
     return thisapp.chat_common.build_empty_remittance_report(startDate,endDate);
   }
   total = targetIDs.size();
-  truncated = total > 200;
-  records = thisapp.chat_data_access.fetch_services_report_by_ids(targetIDs);
+  // Path COMPLETO (paginado) por defecto: ranking exacto sobre TODA la ventana.
+  // full=false fuerza el path acotado a 200 (vista rápida / tests).
+  fullFlag = true;
+  fullRaw = params.get("full");
+  if(fullRaw != null && "" + fullRaw == "false")
+  {
+    fullFlag = false;
+  }
+  if(fullFlag)
+  {
+    records = thisapp.chat_data_access.fetch_all_services_report_by_ids(targetIDs);
+  }
+  else
+  {
+    records = thisapp.chat_data_access.fetch_services_report_by_ids(targetIDs);
+  }
+  truncated = thisapp.chat_data_access.report_scan_truncated(records,fullFlag);
   senderMap = Map();
   if(records == null)
   {

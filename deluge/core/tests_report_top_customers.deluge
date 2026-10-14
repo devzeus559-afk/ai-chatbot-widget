@@ -15,7 +15,11 @@
  *     Services (paquetería/remesas viven en los tools específicos)
  *   - multi-tipo = unión de IDs por tipo (addAll) ∩ ventana 30 días
  *   - ranking count desc con desempate por primera fecha (seniority)
- *   - truncated: true si la intersección supera 200 (fetch_acotado)
+ *   - full (default true) => fetch_all_services_report_by_ids (paginado exacto);
+ *     full:"false" => fetch_services_report_by_ids (path acotado a 200)
+ *   - truncated = report_scan_truncated(records,fullFlag): false en el path
+ *     completo salvo que se alcance el tope del paginado (5000); true en el
+ *     path acotado si la intersección supera 200
  *   - reply en español vía format_top_customers (sin "null")
  *   - coincidencia de tipo EXACTA y sensible a mayúsculas
  *
@@ -71,31 +75,59 @@ map tests_report_top_customers.test_sender_is_number(map counters)
 }
 
 // --------------------------------------------------------------------------
-// (d) Cap 200 + truncated (CONDICIONAL <=)
+// (d) Path acotado (full:false) vs path completo (default) + truncated
 // --------------------------------------------------------------------------
 map tests_report_top_customers.test_cap_200_truncated(map counters)
 {
-  result = thisapp.chat_tools.report_top_customers({"serviceType":{"Locker"},"limit":"10"});
+  // ---- Path ACOTADO (full:"false") — recorte duro a 200 -------------------
+  result = thisapp.chat_tools.report_top_customers({"serviceType":{"Locker"},"limit":"10","full":"false"});
   ok = result.get("ok");
   counters = thisapp.tests_common.assert_true("cap_200: tool responde ok",ok == true,counters,"result=" + result.toString());
+  cappedTotal = null;
   if(ok == true)
   {
     data = result.get("data");
-    total = data.get("totalServices");
+    cappedTotal = toNumber("" + data.get("totalServices"));
     truncated = data.get("truncated");
     // Para Locker específico casi nunca supera 200 en data de prueba; si el
     // dataset alcanza el cap se exige truncated true, si no se informa.
-    if(total != null && total > 200)
+    if(cappedTotal != null && cappedTotal > 200)
     {
-      counters = thisapp.tests_common.assert_true("cap_200: truncated true con total>200",truncated == true,counters,"total=" + total + " truncated=" + truncated);
+      counters = thisapp.tests_common.assert_true("cap_200: truncated true con total>200 (acotado)",truncated == true,counters,"total=" + cappedTotal + " truncated=" + truncated);
       customers = data.get("customers");
-      counters = thisapp.tests_common.assert_true("cap_200: customers <= 200",customers != null && customers.size() <= 200,counters,"customers=" + if(customers != null,customers.size(),"null"));
+      counters = thisapp.tests_common.assert_true("cap_200: customers <= 200 (acotado)",customers != null && customers.size() <= 200,counters,"customers=" + if(customers != null,customers.size(),"null"));
     }
     else
     {
-      info "[INFO] cap_200: total=" + total + " <= 200 — truncation NO ejercitada (revisar data prereq; usar Locker+aleatorio si se quiere forzar)";
-      counters = thisapp.tests_common.assert_true("cap_200: no-capped → truncated false",truncated == false,counters,"truncated=" + truncated);
+      info "[INFO] cap_200: total acotado=" + cappedTotal + " <= 200 — truncation NO ejercitada (revisar data prereq)";
+      counters = thisapp.tests_common.assert_true("cap_200: acotado no-capped → truncated false",truncated == false,counters,"truncated=" + truncated);
     }
+  }
+
+  // ---- Path COMPLETO (default, sin "full") — paginado exacto --------------
+  resultFull = thisapp.chat_tools.report_top_customers({"serviceType":{"Locker"},"limit":"10"});
+  if(resultFull.get("ok") == true)
+  {
+    fullData = resultFull.get("data");
+    fullTotal = toNumber("" + fullData.get("totalServices"));
+    fullTrunc = fullData.get("truncated");
+    if(fullTotal != null && fullTotal >= 5000)
+    {
+      info "[INFO] cap_200: full alcanzó el tope del paginado (5000) → truncated esperado true (fullTotal=" + fullTotal + ")";
+    }
+    else
+    {
+      counters = thisapp.tests_common.assert_true("cap_200: full truncated false (<5000)",fullTrunc == false,counters,"fullTotal=" + fullTotal + " truncated=" + fullTrunc);
+    }
+    // Coherencia: el path completo NUNCA ve menos servicios que el acotado.
+    if(cappedTotal != null && fullTotal != null)
+    {
+      counters = thisapp.tests_common.assert_true("cap_200: full total >= acotado total",fullTotal >= cappedTotal,counters,"full=" + fullTotal + " acotado=" + cappedTotal);
+    }
+  }
+  else
+  {
+    info "[INFO] cap_200: path completo no ok — " + resultFull.toString();
   }
   return counters;
 }
