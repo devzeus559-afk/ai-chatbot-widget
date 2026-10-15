@@ -3,14 +3,11 @@
  *
  * Script del workflow "On Submit" del módulo ChatRequests.
  * El registro ya existe cuando corre el workflow; `input` trae el registro.
- *
- * Fallo = mutación en memoria de `input` (0 llamadas de API de Creator): el
- * registro del workflow persiste automáticamente los cambios.
  */
 requestId = input.ID;
 
 input.Status = "failed";
-input.Error = "Processing";
+input.Error = "Inicializado";
 
 try {
     result = thisapp.chat_invoke.chat_invoke(requestId);
@@ -21,12 +18,12 @@ try {
     } else {
         input.Status = "failed";
         if (result != null && result.get("message") != null) {
-            input.Error = result.get("message").toString();
+            input.Error = result.get("message");
         } else {
-            input.Error = "no_message";
+            input.Error = "Sin mensaje";
         }
     }
 } catch (e) {
     input.Status = "failed";
-    input.Error = "ERR:" + e.toString();
+    input.Error = e.toString();
 }
