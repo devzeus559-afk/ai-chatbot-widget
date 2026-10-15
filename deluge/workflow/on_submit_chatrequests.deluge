@@ -15,6 +15,23 @@ requestId = input.ID;
 
 try {
     result = chat_invoke(requestId);
+    
+    // Si el resultado viene con status != answered, marcamos como failed inmediatamente.
+    if (result.get("status") != "answered") {
+        input.Status = "failed";
+        input.Error = result.get("message");
+    }
+    
+    // **Nueva capa de seguridad:** aunque el On Success termine con status "answered",
+    // puede contener en su message el error de límite de sentencias.
+    // Si el mensaje contiene ese patrón, forzamos el Failed aunque el status sea "answered".
+    if (result.get("error") != null && 
+        result.get("error").contains("Number of statement execution limit exceed")) {
+        input.Status = "failed";
+        input.Error = result.get("message");
+    }
+    
+    // Si el resultado no es exitoso (no answered) lo marcamos como failed de todas formas.
     if (result.get("status") != "answered") {
         input.Status = "failed";
         input.Error = result.get("message");
@@ -22,6 +39,13 @@ try {
 } catch (e) {
     input.Status = "failed";
     input.Error = e.message;
+} finally {
+    // Si llegamos aquí (tanto en try como en catch) y no hemos marcado failed aún,
+    // marcamos el registro como "failed" si el error contiene el patrón crítico.
+    if (input.Status != "failed" && input.Error != null && 
+        input.Error.contains("Number of statement execution limit exceed")) {
+        input.Status = "failed";
+    }
 }
 
 // Si el error capturado contiene el patron de lmites de lances de Deluge,
