@@ -13,30 +13,23 @@
 requestId = input.ID;
 
 input.Status = "failed";
+input.Error = "No ejecutado";
 
 try {
     result = thisapp.chat_invoke.chat_invoke(requestId);
     
-    // Si el resultado es "answered", no lo marcamos como failed
     if (result != null && result.get("status") == "answered") {
         input.Status = "answered";
-        input.Error = null;
+        input.Error = "";
     } else {
         input.Status = "failed";
         if (result != null) {
             input.Error = result.get("message");
+        } else {
+            input.Error = "chat_invoke retornó null";
         }
     }
 } catch (e) {
-    // Si ocurre una excepción, marcamos como failed inmediatamente.
     input.Status = "failed";
-    input.Error = e.toString();
-}
-
-if (input.Error != null) {
-    errStr = input.Error.toString();
-    if (errStr.indexOf("statement execution limit") != -1 || 
-        errStr.indexOf("Number of statement execution limit") != -1) {
-        input.Status = "failed";
-    }
+    input.Error = "EXCEPTION: " + e.toString();
 }
