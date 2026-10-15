@@ -180,10 +180,18 @@ async function sendToServer(convId, prompt, hint) {
   console.log("[LM2Chatbot] addRecord response:", res);
   
   if (res && res.error && res.error[0] && res.error[0].includes("statement execution limit exceed")) {
-    // Error al exceder limite de ejecuciones permitidas en el workflow (On Submit → chat_invoke). 
-    // El registro se crea igual, pero el workflow no se ejecuta.
+    // Límite de sentencias de Deluge: el workflow (On Success → chat_invoke)
+    // murió y NO persistió Status. No hay nada que poll-ear (el registro
+    // queda sin cambiar), así que fallamos rápido con el error REAL en vez
+    // de hacer throw (que caía al catch genérico de app.js) o de esperar
+    // los 45 s del timeout para luego no encontrar actualización.
     console.error("[LM2Chatbot] addRecord error:", res.error[0]);
-    throw new Error("addRecord(ChatRequests) error: " + (res && res.error[0]));
+    return {
+      ok: false,
+      error:
+        "La consulta superó el límite de procesamiento del servidor. " +
+        "Prueba con un top más pequeño (por ejemplo 7) o reduce el rango.",
+    };
   }
   if (res && res.timedOut) {
     // El SDK creó el registro pero nunca respondió (bug observado del
