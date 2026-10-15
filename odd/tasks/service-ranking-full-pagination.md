@@ -136,7 +136,40 @@ nuevas, así que deployar un caller sin su callee rompe producción. Subir **jun
 - Recortar el cuerpo de agregación de los 3 tools (la cadena de guards cuesta ~9 sentencias por
   registro) o pasar a listas paralelas + `for each index`: ~25 → ~15/registro, y con eso el tope
   sube sin gastar presupuesto.
-- Medir el techo real con la sonda y recalcular `service_scan_batches`.
 - `prefetch_service_refs` sigue usándose en `fetch_services_by_ids` / `fetch_services_all` /
   `fetch_pkg_tracking_*` (paths NO de ranking) — no se tocó.
 - Borrado de `fetch_services_by_ids` y `fetch_services_report_by_date_window` (sin callers).
+
+---
+
+## CIERRE (2026-10-14) — techo medido 40k → tope 1600 → cohorte completa, rankings comparables
+
+**Techo real medido con la sonda: 40.000 sentencias** (40.000 completó, 50.000 excedió).
+
+Aplicando la fórmula `floor(techo / 25 / 200)`:
+- `service_scan_batches() = 8` → **cap = 1.600 servicios**
+
+**Resultado verificado en live:**
+- Cohorte máxima de paquetes/mes = **1.500** (dato del usuario, verificado 31 días)
+- `1.500 < 1.600` → **cobertura completa** en ambos paths (global y filtrado por oficina)
+- `truncated = false` en ambos → rankings **exactos y comparables**
+- Early-out en el ranking (T15+ early-out commit) ahorra ~10k sentencias → margen amplio
+- Paridad `creator-parity.js`: **218/218 cero drift** tras deploy y re-export `.ds`
+
+### Tareas finales del cierre
+- [x] T18: `service_scan_batches()` → `return 8;` (cap 1600)
+- [x] T19: Deploy ordenado (data_access + 3 tools + 2 helpers) — **aridad materialize 2→1 exige deploy conjunto**
+- [x] T20: `METRICS.md` — techo 40k documentado, fórmula, sonda actualizada
+- [x] T21: Commit `fd7fad0` + push a `develop`
+- [x] T22: Verificación manual en Creator (top-10 sin filtro OK, top-10 oficina Elizabeth OK, mismos conteos)
+
+### Estado final
+| Métrica | Antes | Ahora |
+|---------|-------|-------|
+| Cap síncrono | 200 (acotado) / no terminaba (completo) | **1.600** |
+| Costo/registro | ~40 | **~25** |
+| Global vs oficina | máximos distintos (muestras sesgadas) | **comparables, exactos** |
+| Cartel 45s | sí (statement limit) | **no** |
+| Paridad | drift en tocados | **218/218 ✅** |
+
+El feature cumple el objetivo original: **ranking exacto y comparable entre filtros** dentro del presupuesto síncrono real de la cuenta. La única vía de exactitud ilimitada seguiría siendo precompute (Schedule), pero el tope 1600 cubre el volumen real (1500 máx) con margen.
