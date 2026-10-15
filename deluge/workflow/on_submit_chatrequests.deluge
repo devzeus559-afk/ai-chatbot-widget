@@ -27,7 +27,6 @@ try {
     
     // NUEVA CAPA: aunque el On Success termine con status "answered",
     // puede contener en su message el error de límite de sentencias.
-    // Si el mensaje contiene ese patrón, forzamos el Failed.
     if (result.get("error") != null && 
         result.get("error").toString().indexOf("Number of statement execution limit exceed") != -1) {
         input.Status = "failed";
@@ -36,16 +35,17 @@ try {
 } catch (e) {
     // Si ocurre una excepción, marcamos como failed inmediatamente.
     input.Status = "failed";
-    input.Error = e.message;
-    
-    // NUEVA CAPA: también verificamos el patrón en la excepción
-    if (e.toString().indexOf("Number of statement execution limit exceed") != -1) {
-        input.Status = "failed";
-    }
+    input.Error = e.toString();
 }
 
-// VERIFICACIÓN FINAL: por si el error vino en result pero no se marcó above
+// VERIFICACIÓN FINAL: por si el error vino en result pero no se marcó
 if (input.Error != null && 
     input.Error.toString().indexOf("Number of statement execution limit exceed") != -1) {
+    input.Status = "failed";
+}
+
+// VERIFICACIÓN ADICIONAL: también revisar input.Error por otros patrones
+if (input.Error != null && 
+    input.Error.toString().indexOf("statement execution limit") != -1) {
     input.Status = "failed";
 }
