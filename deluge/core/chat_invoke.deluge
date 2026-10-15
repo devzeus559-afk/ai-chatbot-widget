@@ -18,6 +18,8 @@
 
 map chat_invoke.chat_invoke(int requestId)
 {
+  try {
+
   /**
   * chat_invoke.deluge
   *
@@ -96,6 +98,10 @@ map chat_invoke.chat_invoke(int requestId)
   chat_requests_record.Status="answered";
   chat_requests_record.Reply=reply;
   return {"status":"answered","reply":reply,"sessionId":sessionId};
+
+  } catch (e) {
+    return {"status":"failed","message":e.toString()};
+  }
 }
 string chat_invoke.compose_with_ai(string toolName, map toolResult, map intent)
 {
