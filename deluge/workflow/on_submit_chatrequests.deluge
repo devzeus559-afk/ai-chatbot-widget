@@ -9,26 +9,19 @@
  *
  * Fallo = mutación en memoria de `input` (0 llamadas de API de Creator): el
  * registro del workflow persiste automáticamente los cambios.
- *
- * Si el proceso genera un error de límite de sentencias,
- * el registro se marca como "failed" incluso si el estado anterior era "answered".
- * Esto previene que el frontend siga poll-eando eternamente.
  */
 requestId = input.ID;
+
+input.Status = "failed";
 
 try {
     result = chat_invoke(requestId);
     
-    // Si el resultado no es "answered", marcamos como failed inmediatamente.
-    if (result.get("status") != "answered") {
-        input.Status = "failed";
-        input.Error = result.get("message");
-    }
-    
-    // NUEVA CAPA: aunque el On Success termine con status "answered",
-    // puede contener en su message el error de límite de sentencias.
-    if (result.get("error") != null && 
-        result.get("error").toString().indexOf("Number of statement execution limit exceed") != -1) {
+    // Si el resultado es "answered", no lo marcamos como failed
+    if (result.get("status") == "answered") {
+        input.Status = "answered";
+        input.Error = null;
+    } else {
         input.Status = "failed";
         input.Error = result.get("message");
     }
@@ -38,14 +31,10 @@ try {
     input.Error = e.toString();
 }
 
-// VERIFICACIÓN FINAL: por si el error vino en result pero no se marcó
-if (input.Error != null && 
-    input.Error.toString().indexOf("Number of statement execution limit exceed") != -1) {
-    input.Status = "failed";
-}
-
-// VERIFICACIÓN ADICIONAL: también revisar input.Error por otros patrones
-if (input.Error != null && 
-    input.Error.toString().indexOf("statement execution limit") != -1) {
-    input.Status = "failed";
+if (input.Error != null) {
+    errStr = input.Error.toString();
+    if (errStr.indexOf("statement execution limit") != -1 || 
+        errStr.indexOf("Number of statement execution limit") != -1) {
+        input.Status = "failed";
+    }
 }
