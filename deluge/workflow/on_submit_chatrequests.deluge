@@ -4,16 +4,13 @@
  * Script del workflow "On Submit" del módulo ChatRequests.
  * El registro ya existe cuando corre el workflow; `input` trae el registro.
  *
- * chat_invoke() ya marca Status = answered si todo sale bien; este script
- * atrapa fallos para no dejar solicitudes colgadas en "pending".
- *
  * Fallo = mutación en memoria de `input` (0 llamadas de API de Creator): el
  * registro del workflow persiste automáticamente los cambios.
  */
 requestId = input.ID;
 
 input.Status = "failed";
-input.Error = "No ejecutado";
+input.Error = "Processing";
 
 try {
     result = thisapp.chat_invoke.chat_invoke(requestId);
@@ -23,13 +20,13 @@ try {
         input.Error = "";
     } else {
         input.Status = "failed";
-        if (result != null) {
-            input.Error = result.get("message");
+        if (result != null && result.get("message") != null) {
+            input.Error = result.get("message").toString();
         } else {
-            input.Error = "chat_invoke retornó null";
+            input.Error = "no_message";
         }
     }
 } catch (e) {
     input.Status = "failed";
-    input.Error = "EXCEPTION: " + e.toString();
+    input.Error = "ERR:" + e.toString();
 }
