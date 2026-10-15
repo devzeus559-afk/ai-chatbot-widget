@@ -102,6 +102,11 @@ map chat_invoke.chat_invoke(int requestId)
   } catch (e) {
     return {"status":"failed","message":e.toString()};
   }
+  // Unreachable: los dos caminos (try y catch) ya retornan. Existe solo para
+  // satisfacer el análisis estático de Deluge ("Missing return statement:
+  // Provide MAP expression to return"), que no infiere exhaustividad dentro
+  // de try/catch y exige un return visible al final de la firma MAP.
+  return {"status":"failed","message":"chat_invoke no retornó resultado"};
 }
 string chat_invoke.compose_with_ai(string toolName, map toolResult, map intent)
 {
