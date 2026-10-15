@@ -7,7 +7,7 @@
 requestId = input.ID;
 
 input.Status = "failed";
-input.Error = "Inicializado";
+input.Error = "Processing";
 
 try {
     result = thisapp.chat_invoke.chat_invoke(requestId);
@@ -18,9 +18,9 @@ try {
     } else {
         input.Status = "failed";
         if (result != null && result.get("message") != null) {
-            input.Error = result.get("message");
+            input.Error = result.get("message").toString();
         } else {
-            input.Error = "Sin mensaje";
+            input.Error = "No message";
         }
     }
 } catch (e) {
