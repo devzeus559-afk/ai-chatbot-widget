@@ -15,15 +15,17 @@ requestId = input.ID;
 input.Status = "failed";
 
 try {
-    result = chat_invoke(requestId);
+    result = thisapp.chat_invoke.chat_invoke(requestId);
     
     // Si el resultado es "answered", no lo marcamos como failed
-    if (result.get("status") == "answered") {
+    if (result != null && result.get("status") == "answered") {
         input.Status = "answered";
         input.Error = null;
     } else {
         input.Status = "failed";
-        input.Error = result.get("message");
+        if (result != null) {
+            input.Error = result.get("message");
+        }
     }
 } catch (e) {
     // Si ocurre una excepción, marcamos como failed inmediatamente.
