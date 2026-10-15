@@ -242,29 +242,30 @@ map chat_tools.report_top_package_customers(map params)
     }
     totalWeightSum = totalWeightSum + w;
     serviceDate = s.get("date");
-    entry = senderMap.get(key);
-    if(entry == null)
-    {
-      entry = Map();
-      entry.put("customerId",senderId);
-      entry.put("count",1);
-      entry.put("weight",w);
-      entry.put("firstDate",serviceDate);
-      senderMap.put(key,entry);
-    }
-    else
-    {
-      entry.put("count",entry.get("count") + 1);
-      entry.put("weight",entry.get("weight") + w);
-      if(serviceDate != null)
+      entry = senderMap.get(key);
+      if(entry == null)
       {
-        currentDate = entry.get("firstDate");
-        if(currentDate == null || serviceDate < currentDate)
-        {
-          entry.put("firstDate",serviceDate);
-        }
+        // New customer – create entry with minimal fields (count, weight, firstDate)
+        entry = Map();
+        entry.put("customerId",senderId);                     // Sender_id already a number
+        entry.put("count", 1);                                // Count starts at 1
+        entry.put("weight", w);                             // Weight from Total_Weight
+        entry.put("firstDate", serviceDate);                  // Store first occurrence date
+        senderMap.put(key, entry);
       }
-    }
+      else
+      {
+        // Existing customer – increment counts and aggregate weight
+        entry.put("count", entry.get("count") + 1);
+        entry.put("weight", entry.get("weight") + w);
+        if(serviceDate != null)
+        {
+          currentDate = entry.get("firstDate");
+          if(currentDate == null || serviceDate < currentDate)
+          {
+            entry.put("firstDate", serviceDate);
+          }
+        }
   }
   // Top-N por inserción O(n·limit)
   ranking = List();
