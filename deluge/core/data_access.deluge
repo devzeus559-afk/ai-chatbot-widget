@@ -906,24 +906,28 @@ list chat_data_access.fetch_services_report_by_ids(list ids)
 
 int chat_data_access.service_scan_batches()
 {
-   // Único número que define el tope del ranking completo de servicios:
-   // cap de registros = service_scan_batches() * 200 (hoy: 2 * 200 = 400).
+   // ÚNICO NÚMERO que define el tope del ranking completo de servicios:
+   // cap de registros = service_scan_batches() * 200 (hoy: 5 * 200 = 1000).
    // Lo leen tanto el fetcher (fetch_all_services_report_by_ids) como el chequeo
-   // de truncated (service_scan_truncated), así que se cambia en un solo lugar.
+   // de truncated (service_scan_truncated).
    //
    // POR QUÉ HAY TOPE: Deluge limita las sentencias EJECUTADAS por ejecución
-   // (~5000 en el plan base, plan-dependent; cada `for each` multiplica el cuerpo
-   // por la cantidad de vueltas). El ranking cuesta ~25 sentencias por registro
-   // entre materializar y agregar, así que una cohorte de miles agota el
-   // presupuesto DENTRO de chat_invoke: el On Submit no llega a persistir
+   // (~5000 en el plan base, plan-dependent; cada `for each` multiplica el
+   // cuerpo por la cantidad de vueltas). El ranking custa ~25 sentencias por
+   // registro (materializar + agregar), por lo que una cohorte de miles agota el
+   // presupuesto dentro de chat_invoke: el On Submit no llega a persistir
    // Status="failed", el ChatRequest queda "pending" y el widget muestra su
-   // cartel de timeout a los 45s. El tope es lo que garantiza que la ejecución
+   // cartel de timeout a los 45 s. El tope es lo que garantiza que la ejecución
    // termine y el registro se cierre.
    //
-   // SUBIRLO SOLO con el techo de sentencias de la cuenta medido (ver la sonda en
-   // deluge/METRICS.md). Un tope demasiado alto reintroduce exactamente el cuelgue
-   // que este número evita.
-   return 8;
+   // SUBIRLO SOLO con el techo de sentencias medido (ver METRICS.md). Un tope
+   // demasiado alto reintroduce exactamente el cuelgue que este número evita.
+   //
+   // MEDICIÓN RECENTE: techo = 49.995 sentencias → floor(49995/25/200) = 9 batches
+   // (1800 registros). Sin embargo, para mantener margen de seguridad y evitar
+   // riesgos de exceder el techo en producción, USAMOS 5 batches = 1000 registros,
+   // dejando margen suficiente para el resto del flujo.
+   return 5;
 }
 
 bool chat_data_access.service_scan_truncated(list records, bool fullFlag)
