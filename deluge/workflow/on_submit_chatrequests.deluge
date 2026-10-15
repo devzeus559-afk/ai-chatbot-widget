@@ -24,16 +24,28 @@ try {
         input.Status = "failed";
         input.Error = result.get("message");
     }
+    
+    // NUEVA CAPA: aunque el On Success termine con status "answered",
+    // puede contener en su message el error de límite de sentencias.
+    // Si el mensaje contiene ese patrón, forzamos el Failed.
+    if (result.get("error") != null && 
+        result.get("error").toString().indexOf("Number of statement execution limit exceed") != -1) {
+        input.Status = "failed";
+        input.Error = result.get("message");
+    }
 } catch (e) {
     // Si ocurre una excepción, marcamos como failed inmediatamente.
     input.Status = "failed";
     input.Error = e.message;
-} finally {
-    // Siempre al final revisamos si el mensaje de error contiene el patrón crítico.
-    // Esto detecta el error de límite de sentencias incluso si el On Success script
-    // falla pero chat_invoke termina "answered".
-    if (input.Error != null && 
-        input.Error.toString().indexOf("Number of statement execution limit exceed") != -1) {
+    
+    // NUEVA CAPA: también verificamos el patrón en la excepción
+    if (e.toString().indexOf("Number of statement execution limit exceed") != -1) {
         input.Status = "failed";
     }
+}
+
+// VERIFICACIÓN FINAL: por si el error vino en result pero no se marcó above
+if (input.Error != null && 
+    input.Error.toString().indexOf("Number of statement execution limit exceed") != -1) {
+    input.Status = "failed";
 }
