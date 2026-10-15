@@ -178,6 +178,13 @@ async function sendToServer(convId, prompt, hint) {
     5000
   );
   console.log("[LM2Chatbot] addRecord response:", res);
+  
+  if (res && res.error && res.error[0] && res.error[0].includes("statement execution limit exceed")) {
+    // Error al exceder limite de ejecuciones permitidas en el workflow (On Submit → chat_invoke). 
+    // El registro se crea igual, pero el workflow no se ejecuta.
+    console.error("[LM2Chatbot] addRecord error:", res.error[0]);
+    throw new Error("addRecord(ChatRequests) error: " + (res && res.error[0]));
+  }
   if (res && res.timedOut) {
     // El SDK creó el registro pero nunca respondió (bug observado del
     // widgets SDK): continuar al polling, filtrando Session_ID en JS.
