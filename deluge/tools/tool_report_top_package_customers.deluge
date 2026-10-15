@@ -219,27 +219,18 @@ map chat_tools.report_top_package_customers(map params)
   totalWeightSum = 0;
   for each  s in records
   {
-    senderVal = s.get("customerId");
-    if(senderVal == null)
-    {
-      continue;
-    }
-    senderStr = "" + senderVal;
-    if(senderStr == "")
-    {
-      continue;
-    }
-    senderId = toNumber(senderStr);
+    // Sender_field es un lookup (entero zid): la ronda previa por
+    // toString + toNumber costaba ~4 sentencias por registro y no
+    // aportaba normalización real ("" + 7 y "" + "7" dan la misma key).
+    senderId = s.get("customerId");
     if(senderId == null)
     {
       continue;
     }
     key = "" + senderId;
+    // totalWeight ya viene garantizado como número por
+    // materialize_service_report (default 0): el null-check era dead code.
     w = s.get("totalWeight");
-    if(w == null)
-    {
-      w = 0;
-    }
     totalWeightSum = totalWeightSum + w;
     serviceDate = s.get("date");
       entry = senderMap.get(key);
@@ -268,12 +259,15 @@ map chat_tools.report_top_package_customers(map params)
         }
   }
   // Top-N por inserción O(n·limit)
+  // byPounds precalculado: comparar `measure == "pounds"` dentro de los
+  // dos bucles costaba 1 sentencia por vuelta y "measure" no cambia.
+  byPounds = measure == "pounds";
   ranking = List();
   for each  key in senderMap.keys()
   {
     entry = senderMap.get(key);
     entryValue = entry.get("count");
-    if(measure == "pounds")
+    if(byPounds)
     {
       entryValue = entry.get("weight");
     }
@@ -284,7 +278,7 @@ map chat_tools.report_top_package_customers(map params)
     {
       lastCur = ranking.get(ranking.size() - 1);
       lastValue = lastCur.get("count");
-      if(measure == "pounds")
+      if(byPounds)
       {
         lastValue = lastCur.get("weight");
       }
@@ -314,7 +308,7 @@ map chat_tools.report_top_package_customers(map params)
     {
       cur = ranking.get(i);
       curValue = cur.get("count");
-      if(measure == "pounds")
+      if(byPounds)
       {
         curValue = cur.get("weight");
       }

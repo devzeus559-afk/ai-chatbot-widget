@@ -193,19 +193,10 @@ map chat_tools.report_top_customers(map params)
     }
     for each  s in records
     {
-      // 		service_record = Service[ID == s];
-      senderVal = s.get("customerId");
-      // 		senderVal = service_record.Sender_field;
-      if(senderVal == null)
-      {
-        continue;
-      }
-      senderStr = "" + senderVal;
-      if(senderStr == "")
-      {
-        continue;
-      }
-      senderId = toNumber(senderStr);
+      // Sender_field es un lookup (entero zid): la ronda por toString +
+      // toNumber costaba ~4 sentencias por registro sin aportar
+      // normalización real ("" + 7 y "" + "7" dan la misma key).
+      senderId = s.get("customerId");
       if(senderId == null)
       {
         continue;

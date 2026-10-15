@@ -133,27 +133,18 @@ map chat_tools.report_top_remittance_customers(map params)
   totalAmount = 0;
   for each  s in records
   {
-    senderVal = s.get("customerId");
-    if(senderVal == null)
-    {
-      continue;
-    }
-    senderStr = "" + senderVal;
-    if(senderStr == "")
-    {
-      continue;
-    }
-    senderId = toNumber(senderStr);
+    // Sender_field es un lookup (entero zid): la ronda por toString +
+    // toNumber costaba ~4 sentencias por registro sin aportar
+    // normalización real ("" + 7 y "" + "7" dan la misma key).
+    senderId = s.get("customerId");
     if(senderId == null)
     {
       continue;
     }
     key = "" + senderId;
+    // amount ya viene garantizado como número por
+    // materialize_service_report (default 0): el null-check era dead code.
     amt = s.get("amount");
-    if(amt == null)
-    {
-      amt = 0;
-    }
     totalAmount = totalAmount + amt;
     serviceDate = s.get("date");
     entry = senderMap.get(key);
