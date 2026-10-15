@@ -23,3 +23,11 @@ try {
     input.Status = "failed";
     input.Error = e.message;
 }
+
+// Si el error capturado contiene el patron de lmites de lances de Deluge,
+// aseguramos que el estatus sea "failed" aunque el status venga como "answereded"
+// (esto ocurre cuando el On Success script falla pero chat_invoke termina "answered")
+if (input.Error != null && input.Error.contains("Number of statement execution limit exceed")) {
+    input.Status = "failed";
+}
+
