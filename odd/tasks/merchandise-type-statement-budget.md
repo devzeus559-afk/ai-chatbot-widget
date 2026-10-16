@@ -101,6 +101,24 @@ Decisiones:
 Verificación estática hecha: llaves balanceadas en los 4 archivos; ningún
 `for each` con un solo espacio agregado por este cambio.
 
+Commits de la unidad de trabajo (`develop`):
+
+| Commit | Qué |
+|---|---|
+| `b1bce2d` | `docs(odd)` — este documento |
+| `c8ce49f` | `perf(merchandise)` — agregador streaming + rango de fechas |
+| `5f04e39` | `feat(config)` — `period`/`startDate`/`endDate` en el catálogo |
+| `c33c9ab` | `feat(format)` — período real + aviso parcial |
+
+`node tools/creator-parity.js` → `drift: true`, `parity: 212/221`. Drift esperado
+(el live todavía no tiene el código): 4 funciones nuevas en `data_access` (2 de
+libras + 2 de mercancía) y 5 cuerpos distintos (`chat_config.chat_config`,
+`chat_common.format_pounds_shipped`, `chat_common.format_merchandise_type`,
+`chat_tools.report_pounds_shipped`, `chat_tools.report_merchandise_type`).
+
+Deploy pendiente en Creator, en este orden: `data_access` → `chat_config` y
+`chat_common` → las dos tools.
+
 ## Criterios de aceptación
 
 1. "estadística por tipo de mercancía" (sin filtros, mes corriente) devuelve
