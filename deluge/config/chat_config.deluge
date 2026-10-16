@@ -89,8 +89,8 @@ map chat_config.chat_config()
   tools.add(tool);
   tool = Map();
   tool.put("name","report_merchandise_type");
-  tool.put("description","Reporte de la distribución de paquetes por tipo de mercancía en los últimos 30 días (Miscellaneous, Durables, Documents, Toilet Food Medicine, Courier, Other), con su porcentaje. Params opcionales: limit, office (nombre de oficina). NO pidas aclaración.");
-  tool.put("params",{"limit":"string opcional","office":"string opcional"});
+  tool.put("description","Reporte de la distribución de paquetes por tipo de mercancía (Miscellaneous, Durables, Documents, Toilet Food Medicine, Courier, Other) en un período, con su porcentaje. Params opcionales: limit, office (nombre de oficina), startDate, endDate (default últimos 30 días). NO pidas aclaración.");
+  tool.put("params",{"limit":"string opcional","office":"string opcional","startDate":"date opcional","endDate":"date opcional"});
   tools.add(tool);
   tool = Map();
   tool.put("name","report_pounds_shipped");
@@ -213,7 +213,7 @@ map chat_config.chat_config()
    paramSchema.put("report_daily_average","OPTIONAL: period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias — NUNCA calcules fechas; devuelve el enum string), office (string), country (string), full (boolean) – Si el usuario dice 'completo' o 'todos los paquetes' se interpreta como full=true.");
   paramSchema.put("report_monthly_comparison","OPTIONAL: period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias — NUNCA calcules fechas; devuelve el enum string), months (string), office (string)");
   paramSchema.put("report_shipping_type_frequency","OPTIONAL: limit (string), office (string)");
-  paramSchema.put("report_merchandise_type","OPTIONAL: limit (string), office (string)");
+  paramSchema.put("report_merchandise_type","OPTIONAL: limit (string), office (string), period (enum: ultimo_mes|mes_anterior|este_mes|ultimos_7_dias — NUNCA calcules fechas; devuelve el enum string), startDate (date), endDate (date)");
   paramSchema.put("report_delayed_packages","OPTIONAL: destCountry (string)");
   paramSchema.put("report_unscanned_packages","OPTIONAL: limit (string), office (string)");
   config.put("paramSchema",paramSchema);
