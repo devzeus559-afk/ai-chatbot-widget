@@ -6,15 +6,24 @@
  * (Package_Type: Box/Bag/Documents) y por clase de envío (air/maritime).
  *
  * Recibe: {"startDate"?: date, "endDate"?: date (default: últimos 30 días),
- *          "office"?: string (Office_Name)}
+ *          "office"?: string (Office_Name), "full"?: bool}
  * Devuelve: {"ok": true, "data": {
  *   reportType: "pounds_shipped", periodStart, periodEnd, office (null sin),
  *   totalPounds, totalPackages, truncated,
- *   byOffice: [{name, pounds, packageCount}],
- *   byPackageType: [{name, pounds, packageCount}],
- *   byClass: [{name, pounds, packageCount}]}}
+ *   byOffice: [{name, pounds, count}],
+ *   byPackageType: [{name, pounds, count}],
+ *   byClass: [{name, pounds, count}]}}
  *
  * Viz: bar de libras por categoría (oficina).
+ *
+ * PRESUPUESTO DE SENTENCIAS (por qué este tool no materializa):
+ * la versión anterior materializaba todos los paquetes y después los agregaba
+ * en 3 maps separados: ~70 sentencias por registro contra un techo medido de
+ * 40.000. Cualquier cohorte mayor a ~550 paquetes agotaba el presupuesto y la
+ * ejecución moría sin persistir el ChatRequest (el usuario veía el cartel de
+ * límite). Ahora se usa el agregador streaming de data_access: una sola pasada,
+ * un solo map de clave compuesta. El tool solo PARTE ese map en los 3 desgloses,
+ * y esa partición corre sobre unas pocas claves (no sobre cada paquete).
  */
 
 map chat_tools.report_pounds_shipped(map params)
@@ -45,6 +54,7 @@ map chat_tools.report_pounds_shipped(map params)
     }
     reportedOffice = officeName;
   }
+  // Tope de lotes: completo (calibrado con el techo) o 1 lote para la vista rápida.
   fullFlag = params.get("full");
   if(fullFlag == null)
   {
@@ -52,90 +62,84 @@ map chat_tools.report_pounds_shipped(map params)
   }
   if(fullFlag)
   {
-    records = thisapp.chat_data_access.fetch_all_packages_by_window_office(startDate,endDate,officeZid);
+    maxBatches = thisapp.chat_data_access.pounds_scan_batches();
   }
   else
   {
-    records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+    maxBatches = 1;
   }
-  if(records == null)
+  aggResult = thisapp.chat_data_access.aggregate_pounds_by_window_office(startDate,endDate,officeZid,maxBatches);
+  agg = aggResult.get("agg");
+  totalPounds = aggResult.get("totalPounds");
+  totalPackages = aggResult.get("totalPackages");
+  truncated = aggResult.get("truncated");
+  if(totalPounds == null)
   {
-    records = List();
+    totalPounds = 0;
   }
-  total = records.size();
-  truncated = thisapp.chat_data_access.report_scan_truncated(records,fullFlag);
-  // Agregaciones
+  if(totalPackages == null)
+  {
+    totalPackages = 0;
+  }
+  // Partición del acumulador único en los 3 desgloses del contrato.
   officeMap = Map();
   pkgTypeMap = Map();
   classMap = Map();
-  totalPounds = 0;
-  for each  p in records
+  if(agg != null)
   {
-    w = p.get("totalWeight");
-    if(w == null)
+    for each  key in agg.keys()
     {
-      w = 0;
-    }
-    totalPounds = totalPounds + w;
-    // por oficina
-    offName = p.get("officeName");
-    if(offName == null || offName == "")
-    {
-      offName = "Unknown";
-    }
-    oe = officeMap.get(offName);
-    if(oe == null)
-    {
-      oe = Map();
-      oe.put("name",offName);
-      oe.put("pounds",w);
-      oe.put("count",1);
-      officeMap.put(offName,oe);
-    }
-    else
-    {
-      oe.put("pounds",oe.get("pounds") + w);
-      oe.put("count",oe.get("count") + 1);
-    }
-    // por tipo de carga
-    pt = p.get("packageType");
-    if(pt == null || pt == "")
-    {
-      pt = "Other";
-    }
-    te = pkgTypeMap.get(pt);
-    if(te == null)
-    {
-      te = Map();
-      te.put("name",pt);
-      te.put("pounds",w);
-      te.put("count",1);
-      pkgTypeMap.put(pt,te);
-    }
-    else
-    {
-      te.put("pounds",te.get("pounds") + w);
-      te.put("count",te.get("count") + 1);
-    }
-    // por clase
-    cl = p.get("className");
-    if(cl == null || cl == "")
-    {
-      cl = "maritime";
-    }
-    ce = classMap.get(cl);
-    if(ce == null)
-    {
-      ce = Map();
-      ce.put("name",cl);
-      ce.put("pounds",w);
-      ce.put("count",1);
-      classMap.put(cl,ce);
-    }
-    else
-    {
-      ce.put("pounds",ce.get("pounds") + w);
-      ce.put("count",ce.get("count") + 1);
+      e = agg.get(key);
+      pounds = e.get("pounds");
+      count = e.get("count");
+      // --- por oficina ---
+      n = e.get("office");
+      oe = officeMap.get(n);
+      if(oe == null)
+      {
+        oe = Map();
+        oe.put("name",n);
+        oe.put("pounds",pounds);
+        oe.put("count",count);
+        officeMap.put(n,oe);
+      }
+      else
+      {
+        oe.put("pounds",oe.get("pounds") + pounds);
+        oe.put("count",oe.get("count") + count);
+      }
+      // --- por tipo de carga ---
+      n2 = e.get("packageType");
+      te = pkgTypeMap.get(n2);
+      if(te == null)
+      {
+        te = Map();
+        te.put("name",n2);
+        te.put("pounds",pounds);
+        te.put("count",count);
+        pkgTypeMap.put(n2,te);
+      }
+      else
+      {
+        te.put("pounds",te.get("pounds") + pounds);
+        te.put("count",te.get("count") + count);
+      }
+      // --- por clase de envío ---
+      n3 = e.get("className");
+      ce = classMap.get(n3);
+      if(ce == null)
+      {
+        ce = Map();
+        ce.put("name",n3);
+        ce.put("pounds",pounds);
+        ce.put("count",count);
+        classMap.put(n3,ce);
+      }
+      else
+      {
+        ce.put("pounds",ce.get("pounds") + pounds);
+        ce.put("count",ce.get("count") + count);
+      }
     }
   }
   // Construir listas (ordeno desc por libras para el formato)
@@ -148,12 +152,12 @@ map chat_tools.report_pounds_shipped(map params)
   data.put("periodEnd",endDate);
   data.put("office",reportedOffice);
   data.put("totalPounds",totalPounds);
-  data.put("totalPackages",total);
+  data.put("totalPackages",totalPackages);
   data.put("truncated",truncated);
   data.put("byOffice",byOffice);
   data.put("byPackageType",byPackageType);
   data.put("byClass",byClass);
-  if(total == 0)
+  if(totalPackages == 0)
   {
     return {"ok":true,"data":data,"visualization":null};
   }

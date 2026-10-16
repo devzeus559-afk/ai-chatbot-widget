@@ -1280,7 +1280,148 @@ list chat_data_access.fetch_all_packages_by_window_office(date startDate, date e
       break;
     }
   }
-  return resultList;
+   return resultList;
+}
+int chat_data_access.pounds_scan_batches()
+{
+   // Tope del reporte de libras enviadas (report_pounds_shipped): cuántos lotes
+   // de 200 paquetes recorre el agregador streaming.
+   //
+   // Fórmula: techo / sentencias-por-registro / 200. Techo medido en esta
+   // cuenta = 40.000 (ver deluge/METRICS.md); el agregador cuesta ~20
+   // sentencias por registro (una sola pasada: lee 4 campos, resuelve oficina y
+   // clase desde mapas precargados y actualiza UN map de clave compuesta).
+   //   floor(40.000 / 20 / 200) = 10 lotes (2.000 paquetes)
+   //
+   // Se usa 8 (1.600 paquetes ≈ 32.000 sentencias) para dejar margen al resto
+   // de chat_invoke (sesión, historial, Zia, formateo, insert final), que
+   // comparte el mismo presupuesto. Cubre el volumen mensual observado
+   // (~550 por oficina grande; ~1.500 total).
+   //
+   // SI EL CASO ANCHO FALLA EN VIVO: bajar a 6 (1.200 ≈ 24.000). No subirlo sin
+   // medir — reintroduce exactamente el cuelgue que este tope evita.
+   return 8;
+}
+map chat_data_access.aggregate_pounds_by_window_office(date startDate, date endDate, int officeZid, int maxBatches)
+{
+   // --------------------------------------------------------------------------
+   // Agregador STREAMING para report_pounds_shipped.
+   //
+   // Por qué existe: el path anterior (fetch_all_packages_by_window_office +
+   // materialize_package_report + 3 agregaciones en el tool) costaba ~70
+   // sentencias por registro, así que cualquier cohorte mayor a ~550 paquetes
+   // agotaba el techo de 40.000 y la ejecución moría SIN persistir el
+   // ChatRequest. Acá se recorre cada registro UNA sola vez y se acumula
+   // directo: no se construye la lista intermedia de miles de maps.
+   //
+   // Clave compuesta "oficina|tipoCarga|clase": un solo Map en vez de tres, y
+   // el tool parte los desgloses al final sobre unas pocas claves (los
+   // desgloses por oficina/tipo/clase se derivan del mismo acumulador).
+   //
+   // Devuelve:
+   //   {agg: Map<clave,{office,packageType,className,pounds,count}>,
+   //    totalPounds, totalPackages, truncated}
+   //
+   // truncated = true cuando se agotaron los lotes con el último lote COMPLETO
+   // (mismo criterio que report_scan_truncated), es decir el reporte es parcial.
+   // --------------------------------------------------------------------------
+   agg = Map();
+   totalPounds = 0;
+   totalPackages = 0;
+   // Catálogos precargados UNA vez por invocación (no por lote): 3 queries.
+   officeNameById = thisapp.chat_data_access.prefetch_office_names();
+   shipmentInfoById = thisapp.chat_data_access.prefetch_shipment_info();
+   lastId = 0;
+   // Guard: sin lotes no hay nada que recorrer (y leftpad(<1) degradaría).
+   if(maxBatches == null || maxBatches <= 0)
+   {
+      return {"agg":agg,"totalPounds":0,"totalPackages":0,"truncated":false};
+   }
+   // Deluge NO soporta while: lista contadora + for each + break.
+   counter = leftpad("1",maxBatches).replaceAll(" ","1,").toList(",");
+   for each  idx in counter
+   {
+      if(officeZid == null || officeZid <= 0)
+      {
+         recBatch = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && ID > lastId] sort by ID range from 0 to 199;
+      }
+      else
+      {
+         recBatch = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && Office == officeZid && ID > lastId] sort by ID range from 0 to 199;
+      }
+      // recBatch es colección cruda: .count(), NO .size().
+      if(recBatch == null || recBatch.count() == 0)
+      {
+         break;
+      }
+      for each  r in recBatch
+      {
+         // 1. Peso (materialize ya no interviene: se lee el campo crudo).
+         w = r.Total_Weight;
+         if(w == null)
+         {
+            w = 0;
+         }
+         totalPounds = totalPounds + w;
+         totalPackages = totalPackages + 1;
+         // 2. Oficina: nombre resuelto por mapa; sin match cae a "Unknown"
+         //    (mismo comportamiento que el materializador + normalización del tool).
+         offName = "Unknown";
+         if(r.Office != null)
+         {
+            cachedName = officeNameById.get(r.Office);
+            if(cachedName != null)
+            {
+               offName = cachedName;
+            }
+         }
+         // 3. Tipo de carga: vacío -> "Other" (convención del tool).
+         pt = r.Package_Type;
+         if(pt == null || pt == "")
+         {
+            pt = "Other";
+         }
+         // 4. Clase aéreo/maritime: precalculada en el catálogo de Shipment;
+         //    sin información se asume "maritime" (default histórico del tool).
+         className = "maritime";
+         if(r.Shipment_Type != null)
+         {
+            shipmentInfo = shipmentInfoById.get(r.Shipment_Type);
+            if(shipmentInfo != null)
+            {
+               className = shipmentInfo.get("class");
+            }
+         }
+         // 5. Acumulador único con clave compuesta.
+         key = offName + "|" + pt + "|" + className;
+         entry = agg.get(key);
+         if(entry == null)
+         {
+            entry = Map();
+            entry.put("office",offName);
+            entry.put("packageType",pt);
+            entry.put("className",className);
+            entry.put("pounds",w);
+            entry.put("count",1);
+            agg.put(key,entry);
+         }
+         else
+         {
+            entry.put("pounds",entry.get("pounds") + w);
+            entry.put("count",entry.get("count") + 1);
+         }
+      }
+      // Cursor sobre ID ascendente: el mayor ID del lote es el próximo punto
+      // de arranque. getAll() evita .get() sobre la colección cruda.
+      idList = recBatch.ID.getAll();
+      lastId = idList.get(idList.size() - 1);
+      if(recBatch.count() < 200)
+      {
+         break;
+      }
+   }
+   truncated = totalPackages >= maxBatches * 200;
+   return {"agg":agg,"totalPounds":totalPounds,"totalPackages":totalPackages,"truncated":truncated};
 }
 list chat_data_access.materialize_pkg_tracking_report(Pkg_Tracking records, map refs)
 {
