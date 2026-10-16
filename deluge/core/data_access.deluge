@@ -1423,6 +1423,119 @@ map chat_data_access.aggregate_pounds_by_window_office(date startDate, date endD
    truncated = totalPackages >= maxBatches * 200;
    return {"agg":agg,"totalPounds":totalPounds,"totalPackages":totalPackages,"truncated":truncated};
 }
+int chat_data_access.merchandise_scan_batches()
+{
+   // Tope del reporte por tipo de mercancía (report_merchandise_type): cuántos
+   // lotes de 200 paquetes recorre el agregador streaming.
+   //
+   // Fórmula: techo / sentencias-por-registro / 200. Techo medido = 40.000
+   // (deluge/METRICS.md). Este agregador cuesta ~11-12 sentencias por registro
+   // (una pasada: resuelve la mercancía por mapa precargado y actualiza UN map
+   // de conteos — no materializa, no lee columnas que no usa).
+   //   floor(40.000 / 12 / 200) = 16 lotes (3.200 paquetes)
+   //
+   // Se usa 10 (2.000 paquetes ≈ 22.000-24.000 sentencias) para dejar margen al
+   // resto de chat_invoke (sesión, historial, Zia, formateo, insert final), que
+   // comparte el mismo presupuesto. Es MÁS conservador que el de libras (8 lotes
+   // con ~20 sentencias/registro): acá el prefetch de Shipment es un costo fijo
+   // relativamente mayor porque se leen menos columnas por registro.
+   //
+   // SI EL CASO ANCHO FALLA EN VIVO: bajar a 8 (1.600). No subirlo sin medir.
+   return 10;
+}
+map chat_data_access.aggregate_packages_by_merchandise(date startDate, date endDate, int officeZid, int maxBatches)
+{
+   // --------------------------------------------------------------------------
+   // Agregador STREAMING para report_merchandise_type.
+   //
+   // Mismo motivo que aggregate_pounds_by_window_office: el path anterior
+   // materializaba todos los paquetes (~30-34 sentencias/registro) y después
+   // contaba en un segundo loop, así que se le acababa el presupuesto de 40.000
+   // antes de poder degradar. Acá se recorre cada registro UNA sola vez y se
+   // acumula directo: no existe la lista intermedia de miles de maps.
+   //
+   // La mercancía sale de Package.Shipment_Type -> Shipment.Type_of_Merchandise
+   // (el campo `merch` de shipment_info()), tal como lo exponía el materializador
+   // bajo la clave `merchType`.
+   //
+   // Devuelve:
+   //   {counts: Map<clave,count>, names: Map<clave,nombreMostrado>,
+   //    totalPackages, truncated}
+   //
+   // `counts`/`names` van separados a propósito: la clave es siempre string
+   // ("" + merch) pero el nombre mostrado conserva el valor crudo, que es lo que
+   // el contrato de salida publicaba antes.
+   // --------------------------------------------------------------------------
+   counts = Map();
+   names = Map();
+   totalPackages = 0;
+   // Catálogo de Shipment precargado UNA vez (2 queries, ~230 registros).
+   shipmentInfoById = thisapp.chat_data_access.prefetch_shipment_info();
+   lastId = 0;
+   if(maxBatches == null || maxBatches <= 0)
+   {
+      return {"counts":counts,"names":names,"totalPackages":0,"truncated":false};
+   }
+   // Deluge NO soporta while: lista contadora + for each + break.
+   counter = leftpad("1",maxBatches).replaceAll(" ","1,").toList(",");
+   for each  idx in counter
+   {
+      if(officeZid == null || officeZid <= 0)
+      {
+         recBatch = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && ID > lastId] sort by ID range from 0 to 199;
+      }
+      else
+      {
+         recBatch = Package[Receipt_Date >= startDate && Receipt_Date <= endDate && Office == officeZid && ID > lastId] sort by ID range from 0 to 199;
+      }
+      // recBatch es colección cruda: .count(), NO .size().
+      if(recBatch == null || recBatch.count() == 0)
+      {
+         break;
+      }
+      for each  r in recBatch
+      {
+         totalPackages = totalPackages + 1;
+         // Mercancía: sin Shipment_Type (o sin registro que lo resuelva) la
+         // variable arranca en "" y cae al bucket "Other", igual que antes.
+         mt = "";
+         if(r.Shipment_Type != null)
+         {
+            si = shipmentInfoById.get(r.Shipment_Type);
+            if(si != null)
+            {
+               mt = si.get("merch");
+            }
+         }
+         if(mt == null || mt == "")
+         {
+            mt = "Other";
+         }
+         key = "" + mt;
+         c = counts.get(key);
+         if(c == null)
+         {
+            counts.put(key,1);
+            names.put(key,mt);
+         }
+         else
+         {
+            counts.put(key,c + 1);
+         }
+      }
+      // Cursor sobre ID ascendente.
+      idList = recBatch.ID.getAll();
+      lastId = idList.get(idList.size() - 1);
+      if(recBatch.count() < 200)
+      {
+         break;
+      }
+   }
+   // Solo puede quedar incompleto si agotó los lotes con el ÚLTIMO lleno; si el
+   // último vino corto el recorrido terminó solo y los datos están completos.
+   truncated = totalPackages >= maxBatches * 200;
+   return {"counts":counts,"names":names,"totalPackages":totalPackages,"truncated":truncated};
+}
 list chat_data_access.materialize_pkg_tracking_report(Pkg_Tracking records, map refs)
 {
    resultList = List();

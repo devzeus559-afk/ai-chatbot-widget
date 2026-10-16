@@ -1,19 +1,30 @@
 /**
  * tool_report_merchandise_type.deluge
  *
- * Reporte métrico: distribución de paquetes por tipo de mercancía en una
- * ventana de 30 días sobre Package.Receipt_Date. El tipo se lee de
- * Shipment.Type_of_Merchandise vía el Package.Shipment_Type del paquete.
- * Filtro opcional por oficina (metric 9).
+ * Reporte métrico: distribución de paquetes por tipo de mercancía en un período
+ * sobre Package.Receipt_Date. El tipo se lee de Shipment.Type_of_Merchandise vía
+ * el Package.Shipment_Type del paquete. Filtro opcional por oficina.
  *
  * Recibe: {"limit"?: string|number (default todos),
- *          "office"?: string (Office_Name de Commercial_Office)}
+ *          "office"?: string (Office_Name de Commercial_Office),
+ *          "startDate"?: date|string, "endDate"?: date|string (default: últimos 30 días),
+ *          "full"?: boolean (default true; false = cohorte rápida de 200)}
  * Devuelve: {"ok": true, "data": {
  *   reportType: "merchandise_type", periodStart, periodEnd, office,
  *   totalPackages, truncated,
  *   merchandise: [{name, packageCount, sharePct}]}}
  *
  * Viz: bar de paquetes por tipo de mercancía.
+ *
+ * Las fechas llegan ya resueltas por chat_invoke: Zia emite el enum `period`
+ * (ultimo_mes|mes_anterior|este_mes|ultimos_7_dias) y chat_invoke lo traduce a
+ * startDate/endDate como string ISO antes del dispatch. Este tool solo lee las
+ * fechas; no interpreta el enum.
+ *
+ * PRESUPUESTO DE SENTENCIAS: ver chat_data_access.aggregate_packages_by_merchandise.
+ * La versión anterior materializaba todos los paquetes (~30-34 sentencias por
+ * registro) y recién después contaba, así que agotaba el techo de 40.000 sin
+ * llegar a degradar con `truncated`. Ahora se usa el agregador streaming.
  */
 
 map chat_tools.report_merchandise_type(map params)
@@ -41,8 +52,29 @@ map chat_tools.report_merchandise_type(map params)
     }
     reportedOffice = officeName;
   }
+  // Período (default: últimos 30 días). El parseo es defensivo: una fecha
+  // ilegible no debe reventar el script ni mandar null al agregador.
   endDate = zoho.currentdate;
+  ed = params.get("endDate");
+  if(ed != null && ed != "")
+  {
+    parsedEnd = toDate("" + ed);
+    if(parsedEnd != null)
+    {
+      endDate = parsedEnd;
+    }
+  }
   startDate = endDate.subDay(30);
+  sd = params.get("startDate");
+  if(sd != null && sd != "")
+  {
+    parsedStart = toDate("" + sd);
+    if(parsedStart != null)
+    {
+      startDate = parsedStart;
+    }
+  }
+  // Tope de lotes: recorrido completo o cohorte rápida de 200.
   fullFlag = params.get("full");
   if(fullFlag == null)
   {
@@ -50,59 +82,47 @@ map chat_tools.report_merchandise_type(map params)
   }
   if(fullFlag)
   {
-    records = thisapp.chat_data_access.fetch_all_packages_by_window_office(startDate,endDate,officeZid);
+    maxBatches = thisapp.chat_data_access.merchandise_scan_batches();
   }
   else
   {
-    records = thisapp.chat_data_access.fetch_packages_report_by_window_office(startDate,endDate,officeZid);
+    maxBatches = 1;
   }
-  if(records == null)
+  aggResult = thisapp.chat_data_access.aggregate_packages_by_merchandise(startDate,endDate,officeZid,maxBatches);
+  counts = aggResult.get("counts");
+  names = aggResult.get("names");
+  total = aggResult.get("totalPackages");
+  if(total == null)
   {
-    records = List();
+    total = 0;
   }
-  total = records.size();
-  merchMap = Map();
-  for each  p in records
-  {
-    mt = p.get("merchType");
-    if(mt == null || mt == "")
-    {
-      mt = "Other";
-    }
-    key = "" + mt;
-    e = merchMap.get(key);
-    if(e == null)
-    {
-      e = Map();
-      e.put("name",mt);
-      e.put("count",1);
-      merchMap.put(key,e);
-    }
-    else
-    {
-      e.put("count",e.get("count") + 1);
-    }
-  }
+  // Ranking desc por cantidad (mismo patrón de inserción indexada que el resto).
   ranking = List();
-  for each  key in merchMap.keys()
+  if(counts != null)
   {
-    entry = merchMap.get(key);
-    pos = ranking.size();
-    for each index i in ranking
+    for each  key in counts.keys()
     {
-      cur = ranking.get(i);
-      if(entry.get("count") > cur.get("count"))
+      entry = Map();
+      entry.put("name",names.get(key));
+      entry.put("count",counts.get(key));
+      pos = ranking.size();
+      for each index i in ranking
       {
-        pos = i;
-        break;
+        cur = ranking.get(i);
+        if(entry.get("count") > cur.get("count"))
+        {
+          pos = i;
+          break;
+        }
+      }
+      ranking = thisapp.chat_common.insert_ranked_entry(ranking,pos,entry);
+      if(limitNum > 0 && ranking.size() > limitNum)
+      {
+        ranking = ranking.subList(0,limitNum);
       }
     }
-    ranking = thisapp.chat_common.insert_ranked_entry(ranking,pos,entry);
-    if(limitNum > 0 && ranking.size() > limitNum)
-    {
-      ranking = ranking.subList(0,limitNum);
-    }
   }
+  // Porcentaje de participación + normalización de clave al contrato de salida.
   for each  e in ranking
   {
     share = 0;
@@ -121,7 +141,11 @@ map chat_tools.report_merchandise_type(map params)
   data.put("periodEnd",endDate);
   data.put("office",reportedOffice);
   data.put("totalPackages",total);
-  data.put("truncated",thisapp.chat_data_access.report_scan_truncated(records,fullFlag));
+  data.put("truncated",aggResult.get("truncated"));
+  // Etiqueta de período pre-formateada acá (no en el formateador): acá sabemos
+  // que startDate/endDate son del tipo date, así que toString(formato) es seguro.
+  // Precedente: monthLabel en report_monthly_comparison.
+  data.put("periodLabel",startDate.toString("yyyy-MM-dd") + " a " + endDate.toString("yyyy-MM-dd"));
   data.put("merchandise",ranking);
   if(total == 0)
   {
