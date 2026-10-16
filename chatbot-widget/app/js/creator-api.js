@@ -190,7 +190,7 @@ async function sendToServer(convId, prompt, hint) {
       ok: false,
       error:
         "La consulta superó el límite de procesamiento del servidor. " +
-        "Prueba con un top más pequeño (por ejemplo 7) o reduce el rango.",
+        "Prueba con un rango de fechas más corto o un filtro más específico.",
     };
   }
   if (res && res.timedOut) {
