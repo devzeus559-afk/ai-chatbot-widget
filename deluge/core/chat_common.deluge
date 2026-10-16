@@ -539,6 +539,11 @@ string chat_common.format_pounds_shipped(map data)
     return "No encontré paquetes en el período indicado.";
   }
   text = "Libras enviadas en el período: " + data.get("totalPounds") + " lbs\n";
+  truncated = data.get("truncated");
+  if(truncated == true)
+  {
+    text = text + "_(resultado parcial: hay más paquetes fuera del tope de escaneo)_\n";
+  }
   text = text + "Por oficina:\n";
   byOffice = data.get("byOffice");
   if(byOffice != null)
