@@ -511,9 +511,22 @@ string chat_common.format_merchandise_type(map data)
 {
   if(data == null || data.get("totalPackages") == 0)
   {
-    return "No encontré paquetes en los últimos 30 días.";
+    return "No encontré paquetes en el período indicado.";
   }
-  text = "Paquetes por tipo de mercancía (últimos 30 días):\n";
+  // El período ya viene pre-formateado por el tool (periodLabel); si faltara,
+  // el aviso simplemente se omite en vez de romper el formateo.
+  periodTxt = "";
+  pl = data.get("periodLabel");
+  if(pl != null && pl != "")
+  {
+    periodTxt = " (" + pl + ")";
+  }
+  text = "Paquetes por tipo de mercancía" + periodTxt + ":\n";
+  truncated = data.get("truncated");
+  if(truncated == true)
+  {
+    text = text + "_(resultado parcial: hay más paquetes fuera del tope de escaneo)_\n";
+  }
   merch = data.get("merchandise");
   if(merch != null)
   {
